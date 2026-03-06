@@ -2,13 +2,13 @@
 ### Generate the hosts.ini file
 ###
 resource "local_file" "ansible_inventory" {
-  content = templatefile("../inventory/hosts.tpl",
+  content = templatefile("../shared/inventory/hosts.tpl",
     {
      controller_ips = azurerm_public_ip.controller-pip[*].ip_address,
      worker_ips     = azurerm_public_ip.worker-pip[*].ip_address
     }
   )
-  filename = "../inventory/hosts.ini"
+  filename = "./hosts.ini"
   depends_on = [null_resource.placeholder, azurerm_linux_virtual_machine.workers, azurerm_linux_virtual_machine.controllers]
 }
 

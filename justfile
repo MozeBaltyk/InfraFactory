@@ -51,6 +51,10 @@ _retry cmd:
 # Entry points
 ##############################################
 
+# Validate Opentofu scripts
+validate:
+	just _validate-{{PROVIDER}}
+
 # Plan on Provider specified in PROVIDER env variable (default: KVM)
 plan:
 	just _plan-{{PROVIDER}}
@@ -66,6 +70,9 @@ destroy:
 ##############################################
 # Azure recipes
 ##############################################
+_validate-AZ: _validate-az-env
+	@cd {{TF_AZ}} && tofu init -backend=false && tofu validate
+
 _plan-AZ: _validate-az-env
 	@cd {{TF_AZ}} && tofu init
 	@cd {{TF_AZ}} && tofu plan \
@@ -95,6 +102,8 @@ _destroy-AZ: _validate-az-env
 ##############################################
 # KVM recipes
 ##############################################
+_validate-KVM:
+	@cd {{TF_KVM}} && tofu init -backend=false && tofu validate
 
 _plan-KVM:
 	@cd {{TF_KVM}} && tofu init

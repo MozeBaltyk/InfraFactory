@@ -36,12 +36,12 @@ variable "GITREPO_UN_ID" {
 
 variable "terraform_backend_bucket_name" {
   description = "Unique bucket name for storing terraform backend data"
-  default = "terraform-backend-rkub-quickstart"
+  default = "terraform-backend-factory-quickstart"
 }
 
 variable "mount_point" {
   description = "Unique bucket name for storing terraform backend data"
-  default = "/opt/rkub"
+  default = "/opt/factory"
 }
 
 ##

@@ -19,7 +19,7 @@ variable "Versionning" {
       os_version_short   = 24
       os_version_long    = "24.04"
       os_URL             = "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img"
-      cloud_init_version = "cloud-init"
+      cloud_init_version = "default"
     }
   }
 }
@@ -101,21 +101,10 @@ variable "release_version" {
   default     = "v1.0"
 }
 
-variable "rh_username" {
-  description = "RedHat username for subscription"
-  default     = ""
-}
-
-variable "rh_password" {
-  description = "RedHat password for subscription"
-  default     = ""
-  sensitive   = true
-}
-
 # Local Settings
 locals {
   qcow2_image        = lookup(var.Versionning[var.selected_version], "os_URL", "")
-  cloud_init_version = lookup(var.Versionning[var.selected_version], "cloud_init_version", 0)
+  cloud_init_version = lookup(var.Versionning[var.selected_version], "cloud_init_version", "")
   subdomain          = "${var.clusterid}.${var.domain}"
   os_name            = lookup(var.Versionning[var.selected_version], "os_name", "")
   os_version_short   = lookup(var.Versionning[var.selected_version], "os_version_short", "")

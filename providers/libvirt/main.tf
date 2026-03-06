@@ -2,177 +2,114 @@
 resource "libvirt_pool" "factory_pool" {
   name = var.pool
   type = "dir"
-  target = {
-    path = local.factory_pool_path
-  }
+  path = local.factory_pool_path
 }
 
 ### Disks
 # Fetch the OS image from local storage
 resource "libvirt_volume" "os_image" {
-  name = "${var.selected_version}.qcow2"
-  pool = libvirt_pool.factory_pool.name
-  target = {
-    format = {
-      type = "qcow2"
-    }
-  }
-  create = {
-    content = {
-      url = local.qcow2_image
-    }
-  }
+  name   = "${var.selected_version}-os_image"
+  pool   = libvirt_pool.factory_pool.name
+  source = local.qcow2_image
+  format = "qcow2"
+}
+
+resource "libvirt_volume" "resized_os_image" {
+  for_each = { for vm in concat(local.master_details, local.worker_details) : vm.name => vm }
+  name     = "${each.value.name}-disk-${var.product}-${var.release_version}.qcow2"
+  base_volume_id = libvirt_volume.os_image.id
+  pool     = libvirt_pool.factory_pool.name
+  size     = 10 * 1024 * 1024 * 1024  # 10 GB in bytes
 }
 
 # Define Libvirt network
 resource "libvirt_network" "network" {
   name      = var.network_name
+  mode      = "nat"
+  bridge    = "virbr7"
   autostart = true
-
-  bridge = {
-    name = "virbr8"
-  }
-
-  domain = {
-    name = local.subdomain
-  }
-
-  ips = [
-    {
-      address = "192.168.100.1"
-      prefix  = 24
-      dhcp = {
-        ranges = [
-          { start = "192.168.100.100", end = "192.168.100.200" }
-        ]
-      }
-    }
-  ]
-  # Optional: NAT forwarding to allow Internet access
-  forward = {
-    mode = "nat"
+  domain    = local.subdomain
+  addresses = [var.network_cidr]
+  
+  dhcp {
+    enabled = true
   }
 }
 
 # Create Master VMs
 resource "libvirt_domain" "masters" {
-  count       = var.masters_number
-  name        = local.master_details[count.index].name
-  memory      = var.memory_size
-  memory_unit = "MiB"
-  vcpu        = var.cpu_size
-  autostart   = true
-  type        = "kvm"
+  count     = var.masters_number
+  name      = local.master_details[count.index].name
+  memory    = var.memory_size
+  vcpu      = var.cpu_size
+  autostart = true
+  qemu_agent = true
 
-  os = {
-    type = "hvm"
+  disk {
+    volume_id = libvirt_volume.resized_os_image[local.master_details[count.index].name].id
   }
 
-  devices = {
-    disks = [
-      {
-        source = {
-          file = {
-            file = libvirt_volume.os_image.path
-          }
-        }
-        target = {
-          dev = "vda"
-          bus = "virtio"
-        }
-      },
-      {
-        file = {
-          file = libvirt_cloudinit_disk.commoninit[local.master_details[count.index].name].path
-        }
-        target = {
-          dev = "vdb"
-          bus = "virtio"
-        }
-      }
-    ]
-    interfaces = [
-      {
-        model = {
-          type = "virtio"
-        }
-        source = {
-          network = {
-            network = libvirt_network.network.name
-          }
-        }
-      }
-    ]
-    graphics = [
-      {
-        spice = {
-          listen = "0.0.0.0"
-        }
-      }
-    ]
+  network_interface {
+    network_id     = libvirt_network.network.id
+    mac            = local.master_details[count.index].mac
+    wait_for_lease = true
+  }
 
-    graphics = [
-      {
-        spice = {
-          autoport = true
-        }
-      }
-    ]
-    video = {
-      type = "virtio"
-    }
+  cloudinit = libvirt_cloudinit_disk.commoninit[local.master_details[count.index].name].id
 
+  # cpu must be set as a map rather than a block
+  cpu = {
+    mode = "host-passthrough"
+  }
+
+  console {
+    type        = "pty"
+    target_port = "0"
+    target_type = "serial"
+  }
+
+  graphics {
+    type        = "vnc"
+    listen_type = "address"
+    autoport    = "true"
   }
 }
 
 # Create Worker VMs
 resource "libvirt_domain" "workers" {
-  count       = var.workers_number
-  name        = local.worker_details[count.index].name
-  memory      = var.memory_size
-  memory_unit = "MiB"
-  vcpu        = var.cpu_size
-  autostart   = true
-  type        = "kvm"
+  count     = var.workers_number
+  name      = local.worker_details[count.index].name
+  memory    = var.memory_size
+  vcpu      = var.cpu_size
+  autostart = true
+  qemu_agent = true
 
-  os = {
-    type = "hvm"
+  disk {
+    volume_id = libvirt_volume.resized_os_image[local.worker_details[count.index].name].id
   }
 
-  devices = {
-    disks = [
-      {
-        source = {
-          file = {
-            file = libvirt_volume.os_image.path
-          }
-        }
-        target = {
-          dev = "vda"
-          bus = "virtio"
-        }
-      },
-      {
-        file = {
-          file = libvirt_cloudinit_disk.commoninit[local.worker_details[count.index].name].path
-        }
-        target = {
-          dev = "vdb"
-          bus = "virtio"
-        }
-      }
-    ]
-    interfaces = [
-      {
-        model = {
-          type = "virtio"
-        }
-        source = {
-          network = {
-            network = libvirt_network.network.name
-          }
-        }
-      }
-    ]
+  network_interface {
+    network_id     = libvirt_network.network.id
+    mac            = local.worker_details[count.index].mac
+    wait_for_lease = true
+  }
+
+  cloudinit = libvirt_cloudinit_disk.commoninit[local.worker_details[count.index].name].id
+
+  # cpu must be set as a map rather than a block
+  cpu = {
+    mode = "host-passthrough"
+  }
+
+  console {
+    type        = "pty"
+    target_port = "0"
+    target_type = "serial"
+  }
+
+  graphics {
+    type        = "vnc"
+    listen_type = "address"
+    autoport    = "true"
   }
 }
