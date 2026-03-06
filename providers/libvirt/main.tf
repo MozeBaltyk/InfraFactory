@@ -26,7 +26,7 @@ resource "libvirt_volume" "resized_os_image" {
 resource "libvirt_network" "network" {
   name      = var.network_name
   mode      = "nat"
-  bridge    = "virbr7"
+  bridge    = local.network_bridgename
   autostart = true
   domain    = local.subdomain
   addresses = [var.network_cidr]
@@ -51,7 +51,6 @@ resource "libvirt_domain" "masters" {
 
   network_interface {
     network_id     = libvirt_network.network.id
-    mac            = local.master_details[count.index].mac
     wait_for_lease = true
   }
 
@@ -90,7 +89,6 @@ resource "libvirt_domain" "workers" {
 
   network_interface {
     network_id     = libvirt_network.network.id
-    mac            = local.worker_details[count.index].mac
     wait_for_lease = true
   }
 

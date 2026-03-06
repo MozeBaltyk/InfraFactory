@@ -79,18 +79,6 @@ variable "workers_number" {
   default     = 0
 }
 
-variable "masters_mac_addresses" {
-  description = "List of MAC addresses for master nodes"
-  type        = list(string)
-  default     = ["52:54:00:36:14:e5", "52:54:00:36:14:e6", "52:54:00:36:14:e7"]
-}
-
-variable "workers_mac_addresses" {
-  description = "List of MAC addresses for worker nodes"
-  type        = list(string)
-  default     = ["52:54:00:c8:7a:7a", "52:54:00:90:44:86"]
-}
-
 variable "product" {
   description = "Name of the product"
   default     = "factory"
@@ -109,18 +97,18 @@ locals {
   os_name            = lookup(var.Versionning[var.selected_version], "os_name", "")
   os_version_short   = lookup(var.Versionning[var.selected_version], "os_version_short", "")
   factory_pool_path  = "/srv/${var.pool}/pool"
+  network_bridgename = "${var.product}-br0"
 
   master_details = tolist([
     for a in range(var.masters_number) : {
       name = format("master%02d", a + 1)
-      mac  = var.masters_mac_addresses[a]
     }
   ])
 
   worker_details = tolist([
     for b in range(var.workers_number) : {
       name = format("worker%02d", b + 1)
-      mac  = var.workers_mac_addresses[b]
     }
   ])
+
 }

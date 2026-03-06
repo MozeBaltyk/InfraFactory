@@ -51,10 +51,11 @@ Run `just` to see available commands.
 ```bash
 just
 Available recipes:
-    env     # Print current configuration
-    plan    # Plan on Provider specified in PROVIDER env variable (default: KVM)
-    deploy  # Deploy on Provider specified in PROVIDER env variable (default: KVM)
-    destroy # Destroy on PProvider specified in PROVIDER env variable (default: KVM)
+    env      # Print current configuration
+    validate # Validate Opentofu scripts
+    plan     # Plan on Provider specified in PROVIDER env variable (default: KVM)
+    deploy   # Deploy on Provider specified in PROVIDER env variable (default: KVM)
+    destroy  # Destroy on PProvider specified in PROVIDER env variable (default: KVM)
 ```
 
 ---

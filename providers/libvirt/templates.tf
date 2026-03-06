@@ -15,4 +15,5 @@ resource "libvirt_cloudinit_disk" "commoninit" {
   })
   network_config = templatefile("${path.module}/../shared/cloud-init/${local.cloud_init_version}/network_config_${var.ip_type}.cfg", {})
   meta_data     = ""
+  pool   = libvirt_pool.factory_pool.name
 }
