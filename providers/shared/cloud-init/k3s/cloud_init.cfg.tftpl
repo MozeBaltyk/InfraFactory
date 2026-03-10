@@ -34,7 +34,7 @@ write_files:
       set -e
 
       TOKEN="${k3s_token}"
-      MASTER_IP="${first_master_ip}"
+      MASTER_IP="${first_master_fqdn}"
 
       echo "Installing K3s node role: ${node_role}"
 
@@ -51,9 +51,22 @@ write_files:
 
       echo "Waiting for API server..."
 
-      until curl -k https://$MASTER_IP:6443/ping; do
+      timeout=1800
+      start_time=$(date +%s)
+
+      until curl -k https://$MASTER_IP:6443/ping >/dev/null 2>&1; do
+        now=$(date +%s)
+        elapsed=$((now - start_time))
+
+        if [ "$elapsed" -ge "$timeout" ]; then
+          echo "Timeout waiting for API server after 30 minutes"
+          exit 1
+        fi
+
         sleep 5
       done
+
+      echo "API server is ready"
 
 %{ if node_role == "master" }
 

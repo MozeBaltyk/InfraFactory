@@ -39,7 +39,7 @@ variable "clusterid" {
 
 variable "domain" {
   description = "Domain for the cluster"
-  default     = "local"
+  default     = "factory"
 }
 
 variable "ip_type" {
@@ -109,7 +109,6 @@ locals {
   os_name            = lookup(var.Versionning[var.selected_version], "os_name", "")
   os_version_short   = lookup(var.Versionning[var.selected_version], "os_version_short", "")
   factory_pool_path  = "/srv/${var.pool}/pool"
-  network_bridgename = "${var.product}-br0"
 
   master_details = tolist([
     for a in range(var.masters_number) : {

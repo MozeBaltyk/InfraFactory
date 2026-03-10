@@ -91,7 +91,6 @@ _deploy-AZ: _validate-az-env
 	  -var instance_size={{AZ_SIZE_MATTERS}}"
 
 _destroy-AZ: _validate-az-env
-	@cd {{TF_AZ}} && tofu init
 	@cd {{TF_AZ}} && tofu destroy -auto-approve \
 	  -var azure_subscription_id=$AZ_SUBS_ID \
 	  -var azure_client_id=$AZ_CLIENT_ID \
@@ -115,7 +114,6 @@ _plan-KVM:
 	  -var selected_version={{SELECTED_VERSION}}
 
 _deploy-KVM:
-	@cd {{TF_KVM}} && tofu init
 	@cd {{TF_KVM}} && tofu apply -auto-approve \
 	  -var workers_number={{WORKERS}} \
 	  -var masters_number={{MASTERS}} \
@@ -124,7 +122,6 @@ _deploy-KVM:
 	  -var selected_version={{SELECTED_VERSION}}
 
 _destroy-KVM:
-	@cd {{TF_KVM}} && tofu init
 	@cd {{TF_KVM}} && tofu destroy -auto-approve \
 	  -var workers_number={{WORKERS}} \
 	  -var masters_number={{MASTERS}} \

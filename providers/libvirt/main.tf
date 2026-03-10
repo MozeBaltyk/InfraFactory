@@ -26,7 +26,6 @@ resource "libvirt_volume" "resized_os_image" {
 resource "libvirt_network" "network" {
   name      = var.network_name
   mode      = "nat"
-  #bridge    = local.network_bridgename
   autostart = true
   domain    = local.subdomain
   addresses = [var.network_cidr]
