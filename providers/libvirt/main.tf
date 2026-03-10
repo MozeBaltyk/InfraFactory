@@ -26,12 +26,16 @@ resource "libvirt_volume" "resized_os_image" {
 resource "libvirt_network" "network" {
   name      = var.network_name
   mode      = "nat"
-  bridge    = local.network_bridgename
+  #bridge    = local.network_bridgename
   autostart = true
   domain    = local.subdomain
   addresses = [var.network_cidr]
   
   dhcp {
+    enabled = true
+  }
+
+  dns {
     enabled = true
   }
 }
@@ -72,6 +76,21 @@ resource "libvirt_domain" "masters" {
     listen_type = "address"
     autoport    = "true"
   }
+
+  provisioner "remote-exec" {
+    inline = [
+      "echo 'Waiting for cloud-init to complete...'",
+      "cloud-init status --wait > /dev/null",
+      "echo 'Completed cloud-init!'",
+    ]
+
+    connection {
+      type        = "ssh"
+      host        = self.network_interface[0].addresses[0]
+      user        = var.node_username
+      private_key = tls_private_key.global_key.private_key_pem
+    }
+  }
 }
 
 # Create Worker VMs
@@ -109,5 +128,20 @@ resource "libvirt_domain" "workers" {
     type        = "vnc"
     listen_type = "address"
     autoport    = "true"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "echo 'Waiting for cloud-init to complete...'",
+      "cloud-init status --wait > /dev/null",
+      "echo 'Completed cloud-init!'",
+    ]
+
+    connection {
+      type        = "ssh"
+      host        = self.network_interface[0].addresses[0]
+      user        = var.node_username
+      private_key = tls_private_key.global_key.private_key_pem
+    }
   }
 }

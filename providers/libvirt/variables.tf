@@ -4,6 +4,11 @@ variable "selected_version" {
   default     = "ubuntu24" # Can be changed to "fedora41" as needed
 }
 
+variable "which_cloud_init" {
+  description = "Target a Cloud-init configuration version (e.g., default, k3s, rke2)"
+  default     = "k3s"
+}
+
 # Version Mapping
 variable "Versionning" {
   type = map(object({
@@ -11,7 +16,6 @@ variable "Versionning" {
     os_version_short   = number
     os_version_long    = string
     os_URL             = string
-    cloud_init_version = string
   }))
   default = {
     ubuntu24 = {
@@ -19,7 +23,6 @@ variable "Versionning" {
       os_version_short   = 24
       os_version_long    = "24.04"
       os_URL             = "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img"
-      cloud_init_version = "default"
     }
   }
 }
@@ -89,10 +92,19 @@ variable "release_version" {
   default     = "v1.0"
 }
 
+variable "k3s_token" {
+  description = "K3s token for the cluster"
+  default     = "my-super-secret-shared-token-12345"
+}
+
+variable "node_username" {
+  description = "Username for the cluster"
+  default     = "ansible"
+}
+
 # Local Settings
 locals {
   qcow2_image        = lookup(var.Versionning[var.selected_version], "os_URL", "")
-  cloud_init_version = lookup(var.Versionning[var.selected_version], "cloud_init_version", "")
   subdomain          = "${var.clusterid}.${var.domain}"
   os_name            = lookup(var.Versionning[var.selected_version], "os_name", "")
   os_version_short   = lookup(var.Versionning[var.selected_version], "os_version_short", "")
@@ -102,12 +114,14 @@ locals {
   master_details = tolist([
     for a in range(var.masters_number) : {
       name = format("master%02d", a + 1)
+      role = "master"
     }
   ])
 
   worker_details = tolist([
     for b in range(var.workers_number) : {
       name = format("worker%02d", b + 1)
+      role = "worker"
     }
   ])
 

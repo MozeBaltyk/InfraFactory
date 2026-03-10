@@ -10,11 +10,11 @@ fqdn: ${fqdn}
 manage_etc_hosts: true
 
 users:
-  - name: ansible
+  - name: ${node_username}
     sudo: "ALL=(ALL) NOPASSWD:ALL"
-    gecos: Ansible User
+    gecos: ${node_username} User
     groups: users,admin,wheel
-    homedir: /home/ansible
+    homedir: /home/${node_username}
     shell: /bin/bash
     lock_passwd: false
     ssh_authorized_keys:
@@ -25,49 +25,18 @@ disable_root: true
 
 resize_rootfs: true
 
+package_update: true
+package_upgrade: true
+package_reboot_if_required: true
+
 packages:
   - git
-  - python3-pip
-  - libselinux-python3
   - tar
   - unzip
   - wget
   - curl
   - bash-completion
   - tree
-
-package_update: true
-package_upgrade: true
-package_reboot_if_required: true
-
-## Write yaml
-write_files:
-  - path: /home/ansible/vars.yml
-    owner: 'ansible:ansible'
-    permissions: "0644"
-    defer: true
-    content: |
-      ---
-      global_domain: ${domain}
-      global_master_details:
-        ${master_details}
-      global_worker_details:
-        ${worker_details}
-
-## Ansible part
-# ansible:
-#   install_method: pip
-#   package_name: ansible
-#   # run_user is only valid when install_method is pip
-#   run_user: ansible
-#   setup_controller:
-#     repositories:
-#       - path: /home/ansible/Rkub
-#         source: https://github.com/MozeBaltyk/Rkub.git
-#     run_ansible:
-#       - playbook_dir: /home/ansible/Rkub
-#         playbook_name: ./playbooks/tasks/provision.yml
-#         extra_vars: "@/home/ansible/vars.yml"
 
 bootcmd:
   - [ sh, -c, 'echo $(date) | sudo tee -a /root/bootcmd.log' ]

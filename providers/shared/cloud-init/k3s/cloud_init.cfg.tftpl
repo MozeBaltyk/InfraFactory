@@ -1,0 +1,82 @@
+#cloud-config
+
+timezone: ${timezone}
+
+hostname: ${hostname}
+fqdn: ${fqdn}
+
+manage_etc_hosts: true
+
+users:
+  - name: ${node_username}
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    gecos: ${node_username} User
+    groups: users,sudo
+    homedir: /home/${node_username}
+    shell: /bin/bash
+    lock_passwd: false
+    ssh_authorized_keys:
+      - ${public_key}
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - curl
+  - git
+  - bash-completion
+
+write_files:
+  - path: /usr/local/bin/k3s-install.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -e
+
+      TOKEN="${k3s_token}"
+      MASTER_IP="${first_master_ip}"
+
+      echo "Installing K3s node role: ${node_role}"
+
+%{ if is_first_master }
+      echo "Bootstrapping first master"
+
+      curl -sfL https://get.k3s.io | \
+        K3S_TOKEN=$TOKEN \
+        sh -s - server \
+        --cluster-init \
+        --write-kubeconfig-mode 644
+
+%{ else }
+
+      echo "Waiting for API server..."
+
+      until curl -k https://$MASTER_IP:6443/ping; do
+        sleep 5
+      done
+
+%{ if node_role == "master" }
+
+      echo "Joining additional master"
+
+      curl -sfL https://get.k3s.io | \
+        K3S_URL=https://$MASTER_IP:6443 \
+        K3S_TOKEN=$TOKEN \
+        sh -s - server
+
+%{ else }
+
+      echo "Joining worker node"
+
+      curl -sfL https://get.k3s.io | \
+        K3S_URL=https://$MASTER_IP:6443 \
+        K3S_TOKEN=$TOKEN \
+        sh -
+
+%{ endif }
+%{ endif }
+
+runcmd:
+  - /usr/local/bin/k3s-install.sh
+
+final_message: "K3s node ${hostname} ready after $UPTIME seconds"
