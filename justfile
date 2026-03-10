@@ -114,17 +114,19 @@ _plan-KVM:
 	  -var selected_version={{SELECTED_VERSION}}
 
 _deploy-KVM:
-	@cd {{TF_KVM}} && tofu apply -auto-approve \
+	@cd {{TF_KVM}} && tofu plan -out plan.tfplan \
 	  -var workers_number={{WORKERS}} \
 	  -var masters_number={{MASTERS}} \
 	  -var cpu_size={{CPU_SIZE_MATTERS}} \
 	  -var memory_size={{MEM_SIZE_MATTERS}} \
 	  -var selected_version={{SELECTED_VERSION}}
+	@cd {{TF_KVM}} && tofu apply plan.tfplan
 
 _destroy-KVM:
-	@cd {{TF_KVM}} && tofu destroy -auto-approve \
+	@cd {{TF_KVM}} && tofu plan -destroy -out plan.tfplan
 	  -var workers_number={{WORKERS}} \
 	  -var masters_number={{MASTERS}} \
 	  -var cpu_size={{CPU_SIZE_MATTERS}} \
 	  -var memory_size={{MEM_SIZE_MATTERS}} \
 	  -var selected_version={{SELECTED_VERSION}}
+	@cd {{TF_KVM}} && tofu apply plan.tfplan
