@@ -92,26 +92,16 @@ variable "release_version" {
   default     = "v1.0"
 }
 
-variable "k3s_token" {
-  description = "K3s token for the cluster"
-  default     = "my-super-secret-shared-token-12345"
-}
-
 variable "node_username" {
   description = "Username for the cluster"
-  default     = "ansible"
-}
-
-variable "k3s_version" {
-  description = "K3s version to install"
-  type        = string
-  default     = "v1.34.5+k3s1"
+  default     = "localadmin"
 }
 
 # Local Settings
 locals {
   qcow2_image        = lookup(var.Versionning[var.selected_version], "os_URL", "")
   subdomain          = "${var.clusterid}.${var.domain}"
+  network_gateway    = cidrhost(var.network_cidr, 1) # e.g., 192.168.100.1
   os_name            = lookup(var.Versionning[var.selected_version], "os_name", "")
   os_version_short   = lookup(var.Versionning[var.selected_version], "os_version_short", "")
   factory_pool_path  = "/srv/${var.pool}/pool"

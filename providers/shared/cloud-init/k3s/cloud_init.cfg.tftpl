@@ -35,7 +35,30 @@ write_files:
 
       TOKEN="${k3s_token}"
       MASTER_IP="${first_master_fqdn}"
-      K3S_VERSION="${k3s_version}" 
+      K3S_VERSION="${k3s_version}"
+      K3S_ETCD_ENABLED="${k3s_etcd_enabled}"
+      K3S_TRAEFIK_ENABLED="${k3s_traefik_enabled}"
+      K3S_SERVICELB_ENABLED="${k3s_servicelb_enabled}"
+      K3S_LOCAL_STORAGE_ENABLED="${k3s_local_storage_enabled}"
+      K3S_METRICS_SERVER_ENABLED="${k3s_metrics_server_enabled}"
+
+      CLUSTER_INIT=""
+      if [ "$K3S_ETCD_ENABLED" = "true" ]; then
+        CLUSTER_INIT="--cluster-init"
+      fi
+      DISABLE_ARGS=""
+      if [ "$K3S_TRAEFIK_ENABLED" = "false" ]; then
+      DISABLE_ARGS="$DISABLE_ARGS --disable traefik"
+      fi
+      if [ "$K3S_SERVICELB_ENABLED" = "false" ]; then
+      DISABLE_ARGS="$DISABLE_ARGS --disable servicelb"
+      fi
+      if [ "$K3S_LOCAL_STORAGE_ENABLED" = "false" ]; then
+      DISABLE_ARGS="$DISABLE_ARGS --disable local-storage"
+      fi
+      if [ "$K3S_METRICS_SERVER_ENABLED" = "false" ]; then
+      DISABLE_ARGS="$DISABLE_ARGS --disable metrics-server"
+      fi
 
       echo "Installing K3s node role: ${node_role}"
 
@@ -46,8 +69,9 @@ write_files:
         INSTALL_K3S_VERSION=$K3S_VERSION \
         K3S_TOKEN=$TOKEN \
         sh -s - server \
-        --cluster-init \
-        --write-kubeconfig-mode 644
+        $CLUSTER_INIT \
+        --write-kubeconfig-mode 644 \
+        $DISABLE_ARGS
 
 %{ else }
 
@@ -78,7 +102,8 @@ write_files:
         K3S_URL=https://$MASTER_IP:6443 \
         INSTALL_K3S_VERSION=$K3S_VERSION \
         K3S_TOKEN=$TOKEN \
-        sh -s - server
+        sh -s - server \
+        $DISABLE_ARGS
 
 %{ else }
 
