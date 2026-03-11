@@ -14,6 +14,8 @@ InfraFactory provides a **provider-agnostic, modular, and reproducible way** to 
 
 **Workflow:** OpenTofu → VM provisioning → cloud-init bootstrap → inventory generation → Ansible configuration
 
+Infrastructure deployments are governed by the [InfraFactory Constitution](.specify/memory/constitution.md), which enforces modular design, provider symmetry, and consistent provisioning workflows across all cloud providers.
+
 ---
 
 ## Implementation Status
@@ -57,6 +59,19 @@ Available recipes:
     deploy   # Deploy on Provider specified in PROVIDER env variable (default: KVM)
     destroy  # Destroy on PProvider specified in PROVIDER env variable (default: KVM)
 ```
+
+---
+
+## Governance
+
+This project is governed by the [InfraFactory Constitution](.specify/memory/constitution.md), which defines:
+
+- **Core Principles**: Modular design, provider symmetry, consistent provisioning workflow, layout consistency, minimal provider differences
+- **Development Priority**: Libvirt (dev) → OVH (production) → Azure → DigitalOcean
+- **Development Discipline**: Incremental field-by-field implementation, focused commits, no system modifications
+- **Architecture Standards**: Schema coverage policy, provider parity validation
+
+See [AGENTS.md](AGENTS.md) for detailed technical guidance and [constitution.md](.specify/memory/constitution.md) for governance rules.
 
 ---
 

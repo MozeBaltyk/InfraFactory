@@ -136,10 +136,18 @@ provider/
 ├── keys.tf
 ├── main.tf
 ├── variables.tf
-├── outputs.tf
+├── output.tf (or outputs.tf)
 ├── templates.tf
-├── cloud-init/
 └── templates/
+```
+
+Shared cloud-init templates are centralized and reused by all providers:
+
+```
+providers/shared/cloud-init/
+└── $type/
+   ├── cloud_init.cfg.tftpl
+   └── network_config_*.cfg
 ```
 
 # Important References
@@ -269,6 +277,8 @@ Each provider must generate inventory compatible with `inventory/hosts.tpl`
 ### Cloud-init usage
 
 VMs must be initialized using **cloud-init templates**.
+Cloud-init sources MUST come from the shared directory:
+`providers/shared/cloud-init/$type`.
 
 Typical responsibilities:
 
