@@ -15,6 +15,7 @@ resource "libvirt_cloudinit_disk" "commoninit" {
     first_master_fqdn =   "${local.master_details[0].name}.${local.subdomain}"
     node_role         =   each.value.role
     node_username     =   var.node_username
+    k3s_version       = var.k3s_version
   })
   network_config = templatefile("${path.module}/../shared/cloud-init/${var.which_cloud_init}/network_config_${var.ip_type}.cfg", {})
   meta_data     = ""

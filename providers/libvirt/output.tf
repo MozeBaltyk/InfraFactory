@@ -7,6 +7,16 @@ output "cluster_nodes" {
   }
 }
 
+output "kubeconfig_command" {
+  value = <<EOT
+mkdir -p ~/.kube && \
+ssh -i .key.private ansible@${var.first_master_ip} "sudo cat /etc/rancher/k3s/k3s.yaml" | \
+sed 's/127.0.0.1/${var.first_master_ip}/' > ~/.kube/k3s.yaml && \
+chmod 600 ~/.kube/k3s.yaml \
+kubecm add -cf k3s.yaml --context-name k3s --create
+EOT
+}
+
 ###
 ### Generate the hosts.ini file
 ###

@@ -39,7 +39,7 @@ variable "clusterid" {
 
 variable "domain" {
   description = "Domain for the cluster"
-  default     = "factory"
+  default     = "lab"
 }
 
 variable "ip_type" {
@@ -100,6 +100,12 @@ variable "k3s_token" {
 variable "node_username" {
   description = "Username for the cluster"
   default     = "ansible"
+}
+
+variable "k3s_version" {
+  description = "K3s version to install"
+  type        = string
+  default     = "v1.34.5+k3s1"
 }
 
 # Local Settings

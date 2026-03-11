@@ -35,6 +35,7 @@ write_files:
 
       TOKEN="${k3s_token}"
       MASTER_IP="${first_master_fqdn}"
+      K3S_VERSION="${k3s_version}" 
 
       echo "Installing K3s node role: ${node_role}"
 
@@ -42,6 +43,7 @@ write_files:
       echo "Bootstrapping first master"
 
       curl -sfL https://get.k3s.io | \
+        INSTALL_K3S_VERSION=$K3S_VERSION \
         K3S_TOKEN=$TOKEN \
         sh -s - server \
         --cluster-init \
@@ -74,6 +76,7 @@ write_files:
 
       curl -sfL https://get.k3s.io | \
         K3S_URL=https://$MASTER_IP:6443 \
+        INSTALL_K3S_VERSION=$K3S_VERSION \
         K3S_TOKEN=$TOKEN \
         sh -s - server
 
@@ -83,6 +86,7 @@ write_files:
 
       curl -sfL https://get.k3s.io | \
         K3S_URL=https://$MASTER_IP:6443 \
+        INSTALL_K3S_VERSION=$K3S_VERSION \
         K3S_TOKEN=$TOKEN \
         sh -
 
