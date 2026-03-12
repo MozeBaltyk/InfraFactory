@@ -34,6 +34,7 @@ write_files:
       #!/bin/bash
       set -e
 
+      K3S_INSTALL_URL="https://get.k3s.io"
       TOKEN="${k3s_token}"
       MASTER_IP="${first_master_fqdn}"
       K3S_VERSION="${k3s_version}"
@@ -52,12 +53,22 @@ write_files:
       [[ "$K3S_LOCAL_STORAGE_ENABLED" == "false" ]] && DISABLE_ARGS="$DISABLE_ARGS --disable local-storage"
       [[ "$K3S_METRICS_SERVER_ENABLED" == "false" ]] && DISABLE_ARGS="$DISABLE_ARGS --disable metrics-server"
 
+      echo "Test if URL install is reachable: $K3S_INSTALL_URL"
+      if ! curl -fsSLI "$K3S_INSTALL_URL" >/dev/null 2>curl_error.log; then
+        if grep -qi "SSL certificate problem" curl_error.log; then
+          echo "TLS certificate verification failed."
+          echo "Your network may be intercepting HTTPS traffic."
+        fi
+        cat curl_error.log
+        exit 1
+      fi
+
       echo "Installing K3s node role: ${node_role}"
 
 %{ if is_first_master }
       echo "Bootstrapping first master"
 
-      curl -sfL https://get.k3s.io | \
+      curl -sfL $K3S_INSTALL_URL | \
         INSTALL_K3S_VERSION=$K3S_VERSION \
         K3S_TOKEN=$TOKEN \
         sh -s - server \
@@ -90,7 +101,7 @@ write_files:
 
       echo "Joining additional master"
 
-      curl -sfL https://get.k3s.io | \
+      curl -sfL $K3S_INSTALL_URL | \
         K3S_URL=https://$MASTER_IP:6443 \
         INSTALL_K3S_VERSION=$K3S_VERSION \
         K3S_TOKEN=$TOKEN \
@@ -101,7 +112,7 @@ write_files:
 
       echo "Joining worker node"
 
-      curl -sfL https://get.k3s.io | \
+      curl -sfL $K3S_INSTALL_URL | \
         K3S_URL=https://$MASTER_IP:6443 \
         INSTALL_K3S_VERSION=$K3S_VERSION \
         K3S_TOKEN=$TOKEN \

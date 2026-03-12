@@ -15,6 +15,11 @@ infra = {
   disk_size = 10
 }
 
+network = {
+  cidr    = "192.168.100.0/24"
+  ip_type = "dhcp"
+}
+
 os = {
   selected = "ubuntu24"
 }
