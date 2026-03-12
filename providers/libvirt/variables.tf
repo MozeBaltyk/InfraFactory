@@ -43,6 +43,7 @@ variable "cluster" {
     timezone  = string
     username  = string
     cloud_init_selected = string
+    factory_root_path = string
   })
 
   default = {
@@ -53,6 +54,7 @@ variable "cluster" {
     timezone = "Europe/Paris"
     username = "localadmin"
     cloud_init_selected = "k3s"
+    factory_root_path = "/srv"
   }
 }
 
@@ -92,7 +94,6 @@ variable "network" {
   }
 }
 
-
 ###################################
 # K3s specific variables
 ###################################
@@ -129,7 +130,7 @@ locals {
 
   network_gateway = cidrhost(var.network.cidr, 1)
 
-  factory_pool_path = "/srv/${var.cluster.id}/pool"
+  factory_pool_path = "${var.cluster.factory_root_path}/${var.cluster.id}/pool"
 
   master_details = [
     for i in range(var.cluster.masters) : {

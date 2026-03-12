@@ -56,7 +56,7 @@ resource "libvirt_domain" "masters" {
 
   count = var.cluster.masters
 
-  name   = local.master_details[count.index].name
+  name   = "${local.master_details[count.index].name}.${local.subdomain}"
   memory = var.infra.memory_mb
   vcpu   = var.infra.cpu
 
@@ -117,7 +117,7 @@ resource "libvirt_domain" "workers" {
 
   count = var.cluster.workers
 
-  name   = local.worker_details[count.index].name
+  name   = "${local.worker_details[count.index].name}.${local.subdomain}"
   memory = var.infra.memory_mb
   vcpu   = var.infra.cpu
 

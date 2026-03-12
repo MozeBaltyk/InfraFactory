@@ -6,6 +6,7 @@ cluster = {
   timezone = "Europe/Paris"
   username = "localadmin"
   cloud_init_selected = "k3s"
+  factory_root_path = "/srv"
 }
 
 infra = {
