@@ -1,0 +1,30 @@
+cluster = {
+  id       = "factory"
+  domain   = "lab"
+  masters  = 1
+  workers  = 0
+  timezone = "Europe/Paris"
+  username = "localadmin"
+  cloud_init_selected = "k3s"
+}
+
+infra = {
+  cpu       = 2
+  memory_mb = 4096
+  disk_size = 10
+}
+
+os = {
+  selected = "ubuntu24"
+}
+
+# if cloud_init_selected=k3s
+k3s = {
+  version           = "v1.34.5+k3s1"
+  token             = "my-super-secret-shared-token-12345"
+  etcd_enabled      = true
+  traefik_enabled   = true
+  servicelb_enabled = true
+  local_storage_enabled = true
+  metrics_server_enabled = true
+}

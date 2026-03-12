@@ -1,16 +1,6 @@
-# Version Selection
-variable "selected_version" {
-  description = "Selected OS version"
-  default     = "ubuntu24" # Can be changed to "fedora41" as needed
-}
-
-variable "which_cloud_init" {
-  description = "Target a Cloud-init configuration version (e.g., default, k3s, rke2)"
-  default     = "k3s"
-}
-
 # Version Mapping
-variable "Versionning" {
+variable "os_catalog" {
+  description = "Available OS images"
   type = map(object({
     os_name            = string
     os_version_short   = number
@@ -27,97 +17,131 @@ variable "Versionning" {
   }
 }
 
-variable "pool" {
-  description = "Libvirt storage pool name"
-  default     = "factory"
+variable "os" {
+  description = "OS selection"
+
+  type = object({
+    selected = string
+  })
+
+  default = {
+    selected = "ubuntu24"
+  }
 }
 
-variable "clusterid" {
-  description = "Cluster ID"
-  default     = "factory"
+###################################
+# Cluster topology
+###################################
+variable "cluster" {
+  description = "Cluster topology"
+
+  type = object({
+    id        = string
+    domain    = string
+    masters   = number
+    workers   = number
+    timezone  = string
+    username  = string
+    cloud_init_selected = string
+  })
+
+  default = {
+    id       = "factory"
+    domain   = "lab"
+    masters  = 1
+    workers  = 0
+    timezone = "Europe/Paris"
+    username = "localadmin"
+    cloud_init_selected = "k3s"
+  }
 }
 
-variable "domain" {
-  description = "Domain for the cluster"
-  default     = "lab"
+###################################
+# VMs infra
+###################################
+variable "infra" {
+  description = "VM infrastructure configuration"
+
+  type = object({
+    memory_mb = number
+    cpu       = number
+    disk_size = number
+  })
+
+  default = {
+    memory_mb = 4096
+    cpu       = 2
+    disk_size = 10  #GB
+  }
 }
 
-variable "ip_type" {
-  description = "Type of IP assignment (e.g., dhcp)"
-  default     = "dhcp" # Other valid types are 'static', etc.
+###################################
+# Network Config
+###################################
+variable "network" {
+  description = "Libvirt network configuration"
+
+  type = object({
+    cidr = string
+    ip_type = string
+  })
+
+  default = {
+    cidr    = "192.168.100.0/24"
+    ip_type = "dhcp"
+  }
 }
 
-variable "network_name" {
-  description = "Libvirt network name"
-  default     = "factory"
-}
 
-variable "network_cidr" {
-  description = "CIDR for the Libvirt network"
-  default     = "192.168.100.0/24"
-}
+###################################
+# K3s specific variables
+###################################
+variable "k3s" {
+  description = "K3s cluster configuration"
 
-variable "memory_size" {
-  description = "Memory for each VM in MB"
-  default     = 4096
-}
+  type = object({
+    version          = string
+    token            = string
+    etcd_enabled     = bool
+    traefik_enabled  = bool
+    servicelb_enabled = bool
+    local_storage_enabled = bool
+    metrics_server_enabled = bool
+  })
 
-variable "cpu_size" {
-  description = "Number of CPUs for each VM"
-  default     = 2
-}
-
-variable "timezone" {
-  description = "Timezone for the VMs"
-  default     = "Europe/Paris"
-}
-
-variable "masters_number" {
-  description = "Number of master nodes"
-  default     = 3
-}
-
-variable "workers_number" {
-  description = "Number of worker nodes"
-  default     = 0
-}
-
-variable "product" {
-  description = "Name of the product"
-  default     = "factory"
-}
-
-variable "release_version" {
-  description = "Release version of the product"
-  default     = "v1.0"
-}
-
-variable "node_username" {
-  description = "Username for the cluster"
-  default     = "localadmin"
+  default = {
+    version           = "v1.34.5+k3s1"
+    token             = "my-super-secret-shared-token-12345"
+    etcd_enabled      = true
+    traefik_enabled   = true
+    servicelb_enabled = true
+    local_storage_enabled = true
+    metrics_server_enabled = true
+  }
 }
 
 # Local Settings
 locals {
-  qcow2_image        = lookup(var.Versionning[var.selected_version], "os_URL", "")
-  subdomain          = "${var.clusterid}.${var.domain}"
-  network_gateway    = cidrhost(var.network_cidr, 1) # e.g., 192.168.100.1
-  os_name            = lookup(var.Versionning[var.selected_version], "os_name", "")
-  os_version_short   = lookup(var.Versionning[var.selected_version], "os_version_short", "")
-  factory_pool_path  = "/srv/${var.pool}/pool"
 
-  master_details = tolist([
-    for a in range(var.masters_number) : {
-      name = format("master%02d", a + 1)
+  os = var.os_catalog[var.os.selected]
+
+  subdomain = "${var.cluster.id}.${var.cluster.domain}"
+
+  network_gateway = cidrhost(var.network.cidr, 1)
+
+  factory_pool_path = "/srv/${var.cluster.id}/pool"
+
+  master_details = [
+    for i in range(var.cluster.masters) : {
+      name = format("master%02d", i + 1)
       role = "master"
     }
-  ])
+  ]
 
-  worker_details = tolist([
-    for b in range(var.workers_number) : {
-      name = format("worker%02d", b + 1)
+  worker_details = [
+    for i in range(var.cluster.workers) : {
+      name = format("worker%02d", i + 1)
       role = "worker"
     }
-  ])
-
+  ]
 }

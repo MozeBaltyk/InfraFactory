@@ -1,35 +1,46 @@
 ### Pool
 resource "libvirt_pool" "factory_pool" {
-  name = var.pool
+  name = var.cluster.id
   type = "dir"
   path = local.factory_pool_path
 }
 
 ### Disks
-# Fetch the OS image from local storage
+
+# Fetch the OS image
 resource "libvirt_volume" "os_image" {
-  name   = "${var.selected_version}-os_image"
+  name   = "${local.os.os_name}${local.os.os_version_short}-os_image"
   pool   = libvirt_pool.factory_pool.name
-  source = local.qcow2_image
+  source = local.os.os_URL
   format = "qcow2"
 }
 
 resource "libvirt_volume" "resized_os_image" {
-  for_each = { for vm in concat(local.master_details, local.worker_details) : vm.name => vm }
-  name     = "${each.value.name}-disk-${var.product}-${var.release_version}.qcow2"
+
+  for_each = {
+    for vm in concat(local.master_details, local.worker_details) :
+    vm.name => vm
+  }
+
+  name = "${each.value.name}-disk01.qcow2"
+
   base_volume_id = libvirt_volume.os_image.id
-  pool     = libvirt_pool.factory_pool.name
-  size     = 10 * 1024 * 1024 * 1024  # 10 GB in bytes
+  pool           = libvirt_pool.factory_pool.name
+
+  size = var.infra.disk_size * 1024 * 1024 * 1024
 }
 
-# Define Libvirt network
+### Network
+
 resource "libvirt_network" "network" {
-  name      = var.network_name
+
+  name      = var.cluster.id
   mode      = "nat"
   autostart = true
+
   domain    = local.subdomain
-  addresses = [var.network_cidr]
-  
+  addresses = [var.network.cidr]
+
   dhcp {
     enabled = true
   }
@@ -39,17 +50,23 @@ resource "libvirt_network" "network" {
   }
 }
 
-# Create Master VMs
+### Master Nodes
+
 resource "libvirt_domain" "masters" {
-  count     = var.masters_number
-  name      = local.master_details[count.index].name
-  memory    = var.memory_size
-  vcpu      = var.cpu_size
-  autostart = true
+
+  count = var.cluster.masters
+
+  name   = local.master_details[count.index].name
+  memory = var.infra.memory_mb
+  vcpu   = var.infra.cpu
+
+  autostart  = true
   qemu_agent = true
 
   disk {
-    volume_id = libvirt_volume.resized_os_image[local.master_details[count.index].name].id
+    volume_id = libvirt_volume.resized_os_image[
+      local.master_details[count.index].name
+    ].id
   }
 
   network_interface {
@@ -57,9 +74,10 @@ resource "libvirt_domain" "masters" {
     wait_for_lease = true
   }
 
-  cloudinit = libvirt_cloudinit_disk.commoninit[local.master_details[count.index].name].id
+  cloudinit = libvirt_cloudinit_disk.commoninit[
+    local.master_details[count.index].name
+  ].id
 
-  # cpu must be set as a map rather than a block
   cpu = {
     mode = "host-passthrough"
   }
@@ -73,36 +91,43 @@ resource "libvirt_domain" "masters" {
   graphics {
     type        = "vnc"
     listen_type = "address"
-    autoport    = "true"
+    autoport    = true
   }
 
   provisioner "remote-exec" {
+
     inline = [
       "echo 'Waiting for cloud-init to complete...'",
       "cloud-init status --wait > /dev/null",
-      "echo 'Completed cloud-init!'",
+      "echo 'Completed cloud-init!'"
     ]
 
     connection {
       type        = "ssh"
       host        = self.network_interface[0].addresses[0]
-      user        = var.node_username
+      user        = var.cluster.username
       private_key = tls_private_key.global_key.private_key_pem
     }
   }
 }
 
-# Create Worker VMs
+### Worker Nodes
+
 resource "libvirt_domain" "workers" {
-  count     = var.workers_number
-  name      = local.worker_details[count.index].name
-  memory    = var.memory_size
-  vcpu      = var.cpu_size
-  autostart = true
+
+  count = var.cluster.workers
+
+  name   = local.worker_details[count.index].name
+  memory = var.infra.memory_mb
+  vcpu   = var.infra.cpu
+
+  autostart  = true
   qemu_agent = true
 
   disk {
-    volume_id = libvirt_volume.resized_os_image[local.worker_details[count.index].name].id
+    volume_id = libvirt_volume.resized_os_image[
+      local.worker_details[count.index].name
+    ].id
   }
 
   network_interface {
@@ -110,9 +135,10 @@ resource "libvirt_domain" "workers" {
     wait_for_lease = true
   }
 
-  cloudinit = libvirt_cloudinit_disk.commoninit[local.worker_details[count.index].name].id
+  cloudinit = libvirt_cloudinit_disk.commoninit[
+    local.worker_details[count.index].name
+  ].id
 
-  # cpu must be set as a map rather than a block
   cpu = {
     mode = "host-passthrough"
   }
@@ -126,20 +152,21 @@ resource "libvirt_domain" "workers" {
   graphics {
     type        = "vnc"
     listen_type = "address"
-    autoport    = "true"
+    autoport    = true
   }
 
   provisioner "remote-exec" {
+
     inline = [
       "echo 'Waiting for cloud-init to complete...'",
       "cloud-init status --wait > /dev/null",
-      "echo 'Completed cloud-init!'",
+      "echo 'Completed cloud-init!'"
     ]
 
     connection {
       type        = "ssh"
       host        = self.network_interface[0].addresses[0]
-      user        = var.node_username
+      user        = var.cluster.username
       private_key = tls_private_key.global_key.private_key_pem
     }
   }

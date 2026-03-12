@@ -23,8 +23,9 @@ package_upgrade: true
 
 packages:
   - curl
-  - git
   - bash-completion
+  - qemu-guest-agent
+
 
 write_files:
   - path: /usr/local/bin/k3s-install.sh
@@ -43,22 +44,13 @@ write_files:
       K3S_METRICS_SERVER_ENABLED="${k3s_metrics_server_enabled}"
 
       CLUSTER_INIT=""
-      if [ "$K3S_ETCD_ENABLED" = "true" ]; then
-        CLUSTER_INIT="--cluster-init"
-      fi
+      [[ "$K3S_ETCD_ENABLED" == "true" ]] && CLUSTER_INIT="--cluster-init"
+
       DISABLE_ARGS=""
-      if [ "$K3S_TRAEFIK_ENABLED" = "false" ]; then
-      DISABLE_ARGS="$DISABLE_ARGS --disable traefik"
-      fi
-      if [ "$K3S_SERVICELB_ENABLED" = "false" ]; then
-      DISABLE_ARGS="$DISABLE_ARGS --disable servicelb"
-      fi
-      if [ "$K3S_LOCAL_STORAGE_ENABLED" = "false" ]; then
-      DISABLE_ARGS="$DISABLE_ARGS --disable local-storage"
-      fi
-      if [ "$K3S_METRICS_SERVER_ENABLED" = "false" ]; then
-      DISABLE_ARGS="$DISABLE_ARGS --disable metrics-server"
-      fi
+      [[ "$K3S_TRAEFIK_ENABLED" == "false" ]] && DISABLE_ARGS="$DISABLE_ARGS --disable traefik"
+      [[ "$K3S_SERVICELB_ENABLED" == "false" ]] && DISABLE_ARGS="$DISABLE_ARGS --disable servicelb"
+      [[ "$K3S_LOCAL_STORAGE_ENABLED" == "false" ]] && DISABLE_ARGS="$DISABLE_ARGS --disable local-storage"
+      [[ "$K3S_METRICS_SERVER_ENABLED" == "false" ]] && DISABLE_ARGS="$DISABLE_ARGS --disable metrics-server"
 
       echo "Installing K3s node role: ${node_role}"
 
@@ -119,6 +111,10 @@ write_files:
 %{ endif }
 
 runcmd:
-  - /usr/local/bin/k3s-install.sh
+  - [ systemctl, daemon-reload ]
+  - [ systemctl, enable, qemu-guest-agent.service ]
+  - [ systemctl, start, --no-block, qemu-guest-agent.service ]
+  - [ domainname, ${domain} ]
+  - [ /usr/local/bin/k3s-install.sh ]
 
 final_message: "K3s node ${hostname} ready after $UPTIME seconds"
