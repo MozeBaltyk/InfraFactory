@@ -132,6 +132,8 @@ locals {
 
   factory_pool_path = "${var.cluster.factory_root_path}/${var.cluster.id}/pool"
 
+  local_env_path = "${path.module}/../../env/KVM/${terraform.workspace}"
+
   master_details = [
     for i in range(var.cluster.masters) : {
       name = format("master%02d", i + 1)

@@ -69,8 +69,12 @@ destroy:
 _validate-AZ: _validate-az-env
 	@cd {{TF_AZ}} && tofu init -backend=false && tofu validate
 
+_workspace-AZ: _validate-az-env
+	@cd {{TF_AZ}} && tofu workspace select {{ENV}} || tofu workspace new {{ENV}}
+
 _plan-AZ: _validate-az-env
 	@cd {{TF_AZ}} && tofu init
+	@cd {{TF_AZ}} && just _workspace-AZ
 	@cd {{TF_AZ}} && tofu plan \
 	  -var azure_subscription_id=$AZ_SUBS_ID \
 	  -var azure_client_id=$AZ_CLIENT_ID \
@@ -79,7 +83,7 @@ _plan-AZ: _validate-az-env
 	  -var instance_size={{AZ_SIZE_MATTERS}}
 
 _deploy-AZ: _validate-az-env
-	@just _retry "cd {{TF_AZ}} && tofu init && tofu apply -auto-approve \
+	@just _retry "cd {{TF_AZ}} && tofu init && just _workspace-AZ && tofu apply -auto-approve \
 	  -var azure_subscription_id=$AZ_SUBS_ID \
 	  -var azure_client_id=$AZ_CLIENT_ID \
 	  -var azure_client_secret=$AZ_CLIENT_SECRET \
@@ -87,6 +91,7 @@ _deploy-AZ: _validate-az-env
 	  -var instance_size={{AZ_SIZE_MATTERS}}"
 
 _destroy-AZ: _validate-az-env
+	@cd {{TF_AZ}} && just _workspace-AZ
 	@cd {{TF_AZ}} && tofu destroy -auto-approve \
 	  -var azure_subscription_id=$AZ_SUBS_ID \
 	  -var azure_client_id=$AZ_CLIENT_ID \
@@ -100,12 +105,31 @@ _destroy-AZ: _validate-az-env
 _validate-KVM:
 	@cd {{TF_KVM}} && tofu init -backend=false && tofu validate
 
+_workspace-KVM:
+	@cd {{TF_KVM}} && tofu workspace select {{ENV}} || tofu workspace new {{ENV}}
+
 _plan-KVM:
 	@cd {{TF_KVM}} && tofu init
+	@cd {{TF_KVM}} && just _workspace-KVM
 	@cd {{TF_KVM}} && tofu plan -var-file={{ENV_TFVARS_PATH}}
 
 _deploy-KVM:
+	@cd {{TF_KVM}} && tofu init
+	@cd {{TF_KVM}} && just _workspace-KVM
 	@cd {{TF_KVM}} && tofu apply -auto-approve -var-file={{ENV_TFVARS_PATH}}
 
 _destroy-KVM:
+	@cd {{TF_KVM}} && tofu init
+	@cd {{TF_KVM}} && just _workspace-KVM
 	@cd {{TF_KVM}} && tofu destroy -auto-approve -var-file={{ENV_TFVARS_PATH}}
+
+#---------------------------------------------
+# Ansible recipes
+#---------------------------------------------
+# Check ansible connectivity for specified environment
+ping:
+	@ANSIBLE_CONFIG=./env/{{PROVIDER}}/{{ENV}}/ansible.cfg ansible all -i ./env/{{PROVIDER}}/{{ENV}}/hosts.ini -m ping
+
+# Run ansible playbook for specified environment
+play playbook *ARGS:
+	@ANSIBLE_CONFIG=./env/{{PROVIDER}}/{{ENV}}/ansible.cfg ansible-playbook -i ./env/{{ENV}}/hosts.ini {{playbook}} {{ARGS}}

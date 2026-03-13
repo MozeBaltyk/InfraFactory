@@ -31,6 +31,8 @@ OpenTofu (provision VMs) → cloud-init templates (deploy k3s/bootstrap) → inv
 
 - **Provider-specific requirements:**
   - **Libvirt**: KVM/QEMU installed and running (`libvirt-daemon`, `libvirt-dev`, `mkisofs`)
+      - `sudo usermod -aG libvirt $(whoami)`
+      - `sudo usermod -aG kvm $(whoami)`
   - **OVH**: OVH API credentials configured
   - **Azure**: Azure CLI and subscription credentials
 
@@ -38,6 +40,7 @@ OpenTofu (provision VMs) → cloud-init templates (deploy k3s/bootstrap) → inv
   - install and set in your path `arkade`
   - `arkade get kubecm`
   - `arkade get kubectl`
+  - `arkade get k9s`
   - `cockpit` to manage in a web interface the libvirt VMs
 
 - **OpenTofu** (>= 1.6.0)

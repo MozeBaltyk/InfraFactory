@@ -17,11 +17,11 @@ output "cluster_nodes" {
 
 output "kubeconfig_command" {
   value = var.cluster.cloud_init_selected == "k3s" ? (<<-EOT
-mkdir -p ~/.kube && \
-ssh -i providers/libvirt/.key.private ${var.cluster.username}@${libvirt_domain.masters[0].network_interface[0].addresses[0]} "sudo cat /etc/rancher/k3s/k3s.yaml" | \
-sed 's/127.0.0.1/${libvirt_domain.masters[0].network_interface[0].addresses[0]}/' > ~/.kube/k3s.yaml && \
-chmod 600 ~/.kube/k3s.yaml && \
-kubecm add -cf ~/.kube/k3s.yaml --context-name k3s --create
+mkdir -p ~/.kube && touch ~/.kube/config \
+ssh -i env/KVM/${terraform.workspace}/.key.private ${var.cluster.username}@${libvirt_domain.masters[0].network_interface[0].addresses[0]} "sudo cat /etc/rancher/k3s/k3s.yaml" | \
+sed 's/127.0.0.1/${libvirt_domain.masters[0].network_interface[0].addresses[0]}/' > ~/.kube/k3s-${terraform.workspace}.yaml && \
+chmod 600 ~/.kube/k3s-${terraform.workspace}.yaml && \
+kubecm add -cf ~/.kube/k3s-${terraform.workspace}.yaml --context-name k3s-${terraform.workspace} --create
 EOT
 ) : ""
 }
@@ -65,9 +65,10 @@ resource "local_file" "ansible_inventory" {
 
   })
 
-  filename = "./hosts.ini"
+  filename = "${local.local_env_path}/hosts.ini"
 
   depends_on = [
+    null_resource.env_directory,
     null_resource.sleep_before_inventory
   ]
 }

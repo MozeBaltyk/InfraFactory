@@ -6,3 +6,4 @@
 *.key.*
 hosts.ini
 .vscode
+ansible.cfg
