@@ -86,12 +86,6 @@ Azure support is **secondary** and should only be implemented after Libvirt and 
 
 ---
 
-### Priority 4: Provider DigitalOcean
-
-DigitalOcean support is **experimental** and lowest priority.
-
----
-
 ### Why this order matters
 
 - Libvirt enables **rapid iteration**
@@ -118,27 +112,31 @@ If a feature design is unclear:
 ├── README.md                 # Project status, Justfile usage, roadmap, and TODO tracking
 ├── ansible
 ├── assets                    # Images and logo for the README 
-├── inventory                 # Shared inventory
-│   └── hosts.tpl             # Common template to be use by each provider
+├── env                       # Env
+│   └── AZ                    # folder for each providers  
+│   │    └── tfvars.example        
+│   └── KVM
+│        └── tfvars.example     
+│        └── lab.tfvars       # A tfvars for each env to deploy                                
 ├── justfile                  # The Orchestrator and main menu for end user
 └── providers              
     ├── azure
-    ├── digitalocean
     ├── libvirt
-    └── ovh
+    ├── ovh
+    └── shared/
+        ├── clout-init           # Different cloud-init template
+        └── inventory/hosts.tpl  # Common Template to be use by each provider and generate hosts.ini for ansible
 ```
-
 
 Each provider directory should contain:
 
 ```
-provider/
+provider/example
 ├── keys.tf
 ├── main.tf
 ├── variables.tf
-├── output.tf (or outputs.tf)
+├── output.tf
 ├── templates.tf
-└── templates/
 ```
 
 Shared cloud-init templates are centralized and reused by all providers:
@@ -162,9 +160,6 @@ https://search.opentofu.org/provider/hashicorp/azurerm/latest
 
 OVH provider  
 https://search.opentofu.org/provider/ovh/ovh/latest
-
-DigitalOcean provider  
-https://search.opentofu.org/provider/digitalocean/digitalocean/latest
 
 ---
 

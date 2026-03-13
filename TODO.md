@@ -38,15 +38,6 @@ Project just initialized. Need to establish base infrastructure.
 - [ ] Implement outputs.tf for azure
 - [ ] Test azure provider end-to-end
 
-### Phase 5: Provider DigitalOcean (Priority 4)
-- [ ] Set up digitalocean provider directory structure
-- [ ] Implement variables.tf for digitalocean
-- [ ] Implement keys.tf for digitalocean
-- [ ] Implement main.tf for digitalocean
-- [ ] Implement templates.tf for digitalocean
-- [ ] Implement outputs.tf for digitalocean
-- [ ] Test digitalocean provider end-to-end
-
-### Phase 6: Ansible Integration
+### Phase 5: Ansible Integration
 - [ ] Create ansible playbooks for cluster setup
 - [ ] Test ansible integration with all providers
