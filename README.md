@@ -29,31 +29,35 @@ OpenTofu (provision VMs) → cloud-init templates (deploy k3s/bootstrap) → inv
 
 ## Prerequisites
 
+- **Provider-specific requirements:**
+  - **Libvirt**: KVM/QEMU installed and running (`libvirt-daemon`, `libvirt-dev`, `mkisofs`)
+  - **OVH**: OVH API credentials configured
+  - **Azure**: Azure CLI and subscription credentials
+
+- **Nice to have**:
+  - install and set in your path `arkade`
+  - `arkade get kubecm`
+  - `arkade get kubectl`
+  - `cockpit` to manage in a web interface the libvirt VMs
+
 - **OpenTofu** (>= 1.6.0)
-  - Install from: https://opentofu.org/docs/
+  - Install with `arkade get tofu`
   - Or: `apt install opentofu` (Debian/Ubuntu)
 
 - **Just** (>= 1.0.0)
-  - Install from: https://github.com/casey/just
+  - Install with `arkade get just`
   - Or: `apt install just` (Debian/Ubuntu)
-
-- **Provider-specific requirements:**
-  - **Libvirt**: KVM/QEMU installed and running (`libvirt-daemon`, `libvirt-dev`)
-  - **OVH**: OVH API credentials configured
-  - **Azure**: Azure CLI and subscription credentials
 
 ---
 
 ## Project Structure
 
-```
+```txt
 InfraFactory/
 ├── AGENTS.md                     # AI assistant context
-├── README.md                     # This file
+├── README.md                     # The only doc, I will produce in my life.
 ├── TODO.md                       # Task tracking
 ├── justfile                      # CLI orchestrator (run: just)
-├── terraform.tfstate             # Terraform state (git-ignored)
-│
 ├── env/                          # Environment configurations
 │   ├── AZ/
 │   │   ├── tfvars.example        # Azure example
@@ -72,16 +76,8 @@ InfraFactory/
 │   │   ├── providers.tf          # Provider configuration
 │   │   ├── hosts.ini             # Generated Ansible inventory
 │   │   └── ansible.cfg           # Ansible configuration
-│   │
 │   ├── azure/                    # Microsoft Azure provider
-│   │   ├── main.tf
-│   │   ├── variables.tf
-│   │   ├── output.tf
-│   │   ├── templates.tf
-│   │   ├── keys.tf
-│   │   ├── providers.tf
-│   │   └── ansible.cfg
-│   │
+│   │   └── [provider files]
 │   ├── ovh/                      # OVH Cloud provider (not started)
 │   │   └── [provider files]
 │   │
