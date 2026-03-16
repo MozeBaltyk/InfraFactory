@@ -25,6 +25,11 @@ variable "region" {
   default = "westeurope"
 }
 
+variable "resource_group_name" {
+  description = "Azure Resource Group Name"
+  default = "factory-rg"
+}
+
 variable "GITREPO_UN_ID" {
   type    = string
   description = "git repository run id"
@@ -63,6 +68,7 @@ variable "os_catalog" {
       os_image_id        = "ubuntu24"
       os_prefix_hostname = "slaz"
       os_az_system       = "9-lvm-gen2"
+      instance_size      = "Standard_B2s"
     }
   }
 }

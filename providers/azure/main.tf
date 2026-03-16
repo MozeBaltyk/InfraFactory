@@ -6,7 +6,7 @@
 
 # Resource group containing all resources
 resource "azurerm_resource_group" "factory-project" {
-  name     = "${var.prefix}-factory-${var.GITREPO_UN_ID}"
+  name     = var.resource_group_name
   location = var.region
 
   tags = {
@@ -47,12 +47,40 @@ resource "azurerm_subnet" "factory-project-internal" {
   address_prefixes     = ["10.0.0.0/16"]
 }
 
+# Network Security Group
+resource "azurerm_network_security_group" "factory-nsg" {
+  name                = "${var.cluster.id}-nsg"
+  location            = azurerm_resource_group.factory-project.location
+  resource_group_name = azurerm_resource_group.factory-project.name
+
+  security_rule {
+    name                       = "SSH"
+    priority                   = 1001
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "22"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  tags = {
+    Creator = "factory-${var.GITREPO_UN_ID}"
+  }
+}
+
+resource "azurerm_subnet_network_security_group_association" "factory-nsg-assoc" {
+  subnet_id                 = azurerm_subnet.factory-project-internal.id
+  network_security_group_id = azurerm_network_security_group.factory-nsg.id
+}
+
 ### Controller
 
 # Public IP for controller
 resource "azurerm_public_ip" "controller-pip" {
-  count               = var.controller_count
-  name                = "controller-pip${count.index}"
+  count               = var.cluster.masters
+  name                = "${var.cluster.id}-controller-pip${count.index}"
   location            = azurerm_resource_group.factory-project.location
   resource_group_name = azurerm_resource_group.factory-project.name
   allocation_method   = "Dynamic"
@@ -64,8 +92,8 @@ resource "azurerm_public_ip" "controller-pip" {
 
 # Azure network interface
 resource "azurerm_network_interface" "controller-interfaces" {
-  count                = var.controller_count
-  name                = "controller-interface${count.index}"
+  count                = var.cluster.masters
+  name                = "${var.cluster.id}-controller-interface${count.index}"
   location            = azurerm_resource_group.factory-project.location
   resource_group_name = azurerm_resource_group.factory-project.name
 
@@ -81,12 +109,47 @@ resource "azurerm_network_interface" "controller-interfaces" {
   }
 }
 
+# Master VMs
+resource "azurerm_linux_virtual_machine" "masters" {
+  count               = var.cluster.masters
+  name                = "${var.cluster.id}-master-${count.index}"
+  location            = azurerm_resource_group.factory-project.location
+  resource_group_name = azurerm_resource_group.factory-project.name
+
+  network_interface_ids = [azurerm_network_interface.controller-interfaces[count.index].id]
+
+  size                = var.infra.instance_size
+
+  os_disk {
+    caching              = "ReadWrite"
+    storage_account_type = "Standard_LRS"
+    disk_size_gb         = var.infra.disk_size
+  }
+
+  source_image_reference {
+    publisher = "Canonical"
+    offer     = "0001-comics-ubuntu-server-jammy"
+    sku       = "22_04-lts-gen2"
+    version   = "latest"
+  }
+
+  computer_name  = "${var.cluster.id}-master-${count.index}"
+  admin_username = var.cluster.username
+
+  admin_ssh_key {
+    username   = var.cluster.username
+    public_key = tls_private_key.global_key.public_key_openssh
+  }
+
+  custom_data = base64encode(data.template_file.master_cloudinit[count.index].rendered)
+}
+
 ### Workers
 
 # Public IP for workers
 resource "azurerm_public_ip" "worker-pip" {
-  count                = var.worker_count
-  name                = "worker-pip${count.index}"
+  count                = var.cluster.workers
+  name                = "${var.cluster.id}-worker-pip${count.index}"
   location            = azurerm_resource_group.factory-project.location
   resource_group_name = azurerm_resource_group.factory-project.name
   allocation_method   = "Dynamic"
@@ -98,8 +161,8 @@ resource "azurerm_public_ip" "worker-pip" {
 
 # Azure network interface for workers
 resource "azurerm_network_interface" "worker-interfaces" {
-  count                = var.worker_count
-  name                = "worker-interface${count.index}"
+  count                = var.cluster.workers
+  name                = "${var.cluster.id}-worker-interface${count.index}"
   location            = azurerm_resource_group.factory-project.location
   resource_group_name = azurerm_resource_group.factory-project.name
 
@@ -115,6 +178,40 @@ resource "azurerm_network_interface" "worker-interfaces" {
   }
 }
 
+# Worker VMs
+resource "azurerm_linux_virtual_machine" "workers" {
+  count               = var.cluster.workers
+  name                = "${var.cluster.id}-worker-${count.index}"
+  location            = azurerm_resource_group.factory-project.location
+  resource_group_name = azurerm_resource_group.factory-project.name
+
+  network_interface_ids = [azurerm_network_interface.worker-interfaces[count.index].id]
+
+  size                = var.infra.instance_size
+
+  os_disk {
+    caching              = "ReadWrite"
+    storage_account_type = "Standard_LRS"
+    disk_size_gb         = var.infra.disk_size
+  }
+
+  source_image_reference {
+    publisher = "Canonical"
+    offer     = "0001-comics-ubuntu-server-jammy"
+    sku       = "22_04-lts-gen2"
+    version   = "latest"
+  }
+
+  computer_name  = "${var.cluster.id}-worker-${count.index}"
+  admin_username = var.cluster.username
+
+  admin_ssh_key {
+    username   = var.cluster.username
+    public_key = tls_private_key.global_key.public_key_openssh
+  }
+
+  custom_data = base64encode(data.template_file.worker_cloudinit[count.index].rendered)
+}
 
 # Network Security Group
 resource "azurerm_network_security_group" "factory-project-nsg" {
