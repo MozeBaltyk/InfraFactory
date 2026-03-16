@@ -1,28 +1,25 @@
-
-### standard_d8s_v5 = 8vcpu/32G
-variable "instance_size" {
-  type = string
-  description = "Instance type used for all linux virtual machines"
-  default = "standard_d8s_v5" 
+##
+## Azure credentials
+##
+variable "azure_subscription_id" {
+  description = "Azure Subscription ID"
 }
 
-variable "controller_count" {
-  type    = number
-  description = "number of controllers"
-  default = "1"
+variable "azure_client_id" {
+  description = "Azure Client ID"
 }
 
-variable "worker_count" {
-  type    = number
-  description = "number of workers"
-  default = "2"
+variable "azure_client_secret" {
+  description = "Azure Client Secret"
 }
 
-variable "domain" {
-  description = "Domain given to loadbalancer and VMs"
-  default = "example.com"
+variable "azure_tenant_id" {
+  description = "Azure tenant ID"
 }
 
+##
+## Azure Bucket for backend state
+##
 variable "region" {
   description = "Unique bucket name for storing terraform backend data"
   default = "westeurope"
@@ -44,40 +41,158 @@ variable "mount_point" {
   default = "/opt/factory"
 }
 
-##
-## Azure credentials
-##
-
-variable "azure_subscription_id" {
-  description = "Azure Subscription ID"
+# Version Mapping
+variable "os_catalog" {
+  description = "Available OS images"
+  type = map(object({
+    os_name            = string
+    os_version_short   = number
+    os_version_long    = string
+    os_URL             = string
+    os_image_id        = string
+    os_prefix_hostname = string
+    os_az_system       = string
+    instance_size      = string
+  }))
+  default = {
+    ubuntu24 = {
+      os_name            = "ubuntu"
+      os_version_short   = 24
+      os_version_long    = "24.04"
+      os_URL             = "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img"
+      os_image_id        = "ubuntu24"
+      os_prefix_hostname = "slaz"
+      os_az_system       = "9-lvm-gen2"
+    }
+  }
 }
 
-variable "azure_client_id" {
-  description = "Azure Client ID"
+variable "os" {
+  description = "OS selection"
+
+  type = object({
+    selected = string
+  })
+
+  default = {
+    selected = "ubuntu24"
+  }
 }
 
-variable "azure_client_secret" {
-  description = "Azure Client Secret"
+###################################
+# Cluster topology
+###################################
+variable "cluster" {
+  description = "Cluster topology"
+
+  type = object({
+    id        = string
+    domain    = string
+    masters   = number
+    workers   = number
+    timezone  = string
+    username  = string
+    cloud_init_selected = string
+  })
+
+  default = {
+    id       = "factory"
+    domain   = "lab"
+    masters  = 1
+    workers  = 0
+    timezone = "Europe/Paris"
+    username = "localadmin"
+    cloud_init_selected = "k3s"
+  }
 }
 
-variable "azure_tenant_id" {
-  description = "Azure tenant ID"
+###################################
+# VMs infra
+###################################
+variable "infra" {
+  description = "VM infrastructure configuration"
+
+  type = object({
+    memory_mb = number
+    cpu       = number
+    disk_size = number
+    instance_size = string
+  })
+
+  default = {
+    memory_mb = 4096
+    cpu       = 2
+    disk_size = 10  #GB
+    instance_size = "standard_d8s_v5"
+  }
 }
 
-variable "prefix" {
-  type        = string
-  description = "Prefix added to names of all resources"
-  default     = "slaz"
+###################################
+# Network Config
+###################################
+variable "network" {
+  description = "Libvirt network configuration"
+
+  type = object({
+    cidr = string
+    ip_type = string
+  })
+
+  default = {
+    cidr    = "192.168.100.0/24"
+    ip_type = "dhcp"
+  }
 }
 
-variable "node_username" {
-  type    = string
-  description = "user created on VM"
-  default = "factory"
+###################################
+# K3s specific variables
+###################################
+variable "k3s" {
+  description = "K3s cluster configuration"
+
+  type = object({
+    version          = string
+    token            = string
+    etcd_enabled     = bool
+    traefik_enabled  = bool
+    servicelb_enabled = bool
+    local_storage_enabled = bool
+    metrics_server_enabled = bool
+  })
+
+  default = {
+    version           = "v1.34.5+k3s1"
+    token             = "my-super-secret-shared-token-12345"
+    etcd_enabled      = true
+    traefik_enabled   = true
+    servicelb_enabled = true
+    local_storage_enabled = true
+    metrics_server_enabled = true
+  }
 }
 
-variable "az_system" {
-  type    = string
-  description = "os used for VM"
-  default = "9-lvm-gen2"
+# Local Settings
+locals {
+  os = var.os_catalog[var.os.selected]
+
+  subdomain = "${var.cluster.id}.${var.cluster.domain}"
+
+  network_gateway = cidrhost(var.network.cidr, 1)
+
+  local_env_path = "${path.module}/../../env/AZ/${terraform.workspace}"
+
+  master_details = [
+    for i in range(var.cluster.masters) : {
+      name = format("master%02d", i + 1)
+      role = "master"
+    }
+  ]
+
+  worker_details = [
+    for i in range(var.cluster.workers) : {
+      name = format("worker%02d", i + 1)
+      role = "worker"
+    }
+  ]
+
 }

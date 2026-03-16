@@ -75,7 +75,7 @@ _workspace-AZ: _validate-az-env
 _plan-AZ: _validate-az-env
 	@cd {{TF_AZ}} && tofu init
 	@cd {{TF_AZ}} && just _workspace-AZ
-	@cd {{TF_AZ}} && tofu plan \
+	@cd {{TF_AZ}} && tofu plan -var-file={{ENV_TFVARS_PATH}} \
 	  -var azure_subscription_id=$AZ_SUBS_ID \
 	  -var azure_client_id=$AZ_CLIENT_ID \
 	  -var azure_client_secret=$AZ_CLIENT_SECRET \
@@ -83,7 +83,7 @@ _plan-AZ: _validate-az-env
 	  -var instance_size={{AZ_SIZE_MATTERS}}
 
 _deploy-AZ: _validate-az-env
-	@just _retry "cd {{TF_AZ}} && tofu init && just _workspace-AZ && tofu apply -auto-approve \
+	@just _retry "cd {{TF_AZ}} && tofu init && just _workspace-AZ && tofu apply -auto-approve -var-file={{ENV_TFVARS_PATH}}\
 	  -var azure_subscription_id=$AZ_SUBS_ID \
 	  -var azure_client_id=$AZ_CLIENT_ID \
 	  -var azure_client_secret=$AZ_CLIENT_SECRET \
@@ -92,7 +92,7 @@ _deploy-AZ: _validate-az-env
 
 _destroy-AZ: _validate-az-env
 	@cd {{TF_AZ}} && just _workspace-AZ
-	@cd {{TF_AZ}} && tofu destroy -auto-approve \
+	@cd {{TF_AZ}} && tofu destroy -auto-approve -var-file={{ENV_TFVARS_PATH}} \
 	  -var azure_subscription_id=$AZ_SUBS_ID \
 	  -var azure_client_id=$AZ_CLIENT_ID \
 	  -var azure_client_secret=$AZ_CLIENT_SECRET \

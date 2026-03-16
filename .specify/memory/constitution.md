@@ -1,11 +1,10 @@
 <!--
 Sync Impact Report
-- Version change: 1.0.0 -> 1.0.1
-- Modified principles:
-	- III. Provisioning Workflow (NON-NEGOTIABLE) -> III. Provisioning Workflow (NON-NEGOTIABLE)
-	- IV. Consistent Provider Layout -> IV. Consistent Provider Layout
+- Version change: 1.0.1 -> 1.1.0
+- Modified principles: None
 - Added sections: None
 - Removed sections: None
+- Implementation Priority updated: OVH and Azure swapped
 - Templates requiring updates:
 	- ✅ updated: .specify/templates/plan-template.md
 	- ✅ no change required: .specify/templates/spec-template.md
@@ -63,8 +62,8 @@ Avoid provider-specific hacks; prefer solving at abstraction level.
 Provider feature development follows strict priority order to optimize feedback cycles:
 
 1. **Libvirt** (Local development): Fast, offline, primary feedback loop
-2. **OVH** (Primary cloud target): First production validation
-3. **Azure** (Secondary): After Libvirt + OVH proven
+2. **Azure** (Primary cloud target): First production validation
+3. **OVH** (Secondary): After Libvirt + Azure proven
 4. **DigitalOcean** (Experimental): Lowest priority
 
 New features MUST be validated on Libvirt before cloud implementation.
