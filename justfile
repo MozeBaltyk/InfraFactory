@@ -25,17 +25,13 @@ _help:
 # Print current configuration
 env:
 	@echo "Provider and config applied:"
-	@echo "  PROVIDER            = {{PROVIDER}}"
-	@echo "  ENV_TFVARS_PATH     = {{ENV_TFVARS_PATH}}"
+	@echo "  PROVIDER  = {{PROVIDER}}"
+	@echo "  ENV       = {{ENV}}"
+	@echo "   |-> ENV_TFVARS_PATH = {{ENV_TFVARS_PATH}}"
 
 ##############################################
 # Helper recipes
 ##############################################
-
-_validate-az-env:
-	@for v in {{AZ_REQUIRED}}; do \
-	  : "${!v:?Environment variable $v must be set}"; \
-	done
 
 _retry cmd:
 	@for i in {1..2}; do \
@@ -66,38 +62,26 @@ destroy:
 ##############################################
 # Azure recipes
 ##############################################
-_validate-AZ: _validate-az-env
+_validate-AZ:
 	@cd {{TF_AZ}} && tofu init -backend=false && tofu validate
 
-_workspace-AZ: _validate-az-env
+_workspace-AZ:
 	@cd {{TF_AZ}} && tofu workspace select {{ENV}} || tofu workspace new {{ENV}}
 
-_plan-AZ: _validate-az-env
+_plan-AZ:
 	@cd {{TF_AZ}} && tofu init
 	@cd {{TF_AZ}} && just _workspace-AZ
-	@cd {{TF_AZ}} && tofu plan -var-file={{ENV_TFVARS_PATH}} \
-	  -var azure_subscription_id=$AZ_SUBS_ID \
-	  -var azure_client_id=$AZ_CLIENT_ID \
-	  -var azure_client_secret=$AZ_CLIENT_SECRET \
-	  -var azure_tenant_id=$AZ_TENANT_ID \
-	  -var instance_size={{AZ_SIZE_MATTERS}}
+	@cd {{TF_AZ}} && tofu plan -var-file={{ENV_TFVARS_PATH}}
 
-_deploy-AZ: _validate-az-env
-	@just _retry "cd {{TF_AZ}} && tofu init && just _workspace-AZ && tofu apply -auto-approve -var-file={{ENV_TFVARS_PATH}}\
-	  -var azure_subscription_id=$AZ_SUBS_ID \
-	  -var azure_client_id=$AZ_CLIENT_ID \
-	  -var azure_client_secret=$AZ_CLIENT_SECRET \
-	  -var azure_tenant_id=$AZ_TENANT_ID \
-	  -var instance_size={{AZ_SIZE_MATTERS}}"
-
-_destroy-AZ: _validate-az-env
+_deploy-AZ:
+	@cd {{TF_AZ}} && tofu init
 	@cd {{TF_AZ}} && just _workspace-AZ
-	@cd {{TF_AZ}} && tofu destroy -auto-approve -var-file={{ENV_TFVARS_PATH}} \
-	  -var azure_subscription_id=$AZ_SUBS_ID \
-	  -var azure_client_id=$AZ_CLIENT_ID \
-	  -var azure_client_secret=$AZ_CLIENT_SECRET \
-	  -var azure_tenant_id=$AZ_TENANT_ID \
-	  -var instance_size={{AZ_SIZE_MATTERS}}
+	@cd {{TF_AZ}} && tofu apply -auto-approve -var-file={{ENV_TFVARS_PATH}}
+
+_destroy-AZ:
+	@cd {{TF_AZ}} && tofu init
+	@cd {{TF_AZ}} && just _workspace-AZ
+	@cd {{TF_AZ}} && tofu destroy -auto-approve -var-file={{ENV_TFVARS_PATH}}
 
 #---------------------------------------------
 # KVM Recipes

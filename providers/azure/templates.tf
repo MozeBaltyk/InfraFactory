@@ -1,56 +1,55 @@
 # Azure-specific template resources for VM provisioning
-# 
-# This file handles cloud-init and custom image provisioning for Azure VMs.
-# Azure uses user_data scripts attached to VM creation instead of ISO templates.
-# 
-# Template variables are rendered from cloud-init/*/cloud_init.cfg.tftpl
-# and passed to azurerm_linux_virtual_machine.custom_data field.
 
-# Cloud-init templates for master nodes
-data "template_file" "master_cloudinit" {
-  count = var.cluster.masters
+# Generate cloud-init configuration for all nodes
+locals {
+  cloudinit = {
+    for vm in concat(local.master_details, local.worker_details) :
+    vm.name => templatefile(
+      "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/cloud_init.cfg.tftpl",
+      {
+        os_name       = local.os.os_name
+        hostname      = vm.name
+        fqdn          = "${vm.name}.${local.subdomain}"
+        domain        = local.subdomain
 
-  template = file("${path.module}/../../shared/cloud-init/${var.cluster.cloud_init_selected}/cloud_init.cfg.tftpl")
+        clusterid     = var.cluster.id
+        timezone      = var.cluster.timezone
+        node_username = var.cluster.username
 
-  vars = {
-    timezone = var.cluster.timezone
-    hostname = "${var.cluster.id}-master-${count.index}"
-    fqdn = "${var.cluster.id}-master-${count.index}.${var.cluster.domain}"
-    node_username = var.cluster.username
-    public_key = tls_private_key.global_key.public_key_openssh
-    k3s_token = "factory-token"
-    first_master_fqdn = "${var.cluster.id}-master-0.${var.cluster.domain}"
-    k3s_version = "v1.28.0+k3s1"
-    k3s_etcd_enabled = count.index == 0 ? "true" : "false"
-    k3s_traefik_enabled = "false"
-    k3s_servicelb_enabled = "false"
-    k3s_local_storage_enabled = "true"
-    k3s_metrics_server_enabled = "true"
+        public_key    = tls_private_key.global_key.public_key_openssh
+
+        is_first_master   = vm.name == local.master_details[0].name
+        first_master_fqdn = "${local.master_details[0].name}.${local.subdomain}"
+
+        node_role = vm.role
+
+        k3s_token                  = var.k3s.token
+        k3s_version                = var.k3s.version
+        k3s_etcd_enabled           = var.k3s.etcd_enabled
+        k3s_traefik_enabled        = var.k3s.traefik_enabled
+        k3s_servicelb_enabled      = var.k3s.servicelb_enabled
+        k3s_local_storage_enabled  = var.k3s.local_storage_enabled
+        k3s_metrics_server_enabled = var.k3s.metrics_server_enabled
+      }
+    )
   }
 }
 
-# Cloud-init templates for worker nodes
-data "template_file" "worker_cloudinit" {
-  count = var.cluster.workers
+# Generate environment-specific ansible.cfg
+resource "local_file" "ansible_config" {
+  filename = "${local.local_env_path}/ansible.cfg"
+  content = <<-EOT
+[defaults]
+remote_user = ${var.cluster.username}
+inventory =  ./hosts.ini
+roles_path = ../../../ansible/roles
+host_key_checking = false
+display_skipped_hosts = false
+deprecation_warnings = false
+force_color       = True
+stdout_callback   = yaml
+private_key_file = ./.key.private
+EOT
 
-  template = file("${path.module}/../../shared/cloud-init/${var.cluster.cloud_init_selected}/cloud_init.cfg.tftpl")
-
-  vars = {
-    timezone = var.cluster.timezone
-    hostname = "${var.cluster.id}-worker-${count.index}"
-    fqdn = "${var.cluster.id}-worker-${count.index}.${var.cluster.domain}"
-    node_username = var.cluster.username
-    public_key = tls_private_key.global_key.public_key_openssh
-    k3s_token = "factory-token"
-    first_master_fqdn = "${var.cluster.id}-master-0.${var.cluster.domain}"
-    k3s_version = "v1.28.0+k3s1"
-    k3s_etcd_enabled = "false"
-    k3s_traefik_enabled = "false"
-    k3s_servicelb_enabled = "false"
-    k3s_local_storage_enabled = "true"
-    k3s_metrics_server_enabled = "true"
-  }
+  depends_on = [null_resource.env_directory]
 }
-
-# Reserved for future Azure image/template definitions
-# Following provider symmetry pattern with libvirt/templates.tf

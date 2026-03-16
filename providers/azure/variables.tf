@@ -17,58 +17,44 @@ variable "azure_tenant_id" {
   description = "Azure tenant ID"
 }
 
-##
-## Azure Bucket for backend state
-##
-variable "region" {
-  description = "Unique bucket name for storing terraform backend data"
-  default = "westeurope"
-}
-
-variable "resource_group_name" {
-  description = "Azure Resource Group Name"
-  default = "factory-rg"
-}
-
-variable "GITREPO_UN_ID" {
-  type    = string
-  description = "git repository run id"
-  default = "quickstart"
-}
-
-variable "terraform_backend_bucket_name" {
-  description = "Unique bucket name for storing terraform backend data"
-  default = "terraform-backend-factory-quickstart"
-}
-
-variable "mount_point" {
-  description = "Unique bucket name for storing terraform backend data"
-  default = "/opt/factory"
-}
-
 # Version Mapping
 variable "os_catalog" {
-  description = "Available OS images"
+  description = "OS image catalog"
   type = map(object({
     os_name            = string
-    os_version_short   = number
-    os_version_long    = string
-    os_URL             = string
-    os_image_id        = string
-    os_prefix_hostname = string
-    os_az_system       = string
-    instance_size      = string
+    hostname_prefix    = string
+    image = object({
+      publisher = string
+      offer     = string
+      sku       = string
+      version   = string
+    })
+    default_instance_size = string
   }))
+
   default = {
     ubuntu24 = {
-      os_name            = "ubuntu"
-      os_version_short   = 24
-      os_version_long    = "24.04"
-      os_URL             = "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img"
-      os_image_id        = "ubuntu24"
-      os_prefix_hostname = "slaz"
-      os_az_system       = "9-lvm-gen2"
-      instance_size      = "Standard_B2s"
+      os_name         = "ubuntu"
+      hostname_prefix = "slaz"
+      image = {
+        publisher = "Canonical"
+        offer     = "ubuntu-24_04-lts"
+        sku       = "server"
+        version   = "latest"
+      }
+      default_instance_size = "Standard_B2s"
+    }
+
+    ubuntu22 = {
+      os_name         = "ubuntu"
+      hostname_prefix = "slaz"
+      image = {
+        publisher = "Canonical"
+        offer     = "0001-com-ubuntu-server-jammy"
+        sku       = "22_04-lts-gen2"
+        version   = "latest"
+      }
+      default_instance_size = "Standard_B2s"
     }
   }
 }
@@ -97,6 +83,7 @@ variable "cluster" {
     masters   = number
     workers   = number
     timezone  = string
+    region    = string
     username  = string
     cloud_init_selected = string
   })
@@ -107,6 +94,7 @@ variable "cluster" {
     masters  = 1
     workers  = 0
     timezone = "Europe/Paris"
+    region = "westeurope"
     username = "localadmin"
     cloud_init_selected = "k3s"
   }
@@ -119,17 +107,13 @@ variable "infra" {
   description = "VM infrastructure configuration"
 
   type = object({
-    memory_mb = number
-    cpu       = number
     disk_size = number
     instance_size = string
   })
 
   default = {
-    memory_mb = 4096
-    cpu       = 2
-    disk_size = 10  #GB
     instance_size = "standard_d8s_v5"
+    disk_size = 10  #GB
   }
 }
 
@@ -178,7 +162,13 @@ variable "k3s" {
 }
 
 # Local Settings
+data "http" "my_ip" {
+  url = "http://ifconfig.me/ip"
+}
+
 locals {
+  my_public_ip = "${chomp(trimspace(data.http.my_ip.response_body))}/32"
+
   os = var.os_catalog[var.os.selected]
 
   subdomain = "${var.cluster.id}.${var.cluster.domain}"
@@ -189,16 +179,41 @@ locals {
 
   master_details = [
     for i in range(var.cluster.masters) : {
-      name = format("master%02d", i + 1)
+      name = format("${local.os.hostname_prefix}-m%02d", i + 1)
       role = "master"
     }
   ]
 
   worker_details = [
     for i in range(var.cluster.workers) : {
-      name = format("worker%02d", i + 1)
+      name = format("${local.os.hostname_prefix}-w%02d", i + 1)
       role = "worker"
     }
   ]
 
+}
+
+variable "nsg_rules" {
+  description = "List of NSG rules with port, name, and allowed source"
+  type = map(object({
+    port = number
+    name = string
+    description = string
+    source_address = string
+  }))
+
+  default = {
+    ssh = {
+      port           = 22
+      name           = "Allow_SSH"
+      description    = "SSH access from admin IP"
+      source_address = ""
+    }
+    k8s_api = {
+      port           = 6443
+      name           = "Allow_K8S_API"
+      description    = "Kubernetes API access from admin IP"
+      source_address = ""
+    }
+  }
 }

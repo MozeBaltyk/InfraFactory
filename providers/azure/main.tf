@@ -6,11 +6,11 @@
 
 # Resource group containing all resources
 resource "azurerm_resource_group" "factory-project" {
-  name     = var.resource_group_name
-  location = var.region
+  name     = var.cluster.id
+  location = var.cluster.region
 
   tags = {
-    Creator = "factory-${var.GITREPO_UN_ID}"
+    Creator = "${var.cluster.id}"
   }
 }
 
@@ -20,23 +20,14 @@ resource "azurerm_resource_group" "factory-project" {
 
 # Azure virtual network space
 resource "azurerm_virtual_network" "factory-project-network" {
-  name                = "${var.prefix}-network"
-  address_space       = ["10.0.0.0/16"]
+  name                = "${var.cluster.id}-network"
+  address_space       = ["${var.network.cidr}"]
   location            = azurerm_resource_group.factory-project.location
   resource_group_name = azurerm_resource_group.factory-project.name
 
   tags = {
-    Creator = "factory-${var.GITREPO_UN_ID}"
+    Creator = "${var.cluster.id}"
   }
-}
-
-resource "time_sleep" "wait_for_vpc" {
-  depends_on = [azurerm_virtual_network.factory-project-network]
-  destroy_duration = "100s" # Adjust duration as needed
-  create_duration = "20s"  # Adjust duration as needed
-}
-resource "null_resource" "placeholder" {
-  depends_on = [time_sleep.wait_for_vpc]
 }
 
 # Azure internal subnet
@@ -44,35 +35,7 @@ resource "azurerm_subnet" "factory-project-internal" {
   name                 = "factory-project-internal"
   resource_group_name  = azurerm_resource_group.factory-project.name
   virtual_network_name = azurerm_virtual_network.factory-project-network.name
-  address_prefixes     = ["10.0.0.0/16"]
-}
-
-# Network Security Group
-resource "azurerm_network_security_group" "factory-nsg" {
-  name                = "${var.cluster.id}-nsg"
-  location            = azurerm_resource_group.factory-project.location
-  resource_group_name = azurerm_resource_group.factory-project.name
-
-  security_rule {
-    name                       = "SSH"
-    priority                   = 1001
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "22"
-    source_address_prefix      = "*"
-    destination_address_prefix = "*"
-  }
-
-  tags = {
-    Creator = "factory-${var.GITREPO_UN_ID}"
-  }
-}
-
-resource "azurerm_subnet_network_security_group_association" "factory-nsg-assoc" {
-  subnet_id                 = azurerm_subnet.factory-project-internal.id
-  network_security_group_id = azurerm_network_security_group.factory-nsg.id
+  address_prefixes     = ["${var.network.cidr}"]
 }
 
 ### Controller
@@ -83,10 +46,11 @@ resource "azurerm_public_ip" "controller-pip" {
   name                = "${var.cluster.id}-controller-pip${count.index}"
   location            = azurerm_resource_group.factory-project.location
   resource_group_name = azurerm_resource_group.factory-project.name
-  allocation_method   = "Dynamic"
+  allocation_method   = "Static"
+  sku                 = "Standard"
 
   tags = {
-    Creator = "factory-${var.GITREPO_UN_ID}"
+    Creator = "${var.cluster.id}"
   }
 }
 
@@ -105,20 +69,25 @@ resource "azurerm_network_interface" "controller-interfaces" {
   }
 
   tags = {
-    Creator = "factory-${var.GITREPO_UN_ID}"
+    Creator = "${var.cluster.id}"
   }
 }
 
 # Master VMs
 resource "azurerm_linux_virtual_machine" "masters" {
-  count               = var.cluster.masters
-  name                = "${var.cluster.id}-master-${count.index}"
+
+  count = var.cluster.masters
+
+  name = "${local.master_details[count.index].name}"
+
   location            = azurerm_resource_group.factory-project.location
   resource_group_name = azurerm_resource_group.factory-project.name
 
-  network_interface_ids = [azurerm_network_interface.controller-interfaces[count.index].id]
+  network_interface_ids = [
+    azurerm_network_interface.controller-interfaces[count.index].id
+  ]
 
-  size                = var.infra.instance_size
+  size = var.infra.instance_size
 
   os_disk {
     caching              = "ReadWrite"
@@ -127,13 +96,13 @@ resource "azurerm_linux_virtual_machine" "masters" {
   }
 
   source_image_reference {
-    publisher = "Canonical"
-    offer     = "0001-comics-ubuntu-server-jammy"
-    sku       = "22_04-lts-gen2"
-    version   = "latest"
+    publisher = local.os.image.publisher
+    offer     = local.os.image.offer
+    sku       = local.os.image.sku
+    version   = local.os.image.version
   }
 
-  computer_name  = "${var.cluster.id}-master-${count.index}"
+  computer_name  = local.master_details[count.index].name
   admin_username = var.cluster.username
 
   admin_ssh_key {
@@ -141,7 +110,9 @@ resource "azurerm_linux_virtual_machine" "masters" {
     public_key = tls_private_key.global_key.public_key_openssh
   }
 
-  custom_data = base64encode(data.template_file.master_cloudinit[count.index].rendered)
+  custom_data = base64encode(
+    local.cloudinit[local.master_details[count.index].name]
+  )
 }
 
 ### Workers
@@ -152,10 +123,11 @@ resource "azurerm_public_ip" "worker-pip" {
   name                = "${var.cluster.id}-worker-pip${count.index}"
   location            = azurerm_resource_group.factory-project.location
   resource_group_name = azurerm_resource_group.factory-project.name
-  allocation_method   = "Dynamic"
+  allocation_method   = "Static"
+  sku                 = "Standard"
 
   tags = {
-    Creator = "factory-${var.GITREPO_UN_ID}"
+    Creator = "${var.cluster.id}"
   }
 }
 
@@ -174,20 +146,20 @@ resource "azurerm_network_interface" "worker-interfaces" {
   }
 
   tags = {
-    Creator = "factory-${var.GITREPO_UN_ID}"
+    Creator = "${var.cluster.id}"
   }
 }
 
 # Worker VMs
 resource "azurerm_linux_virtual_machine" "workers" {
   count               = var.cluster.workers
-  name                = "${var.cluster.id}-worker-${count.index}"
+  name                = "${local.worker_details[count.index].name}"
   location            = azurerm_resource_group.factory-project.location
   resource_group_name = azurerm_resource_group.factory-project.name
 
   network_interface_ids = [azurerm_network_interface.worker-interfaces[count.index].id]
 
-  size                = var.infra.instance_size
+  size = coalesce(var.infra.instance_size, local.os.default_instance_size)
 
   os_disk {
     caching              = "ReadWrite"
@@ -196,10 +168,10 @@ resource "azurerm_linux_virtual_machine" "workers" {
   }
 
   source_image_reference {
-    publisher = "Canonical"
-    offer     = "0001-comics-ubuntu-server-jammy"
-    sku       = "22_04-lts-gen2"
-    version   = "latest"
+    publisher = local.os.image.publisher
+    offer     = local.os.image.offer
+    sku       = local.os.image.sku
+    version   = local.os.image.version
   }
 
   computer_name  = "${var.cluster.id}-worker-${count.index}"
@@ -210,157 +182,41 @@ resource "azurerm_linux_virtual_machine" "workers" {
     public_key = tls_private_key.global_key.public_key_openssh
   }
 
-  custom_data = base64encode(data.template_file.worker_cloudinit[count.index].rendered)
+  custom_data = base64encode(
+    local.cloudinit[local.worker_details[count.index].name]
+  )
 }
 
 # Network Security Group
-resource "azurerm_network_security_group" "factory-project-nsg" {
-  name                = "${var.prefix}-nsg"
-  location            = azurerm_resource_group.factory-project.location
+resource "azurerm_network_security_group" "factory_project_nsg" {
+  name                = "${var.cluster.id}-nsg"
+  location            = var.cluster.region
   resource_group_name = azurerm_resource_group.factory-project.name
 
-  security_rule {
-    name                       = "Allow_6443"
-    priority                   = 100
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "6443"
-    source_address_prefix      = "*"
-    destination_address_prefix = "*"
-  }
-
-  security_rule {
-    name                       = "Allow_SSH"
-    priority                   = 101
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "22"
-    source_address_prefix      = "*"
-    destination_address_prefix = "*"
+  dynamic "security_rule" {
+    for_each = var.nsg_rules
+    content {
+      name                       = security_rule.value.name
+      priority                   = 100 + index(keys(var.nsg_rules), security_rule.key)
+      direction                  = "Inbound"
+      access                     = "Allow"
+      protocol                   = "Tcp"
+      source_address_prefix      = local.my_public_ip
+      source_port_range          = "*"  
+      destination_address_prefix = "*"
+      destination_port_range     = security_rule.value.port
+    }
   }
 
   tags = {
-    Creator = "factory-${var.GITREPO_UN_ID}"
+    Creator = var.cluster.id
   }
 }
 
-# Associate NSG with Subnet
-resource "azurerm_subnet_network_security_group_association" "factory-project-subnet-nsg-association" {
+###########################
+# Associate NSG to subnet
+###########################
+resource "azurerm_subnet_network_security_group_association" "factory_project_subnet_nsg" {
   subnet_id                 = azurerm_subnet.factory-project-internal.id
-  network_security_group_id = azurerm_network_security_group.factory-project-nsg.id
-}
-
-
-###
-### Azure INSTANCES
-###
-
-# Azure linux virtual machine for creating a single node RKE cluster and installing the Rancher Server
-resource "azurerm_linux_virtual_machine" "controllers" {
-  count                 = var.controller_count
-  name                  = "${var.prefix}-ctlr-${count.index}"
-  location              = azurerm_resource_group.factory-project.location
-  resource_group_name   = azurerm_resource_group.factory-project.name
-  network_interface_ids = [azurerm_network_interface.controller-interfaces[count.index].id]
-  size                  = var.instance_size
-  admin_username        = var.node_username
-
-  # Adding patch settings to avoid incompatibility
-  patch_mode             = "ImageDefault"
-  provision_vm_agent     = true
-
-  source_image_reference {
-    publisher = "Redhat"
-    offer     = "RHEL"
-    sku       = "9-lvm-gen2"
-    version   = "latest"
-  }
-
-  admin_ssh_key {
-    username   = var.node_username
-    public_key = tls_private_key.global_key.public_key_openssh
-  }
-
-  os_disk {
-    caching              = "ReadWrite"
-    storage_account_type = "Standard_LRS"
-  }
-
-  tags = {
-    Creator = "factory-${var.GITREPO_UN_ID}"
-  }
-
-  provisioner "remote-exec" {
-    inline = [
-      "echo 'Waiting for cloud-init to complete...'",
-      "cloud-init status --wait > /dev/null",
-      "echo 'Completed cloud-init!'",
-    ]
-
-    connection {
-      type        = "ssh"
-      host        = self.public_ip_address
-      user        = var.node_username
-      private_key = tls_private_key.global_key.private_key_pem
-    }
-  }
-
-  depends_on = [null_resource.placeholder, azurerm_public_ip.controller-pip, azurerm_network_interface.controller-interfaces]
-}
-
-# Azure linux virtual machine for creating a single node RKE cluster and installing the Rancher Server
-resource "azurerm_linux_virtual_machine" "workers" {
-  count                 = var.worker_count
-  name                  = "${var.prefix}-wkr-${count.index}"
-  location              = azurerm_resource_group.factory-project.location
-  resource_group_name   = azurerm_resource_group.factory-project.name
-  network_interface_ids = [azurerm_network_interface.worker-interfaces[count.index].id]
-  size                  = var.instance_size
-  admin_username        = var.node_username
-
-  # Adding patch settings to avoid incompatibility
-  patch_mode             = "ImageDefault"
-  provision_vm_agent     = true
-
-  source_image_reference {
-    publisher = "Redhat"
-    offer     = "RHEL"
-    sku       = "9-lvm-gen2"
-    version   = "latest"
-  }
-
-  admin_ssh_key {
-    username   = var.node_username
-    public_key = tls_private_key.global_key.public_key_openssh
-  }
-
-  os_disk {
-    caching              = "ReadWrite"
-    storage_account_type = "Standard_LRS"
-  }
-
-  tags = {
-    Creator = "factory-${var.GITREPO_UN_ID}"
-  }
-
-  provisioner "remote-exec" {
-    inline = [
-      "echo 'Waiting for cloud-init to complete...'",
-      "cloud-init status --wait > /dev/null",
-      "echo 'Completed cloud-init!'",
-    ]
-
-    connection {
-      type        = "ssh"
-      host        = self.public_ip_address
-      user        = var.node_username
-      private_key = tls_private_key.global_key.private_key_pem
-    }
-  }
-
-  depends_on = [null_resource.placeholder, azurerm_public_ip.worker-pip, azurerm_network_interface.worker-interfaces]
+  network_security_group_id = azurerm_network_security_group.factory_project_nsg.id
 }

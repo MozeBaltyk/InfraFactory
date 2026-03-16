@@ -1,17 +1,22 @@
+azure_subscription_id = "xxxxxxxxxxxxxxxxxx"
+azure_client_id       = "xxxxxxxxxxxxxxxxxx"
+azure_client_secret   = "xxxxxxxxxxxxxxxxxx"
+azure_tenant_id       = "xxxxxxxxxxxxxxxxxx"
+
 cluster = {
   id       = "factory"
   domain   = "lab"
   masters  = 1
   workers  = 0
   timezone = "Europe/Paris"
+  region = "westeurope"
   username = "localadmin"
   cloud_init_selected = "k3s"
 }
 
 infra = {
-  cpu       = 2
-  memory_mb = 4096
-  disk_size = 10
+  instance_size = "standard_d8s_v5"
+  disk_size     = 30
 }
 
 os = {
