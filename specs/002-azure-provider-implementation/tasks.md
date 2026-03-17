@@ -62,10 +62,14 @@ No foundational tasks required - user story implementation can begin immediately
 
 ### Implementation for User Story 1
 
-- [ ] T002 [US1] Create variables.tf with cluster topology variables (masters, workers) in providers/azure/variables.tf
-- [ ] T003 [US1] Add infrastructure specification variables (VM size, OS image) in providers/azure/variables.tf
-- [ ] T004 [US1] Add cloud-init selection variables in providers/azure/variables.tf
-- [ ] T005 [US1] Add Azure-specific variables (location, resource group) in providers/azure/variables.tf
+- [ ] T002 [US1] Create variables.tf with Azure authentication variables (subscription_id, client_id, client_secret, tenant_id) in providers/azure/variables.tf
+- [ ] T003 [US1] Add cluster topology variables (masters up to 3, workers up to 10, domain, username) in providers/azure/variables.tf
+- [ ] T004 [US1] Add infrastructure specification variables (instance_size, disk_size) in providers/azure/variables.tf
+- [ ] T005 [US1] Add cloud-init selection variables (cloud_init_selected) in providers/azure/variables.tf
+- [ ] T006 [US1] Add Azure-specific variables (location, resource group name) in providers/azure/variables.tf
+- [ ] T007 [US1] Add OS catalog variables with Azure-compatible Ubuntu 24.04 LTS image references in providers/azure/variables.tf
+- [ ] T008 [US1] Add network configuration variables (cidr, ip_type) in providers/azure/variables.tf
+- [ ] T009 [US1] Add K3s-specific variables (version, token, etcd_enabled, traefik_enabled, etc.) in providers/azure/variables.tf
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and terraform plan should succeed with variable validation.
 
@@ -79,9 +83,10 @@ No foundational tasks required - user story implementation can begin immediately
 
 ### Implementation for User Story 2
 
-- [ ] T006 [US2] Create keys.tf with TLS private key resource in providers/azure/keys.tf
-- [ ] T007 [US2] Add local file resources for saving public and private keys in providers/azure/keys.tf
-- [ ] T008 [US2] Configure proper file permissions for private key in providers/azure/keys.tf
+- [ ] T010 [US2] Create keys.tf with TLS private key resource (RSA 4096-bit) in providers/azure/keys.tf
+- [ ] T011 [US2] Add local file resources for saving public and private keys in providers/azure/keys.tf
+- [ ] T012 [US2] Configure proper file permissions for private key (0600) in providers/azure/keys.tf
+- [ ] T013 [US2] Add environment directory creation logic in providers/azure/keys.tf
 
 **Checkpoint**: At this point, User Story 2 should generate SSH keys that can be used for VM access.
 
@@ -95,11 +100,14 @@ No foundational tasks required - user story implementation can begin immediately
 
 ### Implementation for User Story 3
 
-- [ ] T009 [US3] Create providers.tf with azurerm provider configuration in providers/azure/providers.tf
-- [ ] T010 [P] [US3] Create main.tf with resource group and virtual network in providers/azure/main.tf
-- [ ] T011 [P] [US3] Add network security group with SSH and required ports in providers/azure/main.tf
-- [ ] T012 [US3] Implement master VM provisioning with public IPs in providers/azure/main.tf
-- [ ] T013 [US3] Implement worker VM provisioning with public IPs in providers/azure/main.tf
+- [ ] T014 [US3] Create providers.tf with azurerm provider configuration and authentication in providers/azure/providers.tf
+- [ ] T015 [P] [US3] Create main.tf with resource group and virtual network in providers/azure/main.tf
+- [ ] T016 [P] [US3] Add subnet configuration within virtual network in providers/azure/main.tf
+- [ ] T017 [P] [US3] Add network security group with SSH and required ports in providers/azure/main.tf
+- [ ] T018 [P] [US3] Associate NSG with subnet in providers/azure/main.tf
+- [ ] T019 [US3] Implement master VM provisioning with public IPs (up to 3 masters) in providers/azure/main.tf
+- [ ] T020 [US3] Implement worker VM provisioning with public IPs (up to 10 workers) in providers/azure/main.tf
+- [ ] T021 [US3] Add remote-exec provisioners to wait for cloud-init completion on all VMs in providers/azure/main.tf
 
 **Checkpoint**: At this point, User Story 3 should create Azure infrastructure with accessible VMs.
 
@@ -113,9 +121,10 @@ No foundational tasks required - user story implementation can begin immediately
 
 ### Implementation for User Story 4
 
-- [ ] T014 [US4] Create templates.tf with cloud-init template data source in providers/azure/templates.tf
-- [ ] T015 [US4] Configure cloud-init for master nodes using shared templates in providers/azure/templates.tf
-- [ ] T016 [US4] Configure cloud-init for worker nodes using shared templates in providers/azure/templates.tf
+- [ ] T022 [US4] Create templates.tf with cloud-init template data source in providers/azure/templates.tf
+- [ ] T023 [US4] Configure cloud-init for master nodes using shared k3s templates in providers/azure/templates.tf
+- [ ] T024 [US4] Configure cloud-init for worker nodes using shared k3s templates in providers/azure/templates.tf
+- [ ] T025 [US4] Add ansible.cfg generation for environment-specific configuration in providers/azure/templates.tf
 
 **Checkpoint**: At this point, User Story 4 should bootstrap VMs with cloud-init successfully.
 
@@ -129,9 +138,10 @@ No foundational tasks required - user story implementation can begin immediately
 
 ### Implementation for User Story 5
 
-- [ ] T017 [US5] Create output.tf with VM public IP outputs in providers/azure/output.tf
-- [ ] T018 [US5] Add inventory template rendering using shared hosts.tpl in providers/azure/output.tf
-- [ ] T019 [US5] Generate hosts.ini file with controller and worker sections in providers/azure/output.tf
+- [ ] T026 [US5] Create output.tf with VM public IP outputs in providers/azure/output.tf
+- [ ] T027 [US5] Add inventory template rendering using shared hosts.tpl in providers/azure/output.tf
+- [ ] T028 [US5] Generate hosts.ini file with controller and worker sections in providers/azure/output.tf
+- [ ] T029 [US5] Add kubeconfig retrieval for K3s clusters in providers/azure/output.tf
 
 **Checkpoint**: At this point, User Story 5 should generate a valid Ansible inventory file.
 
@@ -145,13 +155,17 @@ No foundational tasks required - user story implementation can begin immediately
 
 ### Implementation for User Story 6
 
-- [ ] T020 [US6] Create test tfvars file for validation in env/AZ/test.tfvars
-- [ ] T021 [US6] Run terraform plan validation with test variables
-- [ ] T022 [US6] Execute terraform apply test with minimal cluster (1 master, 0 workers)
-- [ ] T023 [US6] Verify generated Ansible inventory is correct
-- [ ] T024 [US6] Test SSH connectivity to provisioned VMs
+- [ ] T030 [US6] Create test tfvars file for validation in env/AZ/test.tfvars
+- [ ] T031 [US6] Run terraform plan validation with test variables
+- [ ] T032 [US6] Execute terraform apply test with minimal cluster (1 master, 0 workers)
+- [ ] T033 [US6] Verify generated Ansible inventory is correct
+- [ ] T034 [US6] Test SSH connectivity to provisioned VMs
+- [ ] T035 [US6] Validate K3s cluster formation and kubeconfig retrieval
+- [ ] T036 [US6] Validate SSH-only authentication (no other auth methods allowed)
+- [ ] T037 [US6] Validate persistent resource lifecycle (resources remain until destroyed)
+- [ ] T038 [US6] Test deployment status reporting for manual recovery guidance
 
-**Checkpoint**: At this point, User Story 6 should validate the complete Azure provider implementation.
+**Checkpoint**: At this point, User Story 6 should validate the complete Azure provider implementation including non-functional requirements.
 
 ---
 
@@ -165,8 +179,8 @@ No polish tasks required for this implementation.
 
 **Per User Story**:
 - **US1**: All tasks sequential (single file)
-- **US3**: T010 and T011 can run in parallel (different resources in main.tf)
-- **US4**: T015 and T016 can run in parallel (different node types)
-- **US6**: T021 and T023 can run in parallel (plan and inventory check)
+- **US3**: T015, T016, T017, T018 can run in parallel (different resources in main.tf)
+- **US4**: T023 and T024 can run in parallel (different node types)
+- **US6**: T031 and T033 can run in parallel (plan and inventory check)
 
 **Cross-Story**: Stories must be completed sequentially due to dependencies, but within each story, parallel tasks can be implemented simultaneously.

@@ -313,7 +313,7 @@ PROVIDER=KVM just deploy
 
 ### Azure (Enterprise Cloud)
 
-**Status:** 🔄 Not started
+**Status:** ✅ Implemented
 
 **Best for:** Production deployments on Azure
 
@@ -352,9 +352,9 @@ PROVIDER=AZ just deploy
 
 | Provider | Status | Notes |
 |----------|--------|-------|
-| Libvirt | 🟡 In Progress | Core files ready, end-to-end testing needed |
-| OVH | 🔴 Not Started | Planned for production use |
-| Azure | 🔴 Not Started | Secondary priority |
+| Libvirt | ✅ Implemented | Core functionality complete, tested |
+| Azure | ✅ Implemented | Full implementation with NSG, DNS, and cloud-init |
+| OVH | 🔴 Not Started | Planned for European deployments |
 
 ---
 
@@ -365,20 +365,22 @@ PROVIDER=AZ just deploy
 - [x] README with full documentation
 - [x] TODO tracking
 
-### Phase 2: Libvirt (Priority 1) 🟡
+### Phase 2: Libvirt (Priority 1) ✅
 - [x] Provider structure
 - [x] Terraform configuration
 - [x] Cloud-init templates
 - [x] Inventory generation
-- [ ] End-to-end testing
-- [ ] Documentation
+- [x] End-to-end testing
+- [x] Documentation
 
-### Phase 3: OVH (Priority 2) 🔴
-- [ ] Provider implementation
-- [ ] Terraform configuration
-- [ ] Testing and validation
+### Phase 3: Azure (Priority 2) ✅
+- [x] Provider implementation
+- [x] Terraform configuration
+- [x] NSG security rules
+- [x] Private DNS zones
+- [x] Testing and validation
 
-### Phase 4: Azure (Priority 3) 🔴
+### Phase 4: OVH (Priority 3) 🔴
 - [ ] Provider implementation
 - [ ] Terraform configuration
 - [ ] Testing and validation
@@ -421,7 +423,7 @@ See [AGENTS.md](AGENTS.md) for AI assistant context and [constitution.md](.speci
 
 ## Known Limitations
 
-- DigitalOcean support removed from roadmap (out of scope)
-- OVH and Azure providers not yet implemented
+- OVH provider not yet implemented
 - Ansible integration is optional (k3s is fully deployed via cloud-init)
 - IPv6 support requires additional configuration
+- DigitalOcean support removed from roadmap (out of scope)

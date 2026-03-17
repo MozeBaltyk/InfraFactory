@@ -5,6 +5,23 @@
 **Status**: Draft  
 **Input**: User description: "Create a feature specification for implementing the Azure provider in InfraFactory. The feature should follow the established Libvirt pattern: support N masters and N workers, use cloud-init for bootstrap, generate Ansible inventory. Include user stories for each major component (variables, keys, main provisioning, templates, outputs, testing). Set priorities based on dependency order."
 
+## Clarifications
+
+### Session 2026-03-17 (Extended)
+- Q: What are the maximum cluster scale limits for masters and workers? → A: Small - Support up to 3 masters and 10 workers per cluster
+- Q: Which authentication methods should be supported for VM access? → A: SSH Keys - SSH key-based authentication only
+- Q: How should deployment failures be handled and recovered? → A: Manual - Manual intervention required for failed deployments
+- Q: Which external dependencies and failure modes need explicit handling? → A: Image Availability, Network Access, Quotas
+- Q: What is the resource lifecycle and cleanup strategy? → A: Persistent - Resources persist until explicitly destroyed
+- Q: What specific network security group rules should be implemented? → A: Allow SSH and port 6443 from my computer to connect via SSH to VMs and Kubernetes cluster API
+- Q: What specific error handling strategies should be implemented for Azure quota limits being reached? → A: Display clear error message that the quota is reached
+- Q: How should the system handle cases where Ubuntu 24.04 LTS images are not available in the selected Azure region? → A: Display clear error
+- Q: What should happen when network connectivity to Azure services is interrupted during provisioning? → A: Try refresh and deploy again
+- Q: How should partial provisioning failures be handled (e.g., some VMs succeed, others fail)? → A: Refresh state and deploy again
+- Q: What recovery procedures should be implemented when cloud-init fails on individual VMs? → A: Nothing (no specific automated recovery)
+- Q: What specific manual recovery steps should be documented for deployment failures? → A: Nothing, give a status of the deployment
+- Q: Should validation tasks be added for non-functional requirements in the implementation plan? → A: Yes
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Configure Azure Provider Variables (Priority: P1)
@@ -50,7 +67,7 @@ As an infrastructure engineer, I want Azure VMs and networking to be provisioned
 **Acceptance Scenarios**:
 
 1. **Given** cluster.masters=1 and cluster.workers=0, **When** terraform apply completes, **Then** 1 controller VM and 0 worker VMs are created in Azure
-2. **Given** Azure network configuration, **When** VMs are provisioned, **Then** public IPs are assigned and NSG allows SSH and required ports
+2. **Given** Azure network configuration, **When** VMs are provisioned, **Then** public IPs are assigned and NSG allows SSH and port 6443 from my computer
 3. **Given** VM specifications, **When** infra.memory_mb and infra.cpu are set, **Then** Azure instance size matches the specifications
 
 ---
@@ -103,10 +120,12 @@ As an infrastructure engineer, I want to test the complete Azure provider implem
 
 ### Edge Cases
 
-- What happens when Azure quota limits are reached during VM provisioning?
-- How does the system handle Azure region-specific image availability?
-- What if cloud-init fails on some VMs but succeeds on others?
-- How are resources cleaned up if provisioning partially fails?
+- **Azure Quota Limits**: When quota limits are reached during VM provisioning, display clear error message that the quota is reached
+- **Image Availability**: When Ubuntu 24.04 LTS images are not available in the selected Azure region, display clear error
+- **Network Connectivity**: When network connectivity to Azure services is interrupted during provisioning, try refresh and deploy again
+- **Partial Provisioning Failure**: When some VMs succeed and others fail, refresh state and deploy again
+- **Cloud-init Failure**: When cloud-init fails on individual VMs, no specific automated recovery is implemented
+- **Manual Recovery**: For deployment failures, provide status of the deployment (no automated recovery steps)
 
 ## Requirements *(mandatory)*
 
@@ -116,10 +135,16 @@ As an infrastructure engineer, I want to test the complete Azure provider implem
 - **FR-002**: Azure provider MUST use shared cloud-init templates from providers/shared/cloud-init/ for VM bootstrap
 - **FR-003**: Azure provider MUST generate Ansible inventory compatible with providers/shared/inventory/hosts.tpl
 - **FR-004**: Azure provider MUST implement SSH key generation and injection following Libvirt keys.tf pattern
-- **FR-005**: Azure provider MUST create Azure VMs with public IPs, network security groups, and proper sizing
+- **FR-005**: Azure provider MUST create Azure VMs with public IPs, network security groups allowing SSH and port 6443 from my computer, and proper sizing
 - **FR-006**: Azure provider MUST support Ubuntu 24.04 LTS as the primary OS matching Libvirt os_catalog
 - **FR-007**: Azure provider MUST include remote-exec provisioners to wait for cloud-init completion
 - **FR-008**: Azure provider MUST output cluster node IPs in the same format as Libvirt for consistency
+
+### Non-Functional Requirements
+
+- **NFR-001**: Authentication MUST use SSH key-based authentication only for VM access
+- **NFR-002**: Resources MUST persist until explicitly destroyed via terraform destroy
+- **NFR-003**: Deployment failures MUST be handled through manual intervention
 
 ### Key Entities *(include if feature involves data)*
 
@@ -135,7 +160,7 @@ As an infrastructure engineer, I want to test the complete Azure provider implem
 
 ### Measurable Outcomes
 
-- **SC-001**: Azure provider supports 1-3 masters and 0-5 workers without configuration changes
+- **SC-001**: Azure provider supports 1-3 masters and 0-10 workers without configuration changes
 - **SC-002**: VMs boot and complete cloud-init within 5 minutes of creation
 - **SC-003**: SSH access works immediately after cloud-init completion using generated keys
 - **SC-004**: Ansible inventory is generated with correct IP mappings for all nodes
