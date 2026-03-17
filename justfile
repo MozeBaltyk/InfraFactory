@@ -15,9 +15,6 @@ TF_OVH := "./providers/ovh"
 TF_DO  := "./providers/digitalocean"
 ENV_TFVARS_PATH := "../../env/" + PROVIDER + "/" + ENV + ".tfvars"
 
-AZ_REQUIRED := "AZ_SUBS_ID AZ_CLIENT_ID AZ_CLIENT_SECRET AZ_TENANT_ID"
-AZ_SIZE_MATTERS := env_var_or_default("AZ_SIZE_MATTERS", "")
-
 # Default recipe: print help
 _help:
   @just --list --unsorted 
@@ -28,16 +25,6 @@ env:
 	@echo "  PROVIDER  = {{PROVIDER}}"
 	@echo "  ENV       = {{ENV}}"
 	@echo "   |-> ENV_TFVARS_PATH = {{ENV_TFVARS_PATH}}"
-
-##############################################
-# Helper recipes
-##############################################
-
-_retry cmd:
-	@for i in {1..2}; do \
-	  echo "Attempt $i..."; \
-	  {{cmd}} && break || sleep 2; \
-	done
 
 ##############################################
 # Entry points
@@ -59,9 +46,9 @@ deploy:
 destroy:
 	just _destroy-{{PROVIDER}}
 
-##############################################
+#---------------------------------------------
 # Azure recipes
-##############################################
+#---------------------------------------------
 _validate-AZ:
 	@cd {{TF_AZ}} && tofu init -backend=false && tofu validate
 

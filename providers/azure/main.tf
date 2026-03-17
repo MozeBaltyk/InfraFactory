@@ -113,6 +113,26 @@ resource "azurerm_linux_virtual_machine" "masters" {
   custom_data = base64encode(
     local.cloudinit[local.master_details[count.index].name]
   )
+
+  provisioner "remote-exec" {
+
+    inline = [
+      "echo 'Waiting for cloud-init to complete...'",
+      "cloud-init status --wait > /dev/null",
+      "echo 'Cloud-init done'",
+    ]
+
+    connection {
+      type        = "ssh"
+      host        = azurerm_public_ip.controller-pip[count.index].ip_address
+      user        = var.cluster.username
+      private_key = tls_private_key.global_key.private_key_pem
+    }
+  }
+
+  depends_on = [
+    azurerm_subnet_network_security_group_association.factory_project_subnet_nsg
+  ]
 }
 
 ### Workers
@@ -185,9 +205,31 @@ resource "azurerm_linux_virtual_machine" "workers" {
   custom_data = base64encode(
     local.cloudinit[local.worker_details[count.index].name]
   )
+
+  provisioner "remote-exec" {
+
+    inline = [
+      "echo 'Waiting for cloud-init to complete...'",
+      "cloud-init status --wait > /dev/null",
+      "echo 'Cloud-init done'",
+    ]
+
+    connection {
+      type        = "ssh"
+      host        = azurerm_public_ip.worker-pip[count.index].ip_address
+      user        = var.cluster.username
+      private_key = tls_private_key.global_key.private_key_pem
+    }
+  }
+
+  depends_on = [
+    azurerm_subnet_network_security_group_association.factory_project_subnet_nsg
+  ]
 }
 
+###########################
 # Network Security Group
+###########################
 resource "azurerm_network_security_group" "factory_project_nsg" {
   name                = "${var.cluster.id}-nsg"
   location            = var.cluster.region
@@ -204,7 +246,7 @@ resource "azurerm_network_security_group" "factory_project_nsg" {
       source_address_prefix      = local.my_public_ip
       source_port_range          = "*"  
       destination_address_prefix = "*"
-      destination_port_range     = security_rule.value.port
+      destination_port_range     = tostring(security_rule.value.port)
     }
   }
 
@@ -213,10 +255,48 @@ resource "azurerm_network_security_group" "factory_project_nsg" {
   }
 }
 
-###########################
-# Associate NSG to subnet
-###########################
 resource "azurerm_subnet_network_security_group_association" "factory_project_subnet_nsg" {
   subnet_id                 = azurerm_subnet.factory-project-internal.id
   network_security_group_id = azurerm_network_security_group.factory_project_nsg.id
+}
+
+###########################
+# DNS Zone
+###########################
+resource "azurerm_private_dns_zone" "factory" {
+  name                = "${local.subdomain}"
+  resource_group_name = azurerm_resource_group.factory-project.name
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "factory_link" {
+  name                  = "${var.cluster.id}-link"
+  resource_group_name   = azurerm_resource_group.factory-project.name
+  private_dns_zone_name = azurerm_private_dns_zone.factory.name
+  virtual_network_id    = azurerm_virtual_network.factory-project-network.id
+}
+
+resource "azurerm_private_dns_a_record" "controller" {
+  count = var.cluster.masters
+
+  name = "${local.master_details[count.index].name}"
+  zone_name           = azurerm_private_dns_zone.factory.name
+  resource_group_name = azurerm_resource_group.factory-project.name
+  ttl                 = 300
+
+  records = [
+    azurerm_network_interface.controller-interfaces[count.index].private_ip_address
+  ]
+}
+
+resource "azurerm_private_dns_a_record" "worker" {
+  count = var.cluster.workers
+
+  name = "${local.worker_details[count.index].name}"
+  zone_name           = azurerm_private_dns_zone.factory.name
+  resource_group_name = azurerm_resource_group.factory-project.name
+  ttl                 = 300
+
+  records = [
+    azurerm_network_interface.worker-interfaces[count.index].private_ip_address
+  ]
 }
