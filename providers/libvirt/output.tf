@@ -1,31 +1,3 @@
-# Output the node IPs
-output "cluster_nodes" {
-  description = "The IP addresses of the cluster nodes."
-
-  value = {
-    masters = flatten([
-      for m in libvirt_domain.masters :
-      m.network_interface[0].addresses
-    ])
-
-    workers = flatten([
-      for w in libvirt_domain.workers :
-      w.network_interface[0].addresses
-    ])
-  }
-}
-
-output "kubeconfig_command" {
-  value = var.cluster.cloud_init_selected == "k3s" ? (<<-EOT
-mkdir -p ~/.kube && touch ~/.kube/config \
-ssh -i env/KVM/${terraform.workspace}/.key.private ${var.cluster.username}@${libvirt_domain.masters[0].network_interface[0].addresses[0]} "sudo cat /etc/rancher/k3s/k3s.yaml" | \
-sed 's/127.0.0.1/${libvirt_domain.masters[0].network_interface[0].addresses[0]}/' > ~/.kube/k3s-${terraform.workspace}.yaml && \
-chmod 600 ~/.kube/k3s-${terraform.workspace}.yaml && \
-kubecm add -cf ~/.kube/k3s-${terraform.workspace}.yaml --context-name k3s-${terraform.workspace} --create
-EOT
-) : ""
-}
-
 ###
 ### Generate the hosts.ini file
 ###
@@ -71,4 +43,68 @@ resource "local_file" "ansible_inventory" {
     null_resource.env_directory,
     null_resource.sleep_before_inventory
   ]
+}
+
+###
+### Import Kubeconfig
+###
+resource "null_resource" "kubeconfig" {
+  depends_on = [
+    null_resource.env_directory,
+    libvirt_domain.masters,
+    libvirt_domain.workers
+  ]
+
+  triggers = {
+    path = local.local_env_path
+  }
+
+  # Create/fetch kubeconfig
+  provisioner "local-exec" {
+    command = <<EOT
+echo "Fetching kubeconfig into ${self.triggers.path}/kubeconfig"
+ssh -o StrictHostKeyChecking=no -i ${self.triggers.path}/.key.private \
+${var.cluster.username}@${libvirt_domain.masters[0].network_interface[0].addresses[0]} \
+"sudo cat /etc/rancher/k3s/k3s.yaml" | sed "s/127.0.0.1/${libvirt_domain.masters[0].network_interface[0].addresses[0]}/" \
+> ${self.triggers.path}/kubeconfig
+EOT
+  }
+
+  # Cleanup on destroy
+  provisioner "local-exec" {
+    when    = destroy
+    command = "rm -f ${self.triggers.path}/kubeconfig"
+  }
+}
+
+###
+### Output
+###
+
+# Output the node IPs
+output "cluster_nodes" {
+  description = "The IP addresses of the cluster nodes."
+
+  value = {
+    masters = flatten([
+      for m in libvirt_domain.masters :
+      m.network_interface[0].addresses
+    ])
+
+    workers = flatten([
+      for w in libvirt_domain.workers :
+      w.network_interface[0].addresses
+    ])
+  }
+}
+
+output "kubeconfig_command" {
+  value = var.cluster.cloud_init_selected == "k3s" ? (<<-EOT
+kubecm add -cf env/KVM/${terraform.workspace}/kubeconfig --context-name k3s-${terraform.workspace} --create
+# Or :
+export KUBECONFIG=env/KVM/${terraform.workspace}/kubeconfig
+# Then :
+kubectl get nodes
+EOT
+) : ""
 }

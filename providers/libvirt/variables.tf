@@ -65,15 +65,15 @@ variable "infra" {
   description = "VM infrastructure configuration"
 
   type = object({
-    memory_mb = number
+    memory_gb = number
     cpu       = number
     disk_size = number
   })
 
   default = {
-    memory_mb = 4096
     cpu       = 2
-    disk_size = 10  #GB
+    disk_size = 10 #GB
+    memory_gb = 4  #GB
   }
 }
 
@@ -84,14 +84,33 @@ variable "network" {
   description = "Libvirt network configuration"
 
   type = object({
-    cidr = string
-    ip_type = string
+    cidr        = optional(string)
+    ip_type     = string
+    mode        = string
+    bridge_name = optional(string)
   })
 
   default = {
     cidr    = "192.168.100.0/24"
     ip_type = "dhcp"
+    mode    = "nat"
   }
+
+  # Validate allowed modes and required fields based on mode
+  validation {
+    condition = (
+      (var.network.mode == "nat" || var.network.mode == "route" ? var.network.cidr != null : true) &&
+      (var.network.mode == "bridge" ? var.network.bridge_name != null : true)
+    )
+    error_message = "cidr required for nat/route, bridge_name required for bridge mode."
+  }
+
+  # Validate allowed IP types (dhcp or static)
+  validation {
+    condition = contains(["dhcp", "static"], var.network.ip_type)
+    error_message = "ip_type must be either 'dhcp' or 'static'."
+  }
+
 }
 
 ###################################
@@ -123,12 +142,11 @@ variable "k3s" {
 
 # Local Settings
 locals {
-
   os = var.os_catalog[var.os.selected]
 
   subdomain = "${var.cluster.id}.${var.cluster.domain}"
 
-  network_gateway = cidrhost(var.network.cidr, 1)
+  network_gateway = (var.network.mode == "nat" || var.network.mode == "route") ? cidrhost(var.network.cidr, 1) : null
 
   factory_pool_path = "${var.cluster.factory_root_path}/${var.cluster.id}/pool"
 

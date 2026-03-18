@@ -11,14 +11,22 @@ cluster = {
 
 infra = {
   cpu       = 2
-  memory_mb = 4096
+  memory_gb = 4
   disk_size = 10
 }
 
 network = {
-  cidr    = "192.168.100.0/24"
   ip_type = "dhcp"
+  mode    = "nat"
+  cidr    = "192.168.100.0/24"
 }
+
+# Bridge example
+#network = {
+#  ip_type = "dhcp"
+#  mode    = "bridge"
+#  bridge_name = "br0"
+#}
 
 os = {
   selected = "ubuntu24"

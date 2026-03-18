@@ -30,34 +30,38 @@ resource "libvirt_volume" "resized_os_image" {
   size = var.infra.disk_size * 1024 * 1024 * 1024
 }
 
+
 ### Network
-
 resource "libvirt_network" "network" {
-
-  name      = var.cluster.id
-  mode      = "nat"
+  name = var.cluster.id
+  mode = var.network.mode
   autostart = true
 
-  domain    = local.subdomain
-  addresses = [var.network.cidr]
+  # Set domain or addresses only for NAT/Route
+  domain = (var.network.mode == "nat" || var.network.mode == "route") ? local.subdomain : null
+  addresses = (var.network.mode == "nat" || var.network.mode == "route") ? [var.network.cidr] : null
 
+  # DHCP enabled only for NAT/Route and dhcp type
   dhcp {
-    enabled = true
+    enabled = var.network.ip_type == "dhcp" && (var.network.mode == "nat" || var.network.mode == "route")
   }
 
+  # DNS always enabled
   dns {
     enabled = true
   }
+
+  # Set bridge name only for bridge mode
+  bridge = var.network.mode == "bridge" ? var.network.bridge_name : null
 }
 
 ### Master Nodes
-
 resource "libvirt_domain" "masters" {
 
   count = var.cluster.masters
 
   name   = "${local.master_details[count.index].name}.${local.subdomain}"
-  memory = var.infra.memory_mb
+  memory = var.infra.memory_gb * 1024
   vcpu   = var.infra.cpu
 
   autostart  = true
@@ -118,7 +122,7 @@ resource "libvirt_domain" "workers" {
   count = var.cluster.workers
 
   name   = "${local.worker_details[count.index].name}.${local.subdomain}"
-  memory = var.infra.memory_mb
+  memory = var.infra.memory_gb * 1024
   vcpu   = var.infra.cpu
 
   autostart  = true
