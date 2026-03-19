@@ -88,6 +88,7 @@ variable "network" {
     ip_type     = string
     mode        = string
     bridge_name = optional(string)
+    extra_dns = optional(list(string), ["8.8.8.8", "8.8.4.4"])
   })
 
   default = {
@@ -146,7 +147,17 @@ locals {
 
   subdomain = "${var.cluster.id}.${var.cluster.domain}"
 
-  network_gateway = (var.network.mode == "nat" || var.network.mode == "route") ? cidrhost(var.network.cidr, 1) : null
+  # Gateway only exists for NAT/Route
+  network_gateway = (
+    var.network.mode == "nat" || var.network.mode == "route"
+  ) ? cidrhost(var.network.cidr, 1) : null
+
+  # DNS logic - For NAT/Route, use Libvirt gateway + extra DNS; for bridge, use extra DNS only (assuming host handles DNS)
+  dns_servers = (
+    var.network.mode == "bridge"
+    ? join(",", var.network.extra_dns)
+    : join(",", concat([local.network_gateway], var.network.extra_dns))
+  )
 
   factory_pool_path = "${var.cluster.factory_root_path}/${var.cluster.id}/pool"
 

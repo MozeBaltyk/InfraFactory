@@ -38,9 +38,7 @@ resource "libvirt_cloudinit_disk" "commoninit" {
     "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/network_config_${var.network.ip_type}.cfg",
     {
       domain      = local.subdomain
-      # DNS: For NAT/Route, use Libvirt gateway; for bridge, maybe host DNS
-      dns_servers = var.network.mode == "bridge" ? "8.8.8.8,8.8.4.4" : "${local.network_gateway},8.8.8.8"
-
+      dns_servers = local.dns_servers
     }
   )
 

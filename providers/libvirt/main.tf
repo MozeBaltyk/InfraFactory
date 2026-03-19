@@ -116,7 +116,6 @@ resource "libvirt_domain" "masters" {
 }
 
 ### Worker Nodes
-
 resource "libvirt_domain" "workers" {
 
   count = var.cluster.workers
