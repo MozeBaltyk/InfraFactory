@@ -19,6 +19,7 @@ resource "libvirt_cloudinit_disk" "commoninit" {
       public_key    = tls_private_key.global_key.public_key_openssh
 
       is_first_master   = each.value.name == local.master_details[0].name
+      first_master_ip   = local.master_details[0].ip
       first_master_fqdn = "${local.master_details[0].name}.${local.subdomain}"
 
       node_role = each.value.role
@@ -37,8 +38,10 @@ resource "libvirt_cloudinit_disk" "commoninit" {
   network_config = templatefile(
     "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/network_config_${var.network.ip_type}.cfg",
     {
-      domain      = local.subdomain
-      dns_servers = local.dns_servers
+      network_gateway = local.network_gateway
+      domain          = local.subdomain
+      dns_servers     = local.dns_servers
+      ip_address      = each.value.ip
     }
   )
 
@@ -46,9 +49,6 @@ resource "libvirt_cloudinit_disk" "commoninit" {
 
   pool = libvirt_pool.factory_pool.name
 
-  lifecycle {
-    create_before_destroy = true
-  }
 }
 
 # Generate environment-specific ansible.cfg

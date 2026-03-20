@@ -27,7 +27,7 @@ resource "libvirt_volume" "resized_os_image" {
   base_volume_id = libvirt_volume.os_image.id
   pool           = libvirt_pool.factory_pool.name
 
-  size = var.infra.disk_size * 1024 * 1024 * 1024
+  size = each.value.disk_size * 1024 * 1024 * 1024
 }
 
 
@@ -53,16 +53,30 @@ resource "libvirt_network" "network" {
 
   # Set bridge name only for bridge mode
   bridge = var.network.mode == "bridge" ? var.network.bridge_name : null
+
+  lifecycle {
+    precondition {
+      condition = (
+        var.network.ip_type == "dhcp" ||
+        (
+          length(var.infra.masters.ip_addresses) >= var.infra.masters.count &&
+          length(var.infra.workers.ip_addresses) >= var.infra.workers.count
+        )
+      )
+      error_message = "Static IP mode requires enough IP addresses for all VMs."
+    }
+  }
+
 }
 
 ### Master Nodes
 resource "libvirt_domain" "masters" {
 
-  count = var.cluster.masters
+  count = var.infra.masters.count
 
   name   = "${local.master_details[count.index].name}.${local.subdomain}"
-  memory = var.infra.memory_gb * 1024
-  vcpu   = var.infra.cpu
+  memory = var.infra.masters.memory_gb * 1024
+  vcpu   = var.infra.masters.cpu
 
   autostart  = true
   qemu_agent = true
@@ -75,7 +89,8 @@ resource "libvirt_domain" "masters" {
 
   network_interface {
     network_id     = libvirt_network.network.id
-    wait_for_lease = true
+    wait_for_lease = var.network.ip_type == "dhcp"
+    mac = local.master_details[count.index].mac
   }
 
   cloudinit = libvirt_cloudinit_disk.commoninit[
@@ -118,11 +133,11 @@ resource "libvirt_domain" "masters" {
 ### Worker Nodes
 resource "libvirt_domain" "workers" {
 
-  count = var.cluster.workers
+  count = var.infra.workers.count
 
   name   = "${local.worker_details[count.index].name}.${local.subdomain}"
-  memory = var.infra.memory_gb * 1024
-  vcpu   = var.infra.cpu
+  memory = var.infra.workers.memory_gb * 1024
+  vcpu   = var.infra.workers.cpu
 
   autostart  = true
   qemu_agent = true
@@ -135,7 +150,8 @@ resource "libvirt_domain" "workers" {
 
   network_interface {
     network_id     = libvirt_network.network.id
-    wait_for_lease = true
+    wait_for_lease = var.network.ip_type == "dhcp"
+    mac = local.worker_details[count.index].mac
   }
 
   cloudinit = libvirt_cloudinit_disk.commoninit[
