@@ -71,6 +71,7 @@ InfraFactory/
 │
 ├── providers/                    # Cloud provider implementations
 │   ├── libvirt/                  # Local KVM/QEMU provider
+│   │   ├── justfile             # Provider-local Just recipes
 │   │   ├── main.tf               # VM provisioning
 │   │   ├── variables.tf          # Input variables
 │   │   ├── output.tf             # Outputs (IPs, kubeconfig)
@@ -80,8 +81,10 @@ InfraFactory/
 │   │   ├── hosts.ini             # Generated Ansible inventory
 │   │   └── ansible.cfg           # Ansible configuration
 │   ├── azure/                    # Microsoft Azure provider
+│   │   ├── justfile             # Provider-local Just recipes
 │   │   └── [provider files]
 │   ├── ovh/                      # OVH Cloud provider (not started)
+│   │   ├── justfile             # Provider-local Just recipes
 │   │   └── [provider files]
 │   │
 │   └── shared/                   # Shared resources (all providers)

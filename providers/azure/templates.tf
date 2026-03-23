@@ -19,6 +19,7 @@ locals {
         public_key    = tls_private_key.global_key.public_key_openssh
 
         is_first_master   = vm.name == local.master_details[0].name
+        first_master_ip   = azurerm_network_interface.controller-interfaces[0].private_ip_address
         first_master_fqdn = "${local.master_details[0].name}.${local.subdomain}"
 
         node_role = vm.role

@@ -1,7 +1,7 @@
 # TODO
 
 ## Current Status
-Azure provider fully implemented following Libvirt pattern. Ready for end-to-end testing and OVH provider development.
+Azure provider fully implemented following Libvirt pattern. Top-level Just orchestration now delegates to provider-local justfiles via `mod`. Ready for end-to-end testing and OVH provider development.
 
 ---
 
@@ -10,6 +10,7 @@ Azure provider fully implemented following Libvirt pattern. Ready for end-to-end
 ### Phase 1: Foundation
 - [X] Create TODO.md with project tasks
 - [X] Expand README.md with roadmap and implementation status
+- [X] Refactor Just orchestration to provider-local justfiles with `mod`
 
 ### Phase 2: Provider Libvirt (Priority 1)
 - [X] Set up libvirt provider directory structure

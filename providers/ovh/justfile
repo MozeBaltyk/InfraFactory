@@ -1,0 +1,27 @@
+set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+
+ENV := env_var_or_default("ENV", "lab")
+ENV_TFVARS_PATH := "../../env/OVH/" + ENV + ".tfvars"
+
+[private]
+_workspace:
+    @tofu workspace select {{ ENV }} || tofu workspace new {{ ENV }}
+
+validate:
+    @tofu init -backend=false
+    @tofu validate
+
+plan:
+    @tofu init
+    @just _workspace
+    @tofu plan -var-file={{ ENV_TFVARS_PATH }}
+
+deploy:
+    @tofu init
+    @just _workspace
+    @tofu apply -auto-approve -var-file={{ ENV_TFVARS_PATH }}
+
+destroy:
+    @tofu init
+    @just _workspace
+    @tofu destroy -auto-approve -var-file={{ ENV_TFVARS_PATH }}
