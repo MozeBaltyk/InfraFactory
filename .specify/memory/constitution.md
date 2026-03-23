@@ -1,19 +1,17 @@
 <!--
 Sync Impact Report
-- Version change: 1.0.0 -> 1.0.1
-- Modified principles:
-	- III. Provisioning Workflow (NON-NEGOTIABLE) -> III. Provisioning Workflow (NON-NEGOTIABLE)
-	- IV. Consistent Provider Layout -> IV. Consistent Provider Layout
+- Version change: 1.1.0 -> 1.2.0
+- Modified principles: Updated Implementation Priority to reflect current Azure implementation
 - Added sections: None
 - Removed sections: None
+- Implementation Priority updated: Confirmed Azure implementation status
 - Templates requiring updates:
-	- ✅ updated: .specify/templates/plan-template.md
+	- ✅ no change required: .specify/templates/plan-template.md
 	- ✅ no change required: .specify/templates/spec-template.md
 	- ✅ no change required: .specify/templates/tasks-template.md
-	- ✅ no change required: .specify/templates/commands (directory not present)
 - Runtime guidance requiring updates:
-	- ✅ updated: AGENTS.md
-	- ✅ no change required: README.md
+	- ✅ updated: AGENTS.md (no changes needed)
+	- ✅ updated: README.md (implementation status corrected)
 - Deferred TODOs: None
 -->
 
@@ -62,10 +60,10 @@ Avoid provider-specific hacks; prefer solving at abstraction level.
 
 Provider feature development follows strict priority order to optimize feedback cycles:
 
-1. **Libvirt** (Local development): Fast, offline, primary feedback loop
-2. **OVH** (Primary cloud target): First production validation
-3. **Azure** (Secondary): After Libvirt + OVH proven
-4. **DigitalOcean** (Experimental): Lowest priority
+1. **Libvirt** (Local development): Fast, offline, primary feedback loop - ✅ IMPLEMENTED
+2. **Azure** (Primary cloud target): First production validation - ✅ IMPLEMENTED  
+3. **OVH** (Secondary): After Libvirt + Azure proven - 🔄 NOT STARTED
+4. **DigitalOcean** (Experimental): Lowest priority - ❌ REMOVED FROM ROADMAP
 
 New features MUST be validated on Libvirt before cloud implementation.
 
@@ -120,4 +118,4 @@ This Constitution supersedes all other practices and project guidance. Amendment
 Runtime development guidance is defined in [AGENTS.md](AGENTS.md). All infrastructure 
 feature additions must verify compliance with these Core Principles before implementation.
 
-**Version**: 1.0.1 | **Ratified**: 2025-03-10 | **Last Amended**: 2026-03-10
+**Version**: 1.2.0 | **Ratified**: 2025-03-10 | **Last Amended**: 2026-03-17

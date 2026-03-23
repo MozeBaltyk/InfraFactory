@@ -72,17 +72,17 @@ All new features should **first be implemented and validated on Libvirt**.
 
 ---
 
-### Priority 2: Provider OVH
+### Priority 2: Provider Azure
 
-OVH is the **primary real cloud target**.
+Azure is the **primary real cloud target**.
 
-Features validated on Libvirt should then be implemented for OVH.
+Features validated on Libvirt should then be implemented for Azure.
 
 ---
 
-### Priority 3: Provider Azure
+### Priority 3: Provider OVH
 
-Azure support is **secondary** and should only be implemented after Libvirt and OVH are functional.
+OVH support is **secondary** and should only be implemented after Libvirt and Azure are functional.
 
 ---
 
