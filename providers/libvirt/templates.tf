@@ -19,7 +19,7 @@ resource "libvirt_cloudinit_disk" "commoninit" {
       public_key    = tls_private_key.global_key.public_key_openssh
 
       is_first_master   = each.value.name == local.master_details[0].name
-      first_master_ip   = local.master_details[0].ip
+      first_master_ip   = coalesce(local.master_details[0].ip, local.master_details[0].name)
       first_master_fqdn = "${local.master_details[0].name}.${local.subdomain}"
 
       node_role = each.value.role
