@@ -1,8 +1,6 @@
 cluster = {
   id       = "factory"
   domain   = "lab"
-  masters  = 1
-  workers  = 0
   timezone = "Europe/Paris"
   username = "localadmin"
   cloud_init_selected = "k3s"
@@ -10,15 +8,44 @@ cluster = {
 }
 
 infra = {
-  cpu       = 2
-  memory_mb = 4096
-  disk_size = 10
+  masters = {
+    count         = 1
+    cpu           = 2
+    disk_size     = 10
+    memory_gb     = 4
+    #mac_addresses = []  # Optionnal 
+    #ip_addresses = []   # Optionnal 
+  }
+  workers = {
+    count         = 0
+    cpu           = 2
+    disk_size     = 10
+    memory_gb     = 4
+    #mac_addresses = []  # Optionnal 
+    #ip_addresses = []   # Optionnal 
+  }
 }
 
 network = {
-  cidr    = "192.168.100.0/24"
   ip_type = "dhcp"
+  mode    = "nat"
+  cidr    = "192.168.100.0/24"
 }
+
+# Bridge with dhcp example
+#network = {
+#  ip_type = "dhcp"
+#  mode    = "bridge"
+#  bridge_name = "br0"
+#}
+
+# Bridge with static example
+#network = {
+#  ip_type = "static"
+#  gateway = "192.168.122.1"
+#  mode    = "bridge"
+#  bridge_name = "br0"
+#}
 
 os = {
   selected = "ubuntu24"

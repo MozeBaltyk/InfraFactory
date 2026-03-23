@@ -1,10 +1,6 @@
 # Use CloudInit ISO to add SSH key to the instances
 resource "libvirt_cloudinit_disk" "commoninit" {
-
-  for_each = {
-    for vm in concat(local.master_details, local.worker_details) :
-    vm.name => vm
-  }
+  for_each = { for vm in concat(local.master_details, local.worker_details) : vm.name => vm }
 
   name = "${each.value.name}-commoninit.iso"
 
@@ -23,6 +19,7 @@ resource "libvirt_cloudinit_disk" "commoninit" {
       public_key    = tls_private_key.global_key.public_key_openssh
 
       is_first_master   = each.value.name == local.master_details[0].name
+      first_master_ip   = coalesce(local.master_details[0].ip, local.master_details[0].name)
       first_master_fqdn = "${local.master_details[0].name}.${local.subdomain}"
 
       node_role = each.value.role
@@ -41,14 +38,17 @@ resource "libvirt_cloudinit_disk" "commoninit" {
   network_config = templatefile(
     "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/network_config_${var.network.ip_type}.cfg",
     {
-      domain      = local.subdomain
-      dns_servers = "${local.network_gateway},8.8.8.8"
+      network_gateway = local.network_gateway
+      domain          = local.subdomain
+      dns_servers     = local.dns_servers
+      ip_address      = each.value.ip
     }
   )
 
   meta_data = ""
 
   pool = libvirt_pool.factory_pool.name
+
 }
 
 # Generate environment-specific ansible.cfg

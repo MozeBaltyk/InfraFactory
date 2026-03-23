@@ -48,21 +48,32 @@ resource "local_file" "ansible_inventory" {
 ###
 ### Import Kubeconfig
 ###
-
-resource "null_resource" "fetch_kubeconfig" {
-
+resource "null_resource" "kubeconfig" {
   depends_on = [
     null_resource.env_directory,
     libvirt_domain.masters,
     libvirt_domain.workers
   ]
+
+  triggers = {
+    path = local.local_env_path
+  }
+
+  # Create/fetch kubeconfig
   provisioner "local-exec" {
     command = <<EOT
-ssh -o StrictHostKeyChecking=no -i ${local.local_env_path}/.key.private \
+echo "Fetching kubeconfig into ${self.triggers.path}/kubeconfig"
+ssh -o StrictHostKeyChecking=no -i ${self.triggers.path}/.key.private \
 ${var.cluster.username}@${libvirt_domain.masters[0].network_interface[0].addresses[0]} \
 "sudo cat /etc/rancher/k3s/k3s.yaml" | sed "s/127.0.0.1/${libvirt_domain.masters[0].network_interface[0].addresses[0]}/" \
-> ${local.local_env_path}/kubeconfig
+> ${self.triggers.path}/kubeconfig
 EOT
+  }
+
+  # Cleanup on destroy
+  provisioner "local-exec" {
+    when    = destroy
+    command = "rm -f ${self.triggers.path}/kubeconfig"
   }
 }
 

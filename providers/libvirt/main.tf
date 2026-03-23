@@ -27,38 +27,56 @@ resource "libvirt_volume" "resized_os_image" {
   base_volume_id = libvirt_volume.os_image.id
   pool           = libvirt_pool.factory_pool.name
 
-  size = var.infra.disk_size * 1024 * 1024 * 1024
+  size = each.value.disk_size * 1024 * 1024 * 1024
 }
 
+
 ### Network
-
 resource "libvirt_network" "network" {
-
-  name      = var.cluster.id
-  mode      = "nat"
+  name = var.cluster.id
+  mode = var.network.mode
   autostart = true
 
-  domain    = local.subdomain
-  addresses = [var.network.cidr]
+  # Set domain or addresses only for NAT/Route
+  domain = (var.network.mode == "nat" || var.network.mode == "route") ? local.subdomain : null
+  addresses = (var.network.mode == "nat" || var.network.mode == "route") ? [var.network.cidr] : null
 
+  # DHCP enabled only for NAT/Route and dhcp type
   dhcp {
-    enabled = true
+    enabled = var.network.ip_type == "dhcp" && (var.network.mode == "nat" || var.network.mode == "route")
   }
 
+  # DNS always enabled
   dns {
     enabled = true
   }
+
+  # Set bridge name only for bridge mode
+  bridge = var.network.mode == "bridge" ? var.network.bridge_name : null
+
+  lifecycle {
+    precondition {
+      condition = (
+        var.network.ip_type == "dhcp" ||
+        (
+          length(var.infra.masters.ip_addresses) >= var.infra.masters.count &&
+          length(var.infra.workers.ip_addresses) >= var.infra.workers.count
+        )
+      )
+      error_message = "Static IP mode requires enough IP addresses for all VMs."
+    }
+  }
+
 }
 
 ### Master Nodes
-
 resource "libvirt_domain" "masters" {
 
-  count = var.cluster.masters
+  count = var.infra.masters.count
 
   name   = "${local.master_details[count.index].name}.${local.subdomain}"
-  memory = var.infra.memory_mb
-  vcpu   = var.infra.cpu
+  memory = var.infra.masters.memory_gb * 1024
+  vcpu   = var.infra.masters.cpu
 
   autostart  = true
   qemu_agent = true
@@ -71,7 +89,8 @@ resource "libvirt_domain" "masters" {
 
   network_interface {
     network_id     = libvirt_network.network.id
-    wait_for_lease = true
+    wait_for_lease = var.network.ip_type == "dhcp"
+    mac = local.master_details[count.index].mac
   }
 
   cloudinit = libvirt_cloudinit_disk.commoninit[
@@ -112,14 +131,13 @@ resource "libvirt_domain" "masters" {
 }
 
 ### Worker Nodes
-
 resource "libvirt_domain" "workers" {
 
-  count = var.cluster.workers
+  count = var.infra.workers.count
 
   name   = "${local.worker_details[count.index].name}.${local.subdomain}"
-  memory = var.infra.memory_mb
-  vcpu   = var.infra.cpu
+  memory = var.infra.workers.memory_gb * 1024
+  vcpu   = var.infra.workers.cpu
 
   autostart  = true
   qemu_agent = true
@@ -132,7 +150,8 @@ resource "libvirt_domain" "workers" {
 
   network_interface {
     network_id     = libvirt_network.network.id
-    wait_for_lease = true
+    wait_for_lease = var.network.ip_type == "dhcp"
+    mac = local.worker_details[count.index].mac
   }
 
   cloudinit = libvirt_cloudinit_disk.commoninit[
