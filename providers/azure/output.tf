@@ -34,13 +34,24 @@ resource "null_resource" "fetch_kubeconfig" {
   depends_on = [
     azurerm_linux_virtual_machine.masters
   ]
+
+  triggers = {
+    path = local.local_env_path
+  }
+
   provisioner "local-exec" {
     command = <<EOT
-ssh -o StrictHostKeyChecking=no -i ${local.local_env_path}/.key.private \
+ssh -o StrictHostKeyChecking=no -i ${self.triggers.path}/.key.private \
 ${var.cluster.username}@${azurerm_public_ip.controller-pip[0].ip_address} \
 "sudo cat /etc/rancher/k3s/k3s.yaml" | sed "s/127.0.0.1/${azurerm_public_ip.controller-pip[0].ip_address}/" \
-> ${local.local_env_path}/kubeconfig
+> ${self.triggers.path}/kubeconfig
 EOT
+  }
+
+  # Cleanup on destroy
+  provisioner "local-exec" {
+    when    = destroy
+    command = "rm -f ${self.triggers.path}/kubeconfig"
   }
 }
 
