@@ -38,6 +38,8 @@ Minimum checks for InfraFactory plans:
 - Provisioning flow remains OpenTofu -> shared cloud-init -> inventory -> Ansible.
 - cloud-init templates are sourced from `providers/shared/cloud-init/$type`.
 - Provider structure remains consistent (provider-local `.tf` files + shared artifacts).
+- Provider-specific resources, external dependencies, and local artifact lifecycles are
+  documented when introduced.
 
 ## Project Structure
 

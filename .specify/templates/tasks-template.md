@@ -40,6 +40,11 @@ description: "Task list template for feature implementation"
   - Tested independently
   - Delivered as an MVP increment
   
+  For InfraFactory features, include explicit tasks when the spec introduces:
+  - provider-specific cloud resources
+  - external dependencies used during plan/apply
+  - local artifact creation or destroy-time cleanup
+  
   DO NOT keep these sample tasks in the generated tasks.md file.
   ============================================================================
 -->

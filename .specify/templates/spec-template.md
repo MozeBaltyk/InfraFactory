@@ -20,6 +20,15 @@
   - Demonstrated to users independently
 -->
 
+<!--
+  InfraFactory note:
+  If a provider feature introduces provider-specific cloud resources, external dependencies,
+  or local artifacts (for example generated files that are cleaned up on destroy), those
+  behaviors MUST be described in the relevant user story acceptance scenarios, edge cases,
+  and requirements. If exact schema parity across providers is not meaningful, document the
+  provider-native input model explicitly instead of forcing a misleading generic abstraction.
+-->
+
 ### User Story 1 - [Brief Title] (Priority: P1)
 
 [Describe this user journey in plain language]
@@ -74,6 +83,8 @@
 
 - What happens when [boundary condition]?
 - How does system handle [error scenario]?
+- What provider-specific external dependency exists at plan/apply time, and what happens if it is unavailable?
+- What local artifacts are created or removed during apply/destroy, and how should their lifecycle behave?
 
 ## Requirements *(mandatory)*
 
@@ -95,10 +106,19 @@
 - **FR-006**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
 - **FR-007**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
 
+<!--
+  InfraFactory note:
+  Add explicit requirements for:
+  - provider-specific resources that become part of the deployed footprint
+  - external dependencies used to compute configuration or access control
+  - local artifacts generated for operator workflows
+-->
+
 ### Key Entities *(include if feature involves data)*
 
 - **[Entity 1]**: [What it represents, key attributes without implementation]
 - **[Entity 2]**: [What it represents, relationships to other entities]
+- **[Local Artifact]**: [Generated local file or operator-facing artifact, if applicable]
 
 ## Success Criteria *(mandatory)*
 

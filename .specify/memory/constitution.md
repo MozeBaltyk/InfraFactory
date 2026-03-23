@@ -1,17 +1,17 @@
 <!--
 Sync Impact Report
-- Version change: 1.1.0 -> 1.2.0
-- Modified principles: Updated Implementation Priority to reflect current Azure implementation
+- Version change: 1.2.0 -> 1.3.0
+- Modified principles: Expanded Schema Coverage Policy and Provider Parity Validation
 - Added sections: None
 - Removed sections: None
-- Implementation Priority updated: Confirmed Azure implementation status
+- Implementation Priority updated: No change
 - Templates requiring updates:
-	- ✅ no change required: .specify/templates/plan-template.md
-	- ✅ no change required: .specify/templates/spec-template.md
-	- ✅ no change required: .specify/templates/tasks-template.md
+	- ✅ updated: .specify/templates/plan-template.md
+	- ✅ updated: .specify/templates/spec-template.md
+	- ✅ updated: .specify/templates/tasks-template.md
 - Runtime guidance requiring updates:
-	- ✅ updated: AGENTS.md (no changes needed)
-	- ✅ updated: README.md (implementation status corrected)
+	- ✅ no change required: AGENTS.md
+	- ✅ no change required: README.md
 - Deferred TODOs: None
 -->
 
@@ -95,12 +95,21 @@ When adding infrastructure features, prefer generic abstractions across provider
 single-provider features unless technically necessary. Maintain feature parity or document 
 why a provider cannot support a feature.
 
+Provider-native abstractions are acceptable when exact schema parity would hide the real
+platform contract. In these cases, specifications MUST document:
+- the provider-native input model and why it differs
+- any provider-specific cloud resources introduced
+- any external service dependency introduced at plan/apply time
+- any local artifacts created, updated, or deleted as part of the workflow
+
 ### Provider Parity Validation
 Each change MUST maintain or improve provider parity. Review checklist:
 - Does feature apply to all providers?
 - If not, why? (document limitation)
 - Does it follow the provisioning workflow?
 - Are inventory outputs Ansible-compatible?
+- Are provider-specific resources, external dependencies, and local artifact lifecycles
+  explicitly captured in spec-kit artifacts?
 
 ## Governance
 
@@ -118,4 +127,4 @@ This Constitution supersedes all other practices and project guidance. Amendment
 Runtime development guidance is defined in [AGENTS.md](AGENTS.md). All infrastructure 
 feature additions must verify compliance with these Core Principles before implementation.
 
-**Version**: 1.2.0 | **Ratified**: 2025-03-10 | **Last Amended**: 2026-03-17
+**Version**: 1.3.0 | **Ratified**: 2025-03-10 | **Last Amended**: 2026-03-23
