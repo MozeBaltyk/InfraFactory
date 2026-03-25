@@ -161,6 +161,22 @@ variable "k3s" {
   }
 }
 
+###################################
+# Ansible Pull specific variables
+###################################
+variable "ansible" {
+  type = object({
+    pull = optional(object({
+      repo          = string
+      branch        = string
+      playbook      = string
+      timer         = optional(string) #in minutes, e.g "30mins", "1h", "2h30m", etc.
+    }))
+  })
+  default = {}
+}
+
+
 # Local Settings
 data "http" "my_ip" {
   url = "http://ifconfig.me/ip"

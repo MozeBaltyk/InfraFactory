@@ -31,6 +31,12 @@ locals {
         k3s_servicelb_enabled      = var.k3s.servicelb_enabled
         k3s_local_storage_enabled  = var.k3s.local_storage_enabled
         k3s_metrics_server_enabled = var.k3s.metrics_server_enabled
+
+        # Optional managed package install
+        ansible_pull_repo     = try(var.ansible.pull.repo, null)
+        ansible_pull_branch   = try(var.ansible.pull.branch, "main")
+        ansible_pull_playbook = try(var.ansible.pull.playbook, "site.yml")
+        ansible_pull_timer    = try(var.ansible.pull.timer, null)
       }
     )
   }

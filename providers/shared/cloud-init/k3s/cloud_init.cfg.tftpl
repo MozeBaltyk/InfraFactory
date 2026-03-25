@@ -25,6 +25,11 @@ packages:
   - curl
   - bash-completion
   - qemu-guest-agent
+%{ if ansible_pull_repo != null && ansible_pull_repo != "" ~}
+  - git
+  - tar
+  - unzip
+%{ endif ~}
 
 
 write_files:
@@ -121,11 +126,67 @@ write_files:
 %{ endif }
 %{ endif }
 
+%{ if ansible_pull_repo != null && ansible_pull_repo != "" ~}
+  - path: /usr/local/bin/run-ansible-pull.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -e
+
+      LOG_FILE="/var/log/ansible-pull.log"
+      exec > >(tee -a "$LOG_FILE") 2>&1
+
+      echo "=== $(date) Starting ansible-pull ==="
+
+      export PATH=$PATH:$HOME/.local/bin
+
+      if ! command -v ansible-pull >/dev/null 2>&1; then
+        curl -Ls https://astral.sh/uv/install.sh | sh
+        uv tool install ansible-core==2.20.0
+      fi
+      uv tool run --from ansible-core ansible-pull \
+          -U "${ansible_pull_repo}" \
+          -C "${ansible_pull_branch}" \
+          -i localhost, \
+          "${ansible_pull_playbook}" \
+          --accept-host-key
+
+      echo "=== $(date) Finished ansible-pull ==="
+
+%{ if ansible_pull_timer != null && ansible_pull_timer != "" ~}
+  - path: /etc/systemd/system/ansible-pull.service
+    content: |
+      [Unit]
+      Description=Run Ansible Pull
+
+      [Service]
+      ExecStart=/usr/local/bin/run-ansible-pull.sh
+
+  - path: /etc/systemd/system/ansible-pull.timer
+    content: |
+      [Unit]
+      Description=Run Ansible Pull every ${ansible_pull_timer}
+
+      [Timer]
+      OnBootSec=5min
+      OnUnitActiveSec=${ansible_pull_timer}
+
+      [Install]
+      WantedBy=timers.target
+%{ endif ~}
+%{ endif ~}
+
 runcmd:
   - [ systemctl, daemon-reload ]
   - [ systemctl, enable, qemu-guest-agent.service ]
   - [ systemctl, start, --no-block, qemu-guest-agent.service ]
   - [ domainname, ${domain} ]
   - [ /usr/local/bin/k3s-install.sh ]
+%{ if ansible_pull_repo != null && ansible_pull_repo != "" ~}
+  - [ /usr/local/bin/run-ansible-pull.sh ]
+%{ if ansible_pull_timer != null && ansible_pull_timer != "" ~}
+  - [ systemctl, enable, --now, ansible-pull.timer ]
+%{ endif ~}
+%{ endif ~}
 
 final_message: "K3s node ${hostname} ready after $UPTIME seconds"

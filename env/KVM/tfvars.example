@@ -61,3 +61,14 @@ k3s = {
   local_storage_enabled = true
   metrics_server_enabled = true
 }
+
+# Optionnal 
+# 
+#ansible = {
+#  pull = {
+#    repo     = "https://github.com/MozeBaltyk/InfraFactory.git"
+#    branch   = "main"
+#    playbook = "site.yml"
+#    timer    = "1h"
+#  }
+#}

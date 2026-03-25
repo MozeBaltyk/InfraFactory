@@ -41,8 +41,7 @@ variable "cluster" {
     timezone  = string
     username  = string
     cloud_init_selected = string
-    factory_root_path = string
-  })
+    factory_root_path = string  })
 
   default = {
     id       = "factory"
@@ -182,6 +181,21 @@ variable "k3s" {
     local_storage_enabled = true
     metrics_server_enabled = true
   }
+}
+
+###################################
+# Ansible Pull specific variables
+###################################
+variable "ansible" {
+  type = object({
+    pull = optional(object({
+      repo          = string
+      branch        = string
+      playbook      = string
+      timer         = optional(string) #in minutes, e.g "30mins", "1h", "2h30m", etc.
+    }))
+  })
+  default = {}
 }
 
 # Local Settings

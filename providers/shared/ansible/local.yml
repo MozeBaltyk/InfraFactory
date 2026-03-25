@@ -1,9 +1,8 @@
 - name: Just for testing Ansible-pull
   hosts: localhost
   connection: local
-  become: yes
 
   tasks:
     - name: Echo a message
       debug:
-        msg: "Hello from Ansible-pull at {{ ansible_date_time.iso8601 }}"
+        msg: "Hello from Ansible-pull!"
