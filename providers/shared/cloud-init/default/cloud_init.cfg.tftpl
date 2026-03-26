@@ -57,8 +57,15 @@ write_files:
         curl -Ls https://astral.sh/uv/install.sh | sh
         uv tool install ansible-core==2.20.0 
       fi
+
+      %{ if ansible_pull_token != null && ansible_pull_token != "" ~}
+      REPO_URL="https://${ansible_pull_token}@${ansible_pull_repo}"
+      %{ else ~}
+      REPO_URL="https://${ansible_pull_repo}"
+      %{ endif ~}
+
       uv tool run --from ansible-core ansible-pull \
-          -U "${ansible_pull_repo}" \
+          -U "$REPO_URL" \
           -C "${ansible_pull_branch}" \
           -i localhost, \
           "${ansible_pull_playbook}" \

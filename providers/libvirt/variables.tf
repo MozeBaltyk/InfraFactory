@@ -192,6 +192,7 @@ variable "ansible" {
       repo          = string
       branch        = string
       playbook      = string
+      token         = optional(string) # Oauth token for private repos, if needed
       timer         = optional(string) #in minutes, e.g "30mins", "1h", "2h30m", etc.
     }))
   })

@@ -68,7 +68,8 @@ k3s = {
 #  pull = {
 #    repo     = "https://github.com/MozeBaltyk/InfraFactory.git"
 #    branch   = "main"
-#    playbook = "site.yml"
-#    timer    = "1h"
+#    playbook = "providers/shared/ansible/local.yml"
+#    token    = "ghp_xxxxxxxxxxxx" # Optionnal
+#    timer    = "1h"               # Optionnal
 #  }
 #}

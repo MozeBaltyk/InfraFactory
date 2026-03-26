@@ -33,9 +33,10 @@ locals {
         k3s_metrics_server_enabled = var.k3s.metrics_server_enabled
 
         # Optional managed package install
-        ansible_pull_repo     = try(var.ansible.pull.repo, null)
+        ansible_pull_repo     = replace(try(var.ansible.pull.repo, ""),"https://","")
         ansible_pull_branch   = try(var.ansible.pull.branch, "main")
-        ansible_pull_playbook = try(var.ansible.pull.playbook, "site.yml")
+        ansible_pull_playbook = try(var.ansible.pull.playbook, "local.yml")
+        ansible_pull_token    = try(var.ansible.pull.token, null)
         ansible_pull_timer    = try(var.ansible.pull.timer, null)
       }
     )
