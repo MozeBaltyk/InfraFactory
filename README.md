@@ -10,20 +10,29 @@
 
 ## Overview
 
-InfraFactory is a **reproducible infrastructure factory** that provisions Kubernetes clusters (and other workloads) across multiple cloud providers from a single codebase.
+**InfraFactory** is a **reproducible infrastructure framework** designed to provision Kubernetes clusters across multiple environments — locally (KVM/libvirt) or on cloud providers — using a consistent and declarative approach.
+
+It enables you to deploy clusters with varying numbers of control plane (masters) and worker nodes, while supporting multiple Kubernetes distributions.
+
+✨ **Key Features**
+- ☁️ **Multi-platform**:
+        - Libvirt (local KVM) 
+        - OVH 
+        - Azure
+- 🌍 **Multi-environment**: One codebase, multiple environments via simple `tfvars` files
+- 🔄 **Declarative Infrastructure**: Define your entire cluster in a single configuration
+- ⚙️ **Cloud-init** Bootstrap:
+        - Bare virtual machines
+        - Kubernetes via K3s or RKE2
+- 🚀 **Post-Configuration**: Extend and customize nodes using optional ansible-pull for continuous configuration management
 
 **Core Workflow:**
 ```
-OpenTofu (provision VMs) → cloud-init templates (deploy k3s/bootstrap) → inventory generation → Ansible (optional post-config)
+OpenTofu (provision VMs) 
+  → cloud-init templates (deploy default/k3s/rke2) 
+    → inventory generation and kubeconfig import 
+      → Ansible-pull (optional post-config)
 ```
-
-**Key Features:**
-- 🎯 **Provider-agnostic**: Same Terraform code works across providers
-- 📦 **Modular design**: Reusable cloud-init templates for different deployment types
-- ⚡ **Fast iteration**: Local Libvirt provider for rapid development and testing
-- ☁️ **Multi-cloud ready**: Deploy to Libvirt, OVH, Azure with minimal changes
-- 🔄 **Reproducible**: Deterministic infrastructure from code
-- 🚀 **Cloud-init native**: k3s and other services deployed via cloud-init templates (no separate provisioning step)
 
 ---
 
@@ -120,71 +129,43 @@ vim env/KVM/lab.tfvars
 cp env/AZ/tfvars.example env/AZ/lab.tfvars
 ```
 
-### 2. Validate Configuration
+### 2. Validate and Plan
 
 ```bash
-# Validate for Libvirt (default)
+# Target which env and which provider
+export PROVIDER=AZ
+export ENV=lab
+just env
+
+# Validate
 just validate
 
-# Or for a specific provider
-PROVIDER=AZ just validate
-```
-
-### 3. Plan Deployment
-
-```bash
-# Preview what will be created
+# Plan 
 just plan
-
-# For Azure with options
-PROVIDER=AZ AZ_SIZE_MATTERS=Standard_B2s just plan
 ```
 
-### 4. Deploy Infrastructure
+### 3. Use it
 
 ```bash
-# Deploy cluster (Libvirt by default)
+# Deploy cluster
 just deploy
 
-# Deploy to Azure
-PROVIDER=AZ just deploy
+# Ping
+just ping
 
-# Deploy to OVH
-PROVIDER=OVH just deploy
-```
-
-### 5. Access Your Cluster
-
-After deployment completes, your cluster is **already running** (k3s deployed via cloud-init):
-
-```bash
-# Get kubeconfig setup command
-cd providers/libvirt
-terraform output kubeconfig_command
-
-# This will output a command like:
-# mkdir -p ~/.kube && \
-# ssh -i .key.private ubuntu@<ip> "sudo cat /etc/rancher/k3s/k3s.yaml" | \
-# sed 's/127.0.0.1/<ip>/' > ~/.kube/k3s.yaml && \
-# chmod 600 ~/.kube/k3s.yaml
-
-# Run that command to set up your kubeconfig
-# Then access your cluster:
-kubectl get nodes
-kubectl get pods --all-namespaces
-```
-
-The Ansible inventory is generated in `providers/<PROVIDER>/hosts.ini` for any additional configuration tasks.
-
-### 6. Destroy Infrastructure
-
-```bash
-# Destroy Libvirt cluster
+# Destroy 
 just destroy
-
-# Destroy Azure resources
-PROVIDER=AZ just destroy
 ```
+
+### 4. Access Your Cluster
+
+After deployment completes, your cluster is **already running** (k3s or rke2 deployed via cloud-init):
+
+```bash
+ssh -o StrictHostKeyChecking=no -i ./env/<PROVIDER>/<env>/.key.private localadmin@<ip>
+```
+
+The Ansible inventory is generated in `env/<PROVIDER>/<env>/hosts.ini` for any additional configuration tasks.
 
 ---
 
@@ -214,7 +195,7 @@ All operations respect these environment variables:
 
 ```bash
 PROVIDER=KVM      # Cloud provider: KVM (default), AZ, OVH
-ENV=lab            # Environment name: lab (default)
+ENV=lab           # Environment name: lab (default)
 ```
 
 **Examples:**
