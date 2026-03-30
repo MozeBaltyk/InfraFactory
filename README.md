@@ -17,7 +17,6 @@ It enables you to deploy clusters with varying numbers of control plane (masters
 ✨ **Key Features**
 - ☁️ **Multi-platform**:
         - Libvirt (local KVM) 
-        - OVH 
         - Azure
 - 🌍 **Multi-environment**: One codebase, multiple environments via simple `tfvars` files
 - 🔄 **Declarative Infrastructure**: Define your entire cluster in a single configuration
@@ -59,57 +58,6 @@ OpenTofu (provision VMs)
 - **Just** (>= 1.0.0)
   - Install with `arkade get just`
   - Or: `apt install just` (Debian/Ubuntu)
-
----
-
-## Project Structure
-
-```txt
-InfraFactory/
-├── AGENTS.md                     # AI assistant context
-├── README.md                     # The only doc, I will produce in my life.
-├── TODO.md                       # Task tracking
-├── justfile                      # CLI orchestrator (run: just)
-├── env/                          # Environment configurations
-│   ├── AZ/
-│   │   ├── tfvars.example        # Azure example
-│   │   └── lab.tfvars            # Azure lab environment
-│   └── KVM/
-│       ├── tfvars.example        # Libvirt example
-│       └── lab.tfvars            # Libvirt lab environment
-│
-├── providers/                    # Cloud provider implementations
-│   ├── libvirt/                  # Local KVM/QEMU provider
-│   │   ├── justfile             # Provider-local Just recipes
-│   │   ├── main.tf               # VM provisioning
-│   │   ├── variables.tf          # Input variables
-│   │   ├── output.tf             # Outputs (IPs, kubeconfig)
-│   │   ├── templates.tf          # Cloud-init templates
-│   │   ├── keys.tf               # SSH key management
-│   │   ├── providers.tf          # Provider configuration
-│   │   ├── hosts.ini             # Generated Ansible inventory
-│   │   └── ansible.cfg           # Ansible configuration
-│   ├── azure/                    # Microsoft Azure provider
-│   │   ├── justfile             # Provider-local Just recipes
-│   │   └── [provider files]
-│   ├── ovh/                      # OVH Cloud provider (not started)
-│   │   ├── justfile             # Provider-local Just recipes
-│   │   └── [provider files]
-│   │
-│   └── shared/                   # Shared resources (all providers)
-│       ├── cloud-init/           # Cloud-init templates (k3s, default bootstrap)
-│       │   ├── default/
-│       │   │   ├── cloud_init.cfg.tftpl
-│       │   │   └── network_config_dhcp.cfg
-│       │   └── k3s/
-│       │       ├── cloud_init.cfg.tftpl      # k3s deployment template
-│       │       └── network_config_dhcp.cfg
-│       └── inventory/
-│           └── hosts.tpl         # Ansible inventory template (generated post-deployment)
-│
-└── assets/                       # Images and documentation assets
-    └── InfraFactory.png
-```
 
 ---
 
@@ -189,28 +137,6 @@ Available commands:
 | `just deploy` | Apply and create infrastructure |
 | `just destroy` | Tear down infrastructure |
 
-### Environment Variables
-
-All operations respect these environment variables:
-
-```bash
-PROVIDER=KVM      # Cloud provider: KVM (default), AZ, OVH
-ENV=lab           # Environment name: lab (default)
-```
-
-**Examples:**
-
-```bash
-# Use Azure as provider
-export PROVIDER=AZ
-just validate
-
-# Use OVH
-PROVIDER=OVH just plan
-
-# Use specific environment
-ENV=prod PROVIDER=AZ just deploy
-```
 
 ### Configuration Files
 
@@ -233,13 +159,56 @@ libvirt = {
 }
 ```
 
-**Example: `env/AZ/lab.tfvars`**
-```hcl
-azure_subscription_id = "xxxx-xxxx-xxxx"
-azure_client_id       = "xxxx-xxxx-xxxx"
-azure_client_secret   = "xxxx-xxxx-xxxx"
-azure_tenant_id       = "xxxx-xxxx-xxxx"
+## Project Structure
+
+```txt
+InfraFactory/
+├── AGENTS.md                     # AI assistant context
+├── README.md                     # The only doc, I will produce in my life.
+├── TODO.md                       # Task tracking
+├── justfile                      # CLI orchestrator (run: just)
+├── env/                          # Environment configurations
+│   ├── AZ/
+│   │   ├── tfvars.example        # Azure example
+│   │   └── lab.tfvars            # Azure lab environment
+│   └── KVM/
+│       ├── tfvars.example        # Libvirt example
+│       └── lab.tfvars            # Libvirt lab environment
+│
+├── providers/                    # Cloud provider implementations
+│   ├── libvirt/                  # Local KVM/QEMU provider
+│   │   ├── justfile             # Provider-local Just recipes
+│   │   ├── main.tf               # VM provisioning
+│   │   ├── variables.tf          # Input variables
+│   │   ├── output.tf             # Outputs (IPs, kubeconfig)
+│   │   ├── templates.tf          # Cloud-init templates
+│   │   ├── keys.tf               # SSH key management
+│   │   ├── providers.tf          # Provider configuration
+│   │   ├── hosts.ini             # Generated Ansible inventory
+│   │   └── ansible.cfg           # Ansible configuration
+│   ├── azure/                    # Microsoft Azure provider
+│   │   ├── justfile             # Provider-local Just recipes
+│   │   └── [provider files]
+│   ├── ovh/                      # OVH Cloud provider (not started)
+│   │   ├── justfile             # Provider-local Just recipes
+│   │   └── [provider files]
+│   │
+│   └── shared/                   # Shared resources (all providers)
+│       ├── cloud-init/           # Cloud-init templates (k3s, default bootstrap)
+│       │   ├── default/
+│       │   │   ├── cloud_init.cfg.tftpl
+│       │   │   └── network_config_dhcp.cfg
+│       │   └── k3s/
+│       │       ├── cloud_init.cfg.tftpl      # k3s deployment template
+│       │       └── network_config_dhcp.cfg
+│       └── inventory/
+│           └── hosts.tpl         # Ansible inventory template (generated post-deployment)
+│
+└── assets/                       # Images and documentation assets
+    └── InfraFactory.png
 ```
+
+---
 
 ### Workflow: From Code to Running Cluster
 
@@ -248,87 +217,19 @@ azure_tenant_id       = "xxxx-xxxx-xxxx"
    ↓
 2. OpenTofu creates VMs with cloud-init configuration
    ↓
-3. Cloud-init templates mount and deploy k3s (or other services) on VM boot
+3. Cloud-init templates mount and deploy k3s (or rke2) on VM boot
    ↓
-4. Terraform generates hosts.ini inventory from VM IPs
+4. Terraform generates hosts.ini inventory from VM IPs, an ansible.cfg and import kubeconfig.
    ↓
 5. (Optional) Ansible can perform additional configuration post-deployment
 ```
 
-**k3s Deployment Flow:**
-- You select `cloud_init_selected = "k3s"` in your `.tfvars`
-- OpenTofu uses the `providers/shared/cloud-init/k3s/` templates
+**Deployment Flow:**
+- You select `cloud_init_selected = "<value>"` in your `.tfvars` where `<value>` can be `[default|k3s|rke2]`
+- OpenTofu uses the `providers/shared/cloud-init/<value>/` templates
 - These templates are mounted on each VM at boot
-- k3s cluster is fully initialized and running **immediately after VM boot** (no additional provisioning needed)
+- cluster is fully initialized and running **immediately after VM boot** (no additional provisioning needed)
 - You can access kubeconfig right after `just deploy` completes
-
----
-
-## Provider Details
-
-### Libvirt (Local Development)
-
-**Status:** ✅ In progress
-
-**Best for:** Local development and testing
-
-**Requirements:**
-- KVM/QEMU installed
-- Libvirt daemon running
-- 8+ GB RAM available
-- 50+ GB disk space
-
-**Setup:**
-```bash
-# Ubuntu/Debian
-sudo apt-get install qemu-kvm libvirt-daemon-system libvirt-dev
-
-# Start service
-sudo systemctl start libvirt-daemon
-
-# Add your user to libvirt group (optional, avoids sudo)
-sudo usermod -aG libvirt $USER
-```
-
-**Quick deploy:**
-```bash
-PROVIDER=KVM just deploy
-```
-
-### Azure (Enterprise Cloud)
-
-**Status:** ✅ Implemented
-
-**Best for:** Production deployments on Azure
-
-**Requirements:**
-- Azure subscription and credentials
-- Azure CLI installed
-- Proper IAM roles configured
-
-**Setup:**
-```bash
-# Set Azure credentials
-export AZ_SUBS_ID="<subscription-id>"
-export AZ_CLIENT_ID="<client-id>"
-export AZ_CLIENT_SECRET="<client-secret>"
-export AZ_TENANT_ID="<tenant-id>"
-
-# Deploy
-PROVIDER=AZ just deploy
-```
-
-### OVH (European Cloud)
-
-**Status:** 🔄 Not started
-
-**Best for:** European cloud deployments
-
-**Requirements:**
-- OVH account and credentials
-- OVH API configured
-
-**Setup:** *(Coming soon)*
 
 ---
 
@@ -410,4 +311,3 @@ See [AGENTS.md](AGENTS.md) for AI assistant context and [constitution.md](.speci
 - OVH provider not yet implemented
 - Ansible integration is optional (k3s is fully deployed via cloud-init)
 - IPv6 support requires additional configuration
-- DigitalOcean support removed from roadmap (out of scope)

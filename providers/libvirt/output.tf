@@ -49,6 +49,8 @@ resource "local_file" "ansible_inventory" {
 ### Import Kubeconfig
 ###
 resource "null_resource" "kubeconfig" {
+  count = contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ? 1 : 0
+
   depends_on = [
     null_resource.env_directory,
     libvirt_domain.masters,
@@ -62,10 +64,19 @@ resource "null_resource" "kubeconfig" {
   # Create/fetch kubeconfig
   provisioner "local-exec" {
     command = <<EOT
+if [ "${var.cluster.cloud_init_selected}" = "rke2" ]; then
+  KUBE_CONF_PATH="/etc/rancher/rke2/rke2.yaml"
+elif [ "${var.cluster.cloud_init_selected}" = "k3s" ]; then
+  KUBE_CONF_PATH="/etc/rancher/k3s/k3s.yaml"
+else
+  echo "No kubeconfig path defined for cloud_init_selected=${var.cluster.cloud_init_selected}"
+  exit 0
+fi
+
 echo "Fetching kubeconfig into ${self.triggers.path}/kubeconfig"
 ssh -o StrictHostKeyChecking=no -i ${self.triggers.path}/.key.private \
 ${var.cluster.username}@${libvirt_domain.masters[0].network_interface[0].addresses[0]} \
-"sudo cat /etc/rancher/k3s/k3s.yaml" | sed "s/127.0.0.1/${libvirt_domain.masters[0].network_interface[0].addresses[0]}/" \
+"sudo cat $KUBE_CONF_PATH" | sed "s/127.0.0.1/${libvirt_domain.masters[0].network_interface[0].addresses[0]}/" \
 > ${self.triggers.path}/kubeconfig
 EOT
   }
@@ -95,12 +106,14 @@ output "cluster_nodes" {
       for w in libvirt_domain.workers :
       w.network_interface[0].addresses
     ])
+
+    ssh_first_master = "ssh -o StrictHostKeyChecking=no -i env/KVM/${terraform.workspace}/.key.private ${var.cluster.username}@${libvirt_domain.masters[0].network_interface[0].addresses[0]}"
   }
 }
 
 output "kubeconfig_command" {
-  value = var.cluster.cloud_init_selected == "k3s" ? (<<-EOT
-kubecm add -cf env/KVM/${terraform.workspace}/kubeconfig --context-name k3s-${terraform.workspace} --create
+  value = contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ? (<<-EOT
+kubecm add -cf env/KVM/${terraform.workspace}/kubeconfig --context-name ${var.cluster.cloud_init_selected}-${terraform.workspace} --create
 # Or :
 export KUBECONFIG=env/KVM/${terraform.workspace}/kubeconfig
 # Then :

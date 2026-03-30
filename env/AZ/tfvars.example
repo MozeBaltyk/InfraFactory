@@ -23,25 +23,37 @@ os = {
   selected = "ubuntu24"
 }
 
-# if cloud_init_selected=k3s
-k3s = {
-  version           = "v1.34.5+k3s1"
-  token             = "my-super-secret-shared-token-12345"
-  etcd_enabled      = true
-  traefik_enabled   = true
-  servicelb_enabled = true
-  local_storage_enabled = true
-  metrics_server_enabled = true
-}
+# #######################################################
+# Optional and extras vars
+# #######################################################
 
-# Optionnal 
-# 
+# if cloud_init_selected=k3s
+#k3s = {
+#  version           = "v1.34.5+k3s1" # Optional
+#  token             = "shared-token" # Optional
+#  etcd_enabled      = true           # Optional
+#  traefik_enabled   = true           # Optional
+#  servicelb_enabled = true           # Optional 
+#  local_storage_enabled = true       # Optional
+#  metrics_server_enabled = true      # Optional
+#}
+
+# if cloud_init_selected=rke2
+#rke2 = {
+#  version        = "v1.35.1+rke2r1"  # Optional
+#  token          = "shared-token"    # Optional
+#  tls_sans       = ["dns1", "ip1"]   # Optional
+#  etcd_enabled   = true              # Optional
+#  ingress_nginx_enabled  = true      # Optional
+#  metrics_server_enabled = true      # Optional
+#}
+
 #ansible = {
 #  pull = {
 #    repo     = "https://github.com/MozeBaltyk/InfraFactory.git"
 #    branch   = "main"
 #    playbook = "providers/shared/ansible/local.yml"
-#    token    = "ghp_xxxxxxxxxxxx" # Optionnal
-#    timer    = "1h"               # Optionnal
+#    token    = "ghp_xxxxxxxxxxxx" # Optional
+#    timer    = "1h"               # Optional
 #  }
 #}

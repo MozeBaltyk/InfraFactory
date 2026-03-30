@@ -120,7 +120,7 @@ variable "network" {
     mode        = string
     bridge_name = optional(string)
     gateway     = optional(string)
-    extra_dns = optional(list(string), ["8.8.8.8", "8.8.4.4"])
+    extra_dns   = optional(list(string), ["8.8.8.8", "8.8.4.4"])
   })
 
   default = {
@@ -156,51 +156,28 @@ variable "network" {
 
 }
 
-###################################
-# K3s specific variables
-###################################
-variable "k3s" {
-  description = "K3s cluster configuration"
-
+# libvirt connection details
+variable "libvirt" {
   type = object({
-    version          = string
-    token            = string
-    etcd_enabled     = bool
-    traefik_enabled  = bool
-    servicelb_enabled = bool
-    local_storage_enabled = bool
-    metrics_server_enabled = bool
+    remote = bool
+    user   = string
+    host   = string
+    port   = optional(number, 22)
+    system = string
   })
 
   default = {
-    version           = "v1.34.5+k3s1"
-    token             = "my-super-secret-shared-token-12345"
-    etcd_enabled      = true
-    traefik_enabled   = true
-    servicelb_enabled = true
-    local_storage_enabled = true
-    metrics_server_enabled = true
+    remote = false
+    user   = "root"
+    host   = "localhost"
+    system = "system"
   }
-}
-
-###################################
-# Ansible Pull specific variables
-###################################
-variable "ansible" {
-  type = object({
-    pull = optional(object({
-      repo          = string
-      branch        = string
-      playbook      = string
-      token         = optional(string) # Oauth token for private repos, if needed
-      timer         = optional(string) #in minutes, e.g "30mins", "1h", "2h30m", etc.
-    }))
-  })
-  default = {}
 }
 
 # Local Settings
 locals {
+  libvirt_uri = var.libvirt.remote ? "qemu+ssh://${var.libvirt.user}@${var.libvirt.host}:${var.libvirt.port}/${var.libvirt.system}" : "qemu:///${var.libvirt.system}"
+
   os = var.os_catalog[var.os.selected]
 
   subdomain = "${var.cluster.id}.${var.cluster.domain}"

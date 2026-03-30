@@ -8,3 +8,4 @@ hosts.ini
 .vscode
 ansible.cfg
 kubeconfig
+.token

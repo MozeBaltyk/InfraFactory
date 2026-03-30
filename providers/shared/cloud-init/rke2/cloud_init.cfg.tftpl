@@ -31,35 +31,49 @@ packages:
   - unzip
 %{ endif ~}
 
-
 write_files:
-  - path: /usr/local/bin/k3s-install.sh
+  - path: /etc/rancher/rke2/config.yaml
+    content: |
+%{ if is_first_master ~}
+      write-kubeconfig-mode: '0644'
+%{ else ~}
+      server: "https://${first_master_ip}:9345"
+%{ endif ~}
+      token: "${rke2_token}"
+%{ if length(rke2_tls_sans) > 0 ~}
+      tls-san:
+%{ for san in rke2_tls_sans ~}
+        - ${san}
+%{ endfor ~}
+%{ endif ~}
+%{ if !rke2_etcd_enabled ~}
+      disable-etcd: true
+%{ endif ~}
+%{ if !rke2_ingress_nginx_enabled || !rke2_metrics_server_enabled ~}
+      disable:
+%{ if !rke2_ingress_nginx_enabled ~}
+        - rke2-ingress-nginx
+%{ endif ~}
+%{ if !rke2_metrics_server_enabled ~}
+        - rke2-metrics-server
+%{ endif ~}
+%{ endif ~}
+
+  - path: /usr/local/bin/rke2-install.sh
     permissions: "0755"
     content: |
       #!/bin/bash
       set -e
 
-      K3S_INSTALL_URL="https://get.k3s.io"
-      TOKEN="${k3s_token}"
-      MASTER_IP="${first_master_ip}"
-      K3S_VERSION="${k3s_version}"
-      K3S_ETCD_ENABLED="${k3s_etcd_enabled}"
-      K3S_TRAEFIK_ENABLED="${k3s_traefik_enabled}"
-      K3S_SERVICELB_ENABLED="${k3s_servicelb_enabled}"
-      K3S_LOCAL_STORAGE_ENABLED="${k3s_local_storage_enabled}"
-      K3S_METRICS_SERVER_ENABLED="${k3s_metrics_server_enabled}"
+      RKE2_INSTALL_URL="https://get.rke2.io"
+      VERSION="${rke2_version}"
 
-      CLUSTER_INIT=""
-      [[ "$K3S_ETCD_ENABLED" == "true" ]] && CLUSTER_INIT="--cluster-init"
+      if [[ "$VERSION" != "latest" ]]; then
+        export INSTALL_RKE2_VERSION="$VERSION"
+      fi
 
-      DISABLE_ARGS=""
-      [[ "$K3S_TRAEFIK_ENABLED" == "false" ]] && DISABLE_ARGS="$DISABLE_ARGS --disable traefik"
-      [[ "$K3S_SERVICELB_ENABLED" == "false" ]] && DISABLE_ARGS="$DISABLE_ARGS --disable servicelb"
-      [[ "$K3S_LOCAL_STORAGE_ENABLED" == "false" ]] && DISABLE_ARGS="$DISABLE_ARGS --disable local-storage"
-      [[ "$K3S_METRICS_SERVER_ENABLED" == "false" ]] && DISABLE_ARGS="$DISABLE_ARGS --disable metrics-server"
-
-      echo "Test if URL install is reachable: $K3S_INSTALL_URL"
-      if ! curl -fsSLI "$K3S_INSTALL_URL" >/dev/null 2>curl_error.log; then
+      echo "Test if URL install is reachable: $RKE2_INSTALL_URL"
+      if ! curl --connect-timeout 5 --max-time 10 -fsSLI "$RKE2_INSTALL_URL" >/dev/null 2>curl_error.log; then
         if grep -qi "SSL certificate problem" curl_error.log; then
           echo "TLS certificate verification failed."
           echo "Your network may be intercepting HTTPS traffic."
@@ -68,63 +82,18 @@ write_files:
         exit 1
       fi
 
-      echo "Installing K3s node role: ${node_role}"
+      echo "Installing RKE2: ${node_role}"
+            
+%{ if node_role == "master" ~}
+      curl -sfL https://get.rke2.io | sh -
+      systemctl enable rke2-server
+      systemctl start rke2-server
+%{ else ~}
+      curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE="agent" sh -
+      systemctl enable rke2-agent
+      systemctl start rke2-agent
+%{ endif ~}
 
-%{ if is_first_master }
-      echo "Bootstrapping first master"
-
-      curl -sfL $K3S_INSTALL_URL | \
-        INSTALL_K3S_VERSION=$K3S_VERSION \
-        K3S_TOKEN=$TOKEN \
-        sh -s - server \
-        $CLUSTER_INIT \
-        --write-kubeconfig-mode 644 \
-        $DISABLE_ARGS
-
-%{ else }
-
-      echo "Waiting for API server..."
-
-      timeout=1800
-      start_time=$(date +%s)
-
-      until curl -k https://$MASTER_IP:6443/ping >/dev/null 2>&1; do
-        now=$(date +%s)
-        elapsed=$((now - start_time))
-
-        if [ "$elapsed" -ge "$timeout" ]; then
-          echo "Timeout waiting for API server after 30 minutes"
-          exit 1
-        fi
-
-        sleep 5
-      done
-
-      echo "API server is ready"
-
-%{ if node_role == "master" }
-
-      echo "Joining additional master"
-
-      curl -sfL $K3S_INSTALL_URL | \
-        K3S_URL=https://$MASTER_IP:6443 \
-        INSTALL_K3S_VERSION=$K3S_VERSION \
-        K3S_TOKEN=$TOKEN \
-        sh -s - server \
-        $DISABLE_ARGS
-
-%{ else }
-
-      echo "Joining worker node"
-
-      curl -sfL $K3S_INSTALL_URL | \
-        K3S_URL=https://$MASTER_IP:6443 \
-        INSTALL_K3S_VERSION=$K3S_VERSION \
-        K3S_TOKEN=$TOKEN \
-        sh -
-
-%{ endif }
-%{ endif }
 
 %{ if ansible_pull_repo != null && ansible_pull_repo != "" ~}
   - path: /usr/local/bin/run-ansible-pull.sh
@@ -188,7 +157,7 @@ runcmd:
   - [ systemctl, enable, qemu-guest-agent.service ]
   - [ systemctl, start, --no-block, qemu-guest-agent.service ]
   - [ domainname, ${domain} ]
-  - [ /usr/local/bin/k3s-install.sh ]
+  - [ /usr/local/bin/rke2-install.sh ]
 %{ if ansible_pull_repo != null && ansible_pull_repo != "" ~}
   - [ /usr/local/bin/run-ansible-pull.sh ]
 %{ if ansible_pull_timer != null && ansible_pull_timer != "" ~}

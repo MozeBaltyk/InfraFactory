@@ -24,13 +24,22 @@ locals {
 
         node_role = vm.role
 
-        k3s_token                  = var.k3s.token
+        # Optional K3s config
+        k3s_token                  = local.cluster_token
         k3s_version                = var.k3s.version
         k3s_etcd_enabled           = var.k3s.etcd_enabled
         k3s_traefik_enabled        = var.k3s.traefik_enabled
         k3s_servicelb_enabled      = var.k3s.servicelb_enabled
         k3s_local_storage_enabled  = var.k3s.local_storage_enabled
         k3s_metrics_server_enabled = var.k3s.metrics_server_enabled
+
+        # Optional RKE2 config
+        rke2_token                  = local.cluster_token
+        rke2_version                = var.rke2.version
+        rke2_tls_sans               = var.rke2.tls_sans
+        rke2_etcd_enabled           = var.rke2.etcd_enabled
+        rke2_ingress_nginx_enabled  = var.rke2.ingress_nginx_enabled
+        rke2_metrics_server_enabled = var.rke2.metrics_server_enabled
 
         # Optional managed package install
         ansible_pull_repo     = replace(try(var.ansible.pull.repo, ""),"https://","")

@@ -28,8 +28,8 @@ resource "local_file" "ansible_inventory" {
 ###
 ### Import Kubeconfig
 ###
-
 resource "null_resource" "fetch_kubeconfig" {
+  count = contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ? 1 : 0
 
   depends_on = [
     azurerm_linux_virtual_machine.masters
@@ -41,9 +41,18 @@ resource "null_resource" "fetch_kubeconfig" {
 
   provisioner "local-exec" {
     command = <<EOT
+if [ "${var.cluster.cloud_init_selected}" = "rke2" ]; then
+  KUBE_CONF_PATH="/etc/rancher/rke2/rke2.yaml"
+elif [ "${var.cluster.cloud_init_selected}" = "k3s" ]; then
+  KUBE_CONF_PATH="/etc/rancher/k3s/k3s.yaml"
+else
+  echo "No kubeconfig path defined for cloud_init_selected=${var.cluster.cloud_init_selected}"
+  exit 0
+fi
+
 ssh -o StrictHostKeyChecking=no -i ${self.triggers.path}/.key.private \
 ${var.cluster.username}@${azurerm_public_ip.controller-pip[0].ip_address} \
-"sudo cat /etc/rancher/k3s/k3s.yaml" | sed "s/127.0.0.1/${azurerm_public_ip.controller-pip[0].ip_address}/" \
+"sudo cat $KUBE_CONF_PATH" | sed "s/127.0.0.1/${azurerm_public_ip.controller-pip[0].ip_address}/" \
 > ${self.triggers.path}/kubeconfig
 EOT
   }
@@ -60,19 +69,19 @@ EOT
 ### Display
 ###
 
-output "ip_address_controllers" {
-  description = "Public IP addresses of controller nodes"
-  value       = [for pip in azurerm_public_ip.controller-pip : pip.ip_address]
-}
+output "cluster_nodes" {
+  description = "Public IP addresses of cluster nodes"
 
-output "ip_address_workers" {
-  description = "Public IP addresses of worker nodes"
-  value       = [for pip in azurerm_public_ip.worker-pip : pip.ip_address]
+  value = {
+    controllers = [for pip in azurerm_public_ip.controller-pip : pip.ip_address]
+    workers     = [for pip in azurerm_public_ip.worker-pip : pip.ip_address]
+    ssh_first_master = "ssh -o StrictHostKeyChecking=no -i env/AZ/${terraform.workspace}/.key.private ${var.cluster.username}@${azurerm_public_ip.controller-pip[0].ip_address}"
+  }
 }
 
 output "kubeconfig_command" {
-  value = var.cluster.cloud_init_selected == "k3s" ? (<<-EOT
-kubecm add -cf env/AZ/${terraform.workspace}/kubeconfig --context-name k3s-${terraform.workspace} --create
+  value = contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ? (<<-EOT
+kubecm add -cf env/AZ/${terraform.workspace}/kubeconfig --context-name ${var.cluster.cloud_init_selected}-${terraform.workspace} --create
 # Or :
 export KUBECONFIG=env/AZ/${terraform.workspace}/kubeconfig
 # Then :

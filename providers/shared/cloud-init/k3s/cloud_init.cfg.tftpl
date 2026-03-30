@@ -33,19 +33,37 @@ packages:
 
 
 write_files:
-  - path: /usr/local/bin/rke2-install.sh
+  - path: /usr/local/bin/k3s-install.sh
     permissions: "0755"
     content: |
       #!/bin/bash
       set -e
 
-      RKE2_INSTALL_URL="https://get.rke2.io"
+      K3S_INSTALL_URL="https://get.k3s.io"
       TOKEN="${k3s_token}"
       MASTER_IP="${first_master_ip}"
-      VERSION="${k3s_version}"
+      K3S_VERSION="${k3s_version}"
+      K3S_ETCD_ENABLED="${k3s_etcd_enabled}"
+      K3S_TRAEFIK_ENABLED="${k3s_traefik_enabled}"
+      K3S_SERVICELB_ENABLED="${k3s_servicelb_enabled}"
+      K3S_LOCAL_STORAGE_ENABLED="${k3s_local_storage_enabled}"
+      K3S_METRICS_SERVER_ENABLED="${k3s_metrics_server_enabled}"
 
-      echo "Test if URL install is reachable: $RKE2_INSTALL_URL"
-      if ! curl -fsSLI "$RKE2_INSTALL_URL" >/dev/null 2>curl_error.log; then
+      if [[ "$K3S_VERSION" != "latest" ]]; then
+        export INSTALL_K3S_VERSION="$K3S_VERSION"
+      fi
+
+      CLUSTER_INIT=""
+      [[ "$K3S_ETCD_ENABLED" == "true" ]] && CLUSTER_INIT="--cluster-init"
+
+      DISABLE_ARGS=""
+      [[ "$K3S_TRAEFIK_ENABLED" == "false" ]] && DISABLE_ARGS="$DISABLE_ARGS --disable traefik"
+      [[ "$K3S_SERVICELB_ENABLED" == "false" ]] && DISABLE_ARGS="$DISABLE_ARGS --disable servicelb"
+      [[ "$K3S_LOCAL_STORAGE_ENABLED" == "false" ]] && DISABLE_ARGS="$DISABLE_ARGS --disable local-storage"
+      [[ "$K3S_METRICS_SERVER_ENABLED" == "false" ]] && DISABLE_ARGS="$DISABLE_ARGS --disable metrics-server"
+
+      echo "Test if URL install is reachable: $K3S_INSTALL_URL"
+      if ! curl --connect-timeout 5 --max-time 10 -fsSLI "$K3S_INSTALL_URL" >/dev/null 2>curl_error.log; then
         if grep -qi "SSL certificate problem" curl_error.log; then
           echo "TLS certificate verification failed."
           echo "Your network may be intercepting HTTPS traffic."
@@ -54,37 +72,13 @@ write_files:
         exit 1
       fi
 
-      echo "Installing RKE2: ${node_role}"
-      
-      curl -sfL https://get.rke2.io | INSTALL_RKE2_VERSION=$VERSION sh -
-      
-      mkdir -p /etc/rancher/rke2
-      
-      cat <<EOF > /etc/rancher/rke2/config.yaml
-      token: "$TOKEN"
-      %{ if is_first_master }
-      cluster-init: true
-      %{ else }
-      server: "https://$MASTER_IP:9345"
-      %{ endif }
-      EOF
-      
-      if [ "${node_role}" = "master" ]; then
-        systemctl enable rke2-server
-        systemctl start rke2-server
-      else
-        systemctl enable rke2-agent
-        systemctl start rke2-agent
-      fi
-
-      echo "Installing RKE2 node role: ${node_role}"
+      echo "Installing K3s node role: ${node_role}"
 
 %{ if is_first_master }
       echo "Bootstrapping first master"
 
-      curl -sfL $RKE2_INSTALL_URL | \
-        INSTALL_RKE2_VERSION=$RKE2_VERSION \
-        RKE2_TOKEN=$TOKEN \
+      curl -sfL $K3S_INSTALL_URL | \
+        K3S_TOKEN=$TOKEN \
         sh -s - server \
         $CLUSTER_INIT \
         --write-kubeconfig-mode 644 \
@@ -117,7 +111,6 @@ write_files:
 
       curl -sfL $K3S_INSTALL_URL | \
         K3S_URL=https://$MASTER_IP:6443 \
-        INSTALL_K3S_VERSION=$K3S_VERSION \
         K3S_TOKEN=$TOKEN \
         sh -s - server \
         $DISABLE_ARGS
@@ -128,7 +121,6 @@ write_files:
 
       curl -sfL $K3S_INSTALL_URL | \
         K3S_URL=https://$MASTER_IP:6443 \
-        INSTALL_K3S_VERSION=$K3S_VERSION \
         K3S_TOKEN=$TOKEN \
         sh -
 
