@@ -15,14 +15,14 @@
 It enables you to deploy clusters with varying numbers of control plane (masters) and worker nodes, while supporting multiple Kubernetes distributions.
 
 ✨ **Key Features**
-- ☁️ **Multi-platform**:
-        - Libvirt (local KVM) 
-        - Azure
+- ☁️ **Multi-platform**:    
+        - Libvirt (local KVM)    
+        - Azure    
 - 🌍 **Multi-environment**: One codebase, multiple environments via simple `tfvars` files
 - 🔄 **Declarative Infrastructure**: Define your entire cluster in a single configuration
-- ⚙️ **Cloud-init** Bootstrap:
-        - Bare virtual machines
-        - Kubernetes via K3s or RKE2
+- ⚙️ **Cloud-init** Bootstrap:   
+        - Bare virtual machines    
+        - Kubernetes via K3s or RKE2    
 - 🚀 **Post-Configuration**: Extend and customize nodes using optional ansible-pull for continuous configuration management
 
 **Core Workflow:**

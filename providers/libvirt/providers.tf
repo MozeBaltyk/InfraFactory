@@ -15,9 +15,4 @@ terraform {
 
 provider "libvirt" {
   uri = local.libvirt_uri
-  # uri = "qemu:///system"
-  # Uncomment and modify the following lines if alternative URIs are needed
-  # uri = "qemu:///session"
-  # uri = "qemu:///session?socket=/run/user/1000/libvirt/virtqemud-sock"
-  # uri = "qemu+ssh://user@host:2222/system
 }
