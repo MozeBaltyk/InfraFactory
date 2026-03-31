@@ -127,6 +127,7 @@ write_files:
 %{ endif }
 %{ endif }
 
+# --- Ansible Pull setup ---
 %{ if ansible_pull_repo != null && ansible_pull_repo != "" ~}
   - path: /usr/local/bin/run-ansible-pull.sh
     permissions: "0755"
@@ -184,7 +185,33 @@ write_files:
 %{ endif ~}
 %{ endif ~}
 
+# --- Disk setup ---
+%{ if length(extra_disks) > 0 }
+  - path: /usr/local/bin/disk-setup.sh
+    permissions: "0750"
+    content: |
+      #!/bin/bash
+      set -e
+
+      echo "Setting up extra disks..."
+      sleep 5  # wait for libvirt devices
+
+%{ for d in extra_disks ~}
+      if [ -b "/dev/disk/by-id/wwn-${d.wwn}" ]; then
+        echo "Formatting ${d.mount_path} with ${d.filesystem} on WWN ${d.wwn}"
+        mkfs.${d.filesystem} -F /dev/disk/by-id/wwn-${d.wwn}
+        mkdir -p ${d.mount_path}
+        mount /dev/disk/by-id/wwn-${d.wwn} ${d.mount_path}
+      else
+        echo "Disk with WWN ${d.wwn} not found, skipping ${d.mount_path}"
+      fi
+%{ endfor ~}
+%{ endif }
+
 runcmd:
+%{ if length(extra_disks) > 0 ~}
+  - [ /usr/local/bin/disk-setup.sh ]
+%{ endif ~}
   - [ systemctl, daemon-reload ]
   - [ systemctl, enable, qemu-guest-agent.service ]
   - [ systemctl, start, --no-block, qemu-guest-agent.service ]

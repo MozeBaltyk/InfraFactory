@@ -15,6 +15,10 @@ infra = {
     memory_gb     = 4
     #mac_addresses = []  # Optionnal 
     #ip_addresses = []   # Optionnal 
+    #extra_disks = [
+    #  { size_gb = 20, mount_path = "/data", filesystem = "ext4", label = "data" },
+    #  { size_gb = 2, mount_path = "/logs", filesystem = "ext4", label = "logs" }
+    #]
   }
   workers = {
     count         = 0
@@ -23,6 +27,7 @@ infra = {
     memory_gb     = 4
     #mac_addresses = []  # Optionnal 
     #ip_addresses = []   # Optionnal 
+    #extra_disks = []    # Optionnal 
   }
 }
 

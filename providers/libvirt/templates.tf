@@ -12,6 +12,8 @@ resource "libvirt_cloudinit_disk" "commoninit" {
       fqdn          = "${each.value.name}.${local.subdomain}"
       domain        = local.subdomain
 
+      extra_disks = local.vm_disks[each.value.name]
+
       clusterid     = var.cluster.id
       timezone      = var.cluster.timezone
       node_username = var.cluster.username
@@ -64,6 +66,9 @@ resource "libvirt_cloudinit_disk" "commoninit" {
 
   pool = libvirt_pool.factory_pool.name
 
+  lifecycle {
+    ignore_changes = []
+  }
 }
 
 # Generate environment-specific ansible.cfg

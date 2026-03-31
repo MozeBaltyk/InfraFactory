@@ -30,6 +30,13 @@ resource "libvirt_volume" "resized_os_image" {
   size = each.value.disk_size * 1024 * 1024 * 1024
 }
 
+resource "libvirt_volume" "extra_disks" {
+  for_each = local.vm_disks_flat
+
+  name = "${each.value.vm_name}-disk0${each.value.index + 2}.qcow2"
+  pool = libvirt_pool.factory_pool.name
+  size = each.value.size_gb * 1024 * 1024 * 1024
+}
 
 ### Network
 resource "libvirt_network" "network" {
@@ -85,6 +92,19 @@ resource "libvirt_domain" "masters" {
     volume_id = libvirt_volume.resized_os_image[
       local.master_details[count.index].name
     ].id
+  }
+
+  dynamic "disk" {
+    for_each = local.vm_disks[local.master_details[count.index].name]
+
+    content {
+      volume_id = libvirt_volume.extra_disks[
+        "${local.master_details[count.index].name}-${disk.value.index}"
+      ].id
+
+      scsi = true
+      wwn  = disk.value.wwn
+    }
   }
 
   network_interface {
@@ -146,6 +166,19 @@ resource "libvirt_domain" "workers" {
     volume_id = libvirt_volume.resized_os_image[
       local.worker_details[count.index].name
     ].id
+  }
+
+  dynamic "disk" {
+    for_each = local.vm_disks[local.worker_details[count.index].name]
+
+    content {
+      volume_id = libvirt_volume.extra_disks[
+        "${local.worker_details[count.index].name}-${disk.value.index}"
+      ].id
+
+      scsi = true
+      wwn  = disk.value.wwn
+    }
   }
 
   network_interface {

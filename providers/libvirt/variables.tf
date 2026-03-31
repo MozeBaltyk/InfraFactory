@@ -67,6 +67,12 @@ variable "infra" {
       memory_gb     = number
       mac_addresses = optional(list(string), [])
       ip_addresses = optional(list(string), [])
+      extra_disks = optional(list(object({
+        size_gb    = number
+        mount_path = string
+        filesystem = optional(string, "ext4")
+        label      = string
+      })), [])
     })
 
     workers = object({
@@ -76,6 +82,12 @@ variable "infra" {
       memory_gb     = number
       mac_addresses = optional(list(string), [])
       ip_addresses = optional(list(string), [])
+      extra_disks = optional(list(object({
+        size_gb    = number
+        mount_path = string
+        filesystem = optional(string, "ext4")
+        label      = string
+      })), [])
     })
   })
 
@@ -87,6 +99,7 @@ variable "infra" {
       memory_gb     = 4
       mac_addresses = []
       ip_addresses = []
+      extra_disks = []
     }
 
     workers = {
@@ -96,12 +109,16 @@ variable "infra" {
       memory_gb     = 4
       mac_addresses = []
       ip_addresses = []
+      extra_disks = []
     }
   }
 
   validation {
     condition = alltrue([
-      for mac in concat(var.infra.masters.mac_addresses, var.infra.workers.mac_addresses) :
+      for mac in concat(
+        var.infra.masters.mac_addresses,
+        try(var.infra.workers.mac_addresses, [])
+      ) :
       can(regex("^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$", mac))
     ])
     error_message = "All MAC addresses must be valid (e.g. 52:54:00:9e:ba:ba)."
@@ -212,8 +229,9 @@ locals {
       cpu  = var.infra.masters.cpu
       memory_mb = var.infra.masters.memory_gb * 1024
       disk_size = var.infra.masters.disk_size
-      mac = length(var.infra.masters.mac_addresses) > i ? var.infra.masters.mac_addresses[i] : null
-      ip = length(var.infra.masters.ip_addresses) > i ? var.infra.masters.ip_addresses[i] : null
+      ip   = try(var.infra.masters.ip_addresses[i], null)
+      mac  = try(var.infra.masters.mac_addresses[i], null)
+      extra_disks = try(var.infra.masters.extra_disks, [])
     }
   ]
 
@@ -224,8 +242,35 @@ locals {
       cpu  = var.infra.workers.cpu
       memory_mb = var.infra.workers.memory_gb * 1024
       disk_size = var.infra.workers.disk_size
-      mac = length(var.infra.workers.mac_addresses) > i ? var.infra.workers.mac_addresses[i] : null
-      ip = length(var.infra.workers.ip_addresses) > i ? var.infra.workers.ip_addresses[i] : null
+      ip   = try(var.infra.workers.ip_addresses[i], null)
+      mac  = try(var.infra.workers.mac_addresses[i], null)
+      extra_disks = try(var.infra.workers.extra_disks, [])
     }
   ]
+
+  vm_disks = {
+    for vm in concat(local.master_details, local.worker_details) :
+    vm.name => [
+      for i, disk in vm.extra_disks : {
+        index      = i
+        size_gb    = disk.size_gb
+        mount_path = disk.mount_path
+        filesystem = disk.filesystem
+        label      = disk.label
+
+        # 👇 SAME WWN LOGIC (must match everywhere)
+        wwn = format(
+          "0x5%015x",
+          tonumber(regex("[0-9]+$", vm.name)) * 100 + i
+        )
+      }
+    ]
+  }
+
+  vm_disks_flat = merge([
+    for vm_name, disks in local.vm_disks : {
+      for i, disk in disks : "${vm_name}-${i}" => merge(disk, { vm_name = vm_name, index = i })
+    }
+  ]...)
+
 }
