@@ -243,35 +243,6 @@ InfraFactory/
 
 ---
 
-## Development Roadmap
-
-### Phase 1: Foundation ✅
-- [x] Project structure established
-- [x] README with full documentation
-- [x] TODO tracking
-
-### Phase 2: Libvirt (Priority 1) ✅
-- [x] Provider structure
-- [x] Terraform configuration
-- [x] Cloud-init templates
-- [x] Inventory generation
-- [x] End-to-end testing
-- [x] Documentation
-
-### Phase 3: Azure (Priority 2) ✅
-- [x] Provider implementation
-- [x] Terraform configuration
-- [x] NSG security rules
-- [x] Private DNS zones
-- [x] Testing and validation
-
-### Phase 4: OVH (Priority 3) 🔴
-- [ ] Provider implementation
-- [ ] Terraform configuration
-- [ ] Testing and validation
-
----
-
 ## Troubleshooting
 
 ### Common Issues
