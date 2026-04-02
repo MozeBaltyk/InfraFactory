@@ -107,11 +107,9 @@ write_files:
 
       echo "=== $(date) Starting ansible-pull ==="
 
-      export PATH=$PATH:$HOME/.local/bin
-
-      if ! command -v ansible-pull >/dev/null 2>&1; then
+      if ! command -v $HOME/.local/bin/ansible-pull >/dev/null 2>&1; then
         curl -Ls https://astral.sh/uv/install.sh | sh
-        uv tool install ansible-core==2.20.0
+        $HOME/.local/bin/uv tool install ansible-core==2.20.0 
       fi
 
       %{ if ansible_pull_token != null && ansible_pull_token != "" ~}
@@ -120,7 +118,7 @@ write_files:
       REPO_URL="https://${ansible_pull_repo}"
       %{ endif ~}
 
-      uv tool run --from ansible-core ansible-pull \
+      $HOME/.local/bin/uv tool run --from ansible-core ansible-pull \
           -U "$REPO_URL" \
           -C "${ansible_pull_branch}" \
           -i localhost, \
@@ -137,7 +135,6 @@ write_files:
 
       [Service]
       ExecStart=/usr/local/bin/run-ansible-pull.sh
-
   - path: /etc/systemd/system/ansible-pull.timer
     content: |
       [Unit]
@@ -149,6 +146,17 @@ write_files:
 
       [Install]
       WantedBy=timers.target
+  - path: /etc/logrotate.d/ansible-pull
+    permissions: "0644"
+    content: |
+      /var/log/ansible-pull.log {
+          daily
+          rotate 7
+          compress
+          missingok
+          notifempty
+          copytruncate
+      }
 %{ endif ~}
 %{ endif ~}
 
