@@ -1,0 +1,32 @@
+This README.md reflects the functionnalities necessary for each modules.  
+
+## Common capabilties to all providers
+- Generate SSH keys
+- n numbers of masters and n numbers of workers
+- Add or remove VMs 
+- Separate masters/workers objects
+- Per-role:
+    - CPU / RAM / disk
+    - optional IP/MAC
+    - extra disks (structured)
+- Cloud-init choice:
+    - Set username for a root priviled user with its ssh pub key
+- Optional vars pass to cloud-init:
+  - k3s
+  - rke2
+  - Specific to k3s/rke2:
+      - Generating a Token
+      - Pulling Kubeconfig
+  - ansible-pull
+
+## Specific Azure model
+- NSG rules 
+
+## Specific Libvirt model
+- Per-role:
+    - optional IP/MAC
+- Network config
+    - NAT or Bridge
+    - DHCP or Static
+
+## Specific OVH model

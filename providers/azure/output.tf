@@ -2,27 +2,12 @@
 ### Generate the hosts.ini file
 ###
 resource "local_file" "ansible_inventory" {
-
   content = templatefile("../shared/inventory/hosts.tpl", {
-
-    controller_ips = [
-      for pip in azurerm_public_ip.controller-pip :
-      pip.ip_address
-    ]
-
-    worker_ips = [
-      for pip in azurerm_public_ip.worker-pip :
-      pip.ip_address
-    ]
-
+    controller_ips = [ for k, vm in local.masters_map : azurerm_public_ip.vm-pip[k].ip_address ]
+    worker_ips     = [ for k, vm in local.workers_map : azurerm_public_ip.vm-pip[k].ip_address ]
   })
-
   filename = "${local.local_env_path}/hosts.ini"
-
-  depends_on = [
-    azurerm_linux_virtual_machine.masters,
-    azurerm_linux_virtual_machine.workers
-  ]
+  depends_on = [ azurerm_public_ip.vm-pip ]
 }
 
 ###
@@ -32,7 +17,7 @@ resource "null_resource" "fetch_kubeconfig" {
   count = contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ? 1 : 0
 
   depends_on = [
-    azurerm_linux_virtual_machine.masters
+    azurerm_linux_virtual_machine.vms
   ]
 
   triggers = {
@@ -51,8 +36,8 @@ else
 fi
 
 ssh -o StrictHostKeyChecking=no -i ${self.triggers.path}/.key.private \
-${var.cluster.username}@${azurerm_public_ip.controller-pip[0].ip_address} \
-"sudo cat $KUBE_CONF_PATH" | sed "s/127.0.0.1/${azurerm_public_ip.controller-pip[0].ip_address}/" \
+${var.cluster.username}@${azurerm_public_ip.vm-pip[local.first_master_name].ip_address} \
+"sudo cat $KUBE_CONF_PATH" | sed "s/127.0.0.1/${azurerm_public_ip.vm-pip[local.first_master_name].ip_address}/" \
 > ${self.triggers.path}/kubeconfig
 EOT
   }
@@ -73,9 +58,9 @@ output "cluster_nodes" {
   description = "Public IP addresses of cluster nodes"
 
   value = {
-    controllers = [for pip in azurerm_public_ip.controller-pip : pip.ip_address]
-    workers     = [for pip in azurerm_public_ip.worker-pip : pip.ip_address]
-    ssh_first_master = "ssh -o StrictHostKeyChecking=no -i env/AZ/${terraform.workspace}/.key.private ${var.cluster.username}@${azurerm_public_ip.controller-pip[0].ip_address}"
+    controllers = [ for k, vm in local.masters_map : azurerm_public_ip.vm-pip[k].ip_address ]
+    workers     = [ for k, vm in local.workers_map : azurerm_public_ip.vm-pip[k].ip_address ]
+    ssh_first_master = "ssh -o StrictHostKeyChecking=no -i env/AZ/${terraform.workspace}/.key.private ${var.cluster.username}@${azurerm_public_ip.vm-pip[local.first_master_name].ip_address}"
   }
 }
 

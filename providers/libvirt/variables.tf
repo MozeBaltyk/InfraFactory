@@ -258,7 +258,7 @@ locals {
         filesystem = disk.filesystem
         label      = disk.label
 
-        # 👇 SAME WWN LOGIC (must match everywhere)
+        # SAME WWN LOGIC (must match everywhere)
         wwn = format(
           "0x5%015x",
           tonumber(regex("[0-9]+$", vm.name)) * 100 + i

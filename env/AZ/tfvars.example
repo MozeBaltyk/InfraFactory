@@ -6,8 +6,6 @@ azure_tenant_id       = "xxxxxxxxxxxxxxxxxx"
 cluster = {
   id       = "factory"
   domain   = "lab"
-  masters  = 1
-  workers  = 0
   timezone = "Europe/Paris"
   region = "westeurope"
   username = "localadmin"
@@ -15,8 +13,22 @@ cluster = {
 }
 
 infra = {
+  masters{
+    count  = 1
+  }
+  workers{
+    count  = 1
+    # instance_size =  standard_d8s_v5      # Optional
+    # disk_size     =  20                   # Optional
+    # extra_disks{                          # Optional
+    #   size_gb     =  20
+    #   mount_path  =  /data
+    #   filesystem  =  ext4                 # Optional           
+    #   label       =  data
+    #}
+  }
   instance_size = "standard_d8s_v5"
-  disk_size     = 30
+  disk_size     = 40
 }
 
 os = {
