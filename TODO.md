@@ -1,7 +1,7 @@
 # TODO
 
 ## Current Status
-Azure provider fully implemented following Libvirt pattern. Top-level Just orchestration now delegates to provider-local justfiles via `mod`. Ready for end-to-end testing and OVH provider development.
+Azure provider is implemented following the Libvirt pattern. Top-level Just orchestration delegates to provider-local justfiles via `mod`. Current priority is repo hygiene and Azure end-to-end validation before OVH development.
 
 ---
 
@@ -11,6 +11,9 @@ Azure provider fully implemented following Libvirt pattern. Top-level Just orche
 - [X] Create TODO.md with project tasks
 - [X] Expand README.md with roadmap and implementation status
 - [X] Refactor Just orchestration to provider-local justfiles with `mod`
+- [X] Enforce branch-only workflow for AI-assisted development
+- [X] Align README.md, TODO.md, and AGENTS.md with current implementation paths and priority order
+- [X] Fix top-level Ansible play recipe path
 
 ### Phase 2: Provider Libvirt (Priority 1)
 - [X] Set up libvirt provider directory structure

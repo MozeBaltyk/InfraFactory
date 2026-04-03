@@ -50,4 +50,4 @@ ping:
 
 # Run ansible playbook for specified environment
 play playbook *ARGS:
-    @ANSIBLE_CONFIG=./env/{{ PROVIDER }}/{{ ENV }}/ansible.cfg ansible-playbook -i ./env/{{ ENV }}/hosts.ini {{ playbook }} {{ ARGS }}
+    @ANSIBLE_CONFIG=./env/{{ PROVIDER }}/{{ ENV }}/ansible.cfg ansible-playbook -i ./env/{{ PROVIDER }}/{{ ENV }}/hosts.ini {{ playbook }} {{ ARGS }}

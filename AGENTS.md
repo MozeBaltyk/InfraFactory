@@ -1,6 +1,15 @@
 
 # Context for AI Assistants
 
+## Branch Safety Rule
+
+**NEVER work directly on `main`.**
+
+- Before making any change, verify the current git branch.
+- If the current branch is `main`, stop and ask to create or switch to a dedicated feature branch first.
+- If the working tree is dirty, preserve that work on its own branch or stash before starting unrelated changes.
+- All implementation, fixes, and documentation updates must happen on a separate branch.
+
 ## Project Overview
 
 InfraFactory is a **multi-cloud infrastructure factory** built with **OpenTofu** and **Just**.
@@ -25,6 +34,19 @@ OpenTofu → VM provisioning → cloud-init bootstrap → inventory generation �
    - Each provider must allow deployment of:
      - `N` masters
      - `N` workers
+   - Each provider should support the common capability baseline:
+     - SSH key generation
+     - separate master/worker objects
+     - per-role compute and disk sizing
+     - structured extra disks
+     - shared cloud-init selection (`default`, `k3s`, `rke2`)
+     - cloud-init inputs for username + SSH key injection
+     - optional Kubernetes-specific inputs for token generation and kubeconfig retrieval
+     - optional ansible-pull inputs
+   - Provider-specific capabilities may extend that baseline when technically appropriate:
+     - Azure: NSG rules
+     - Libvirt: optional per-role IP/MAC settings and selectable NAT/bridge plus DHCP/static networking
+     - OVH: define the closest equivalent contract before implementation
 
 3. **Provisioning workflow**
    - OpenTofu provisions VMs.
@@ -48,6 +70,10 @@ When adding infrastructure features:
 - If a provider lacks a feature:
   - Implement the closest equivalent
   - Or clearly document the limitation.
+- Keep provider-specific extensions confined to the provider contract:
+  - Azure-specific: NSG rules and cloud-native networking/security resources.
+  - Libvirt-specific: optional per-role IP/MAC settings and network mode choices such as NAT/bridge and DHCP/static.
+  - OVH-specific: define the minimal equivalent contract before implementation begins.
 
 Providers should remain **as feature-parallel as possible**.
 
@@ -282,6 +308,36 @@ Typical responsibilities:
 - hostname configuration
 
 Avoid heavy configuration in cloud-init — that belongs to **Ansible**.
+
+### Provider capability baseline
+
+Use `providers/README` as the capability reference when implementing or reviewing provider changes.
+
+Expected common provider capabilities:
+
+- generate SSH keys
+- support scaling masters and workers up or down
+- model masters and workers separately
+- expose per-role sizing and structured extra disks
+- support shared cloud-init variants and related optional inputs
+- generate inventory compatible with `providers/shared/inventory/hosts.tpl`
+
+Allowed provider-specific differences:
+
+- **Azure** may expose NSG rules and cloud-native networking/security constructs.
+- **Libvirt** may expose optional per-role IP/MAC settings and network mode selection.
+- **OVH** must document its closest equivalent behavior where exact parity is not possible.
+
+### Validation expectations
+
+Provider changes should preserve or extend the documented provider test matrix in `providers/README`.
+
+At minimum, validate:
+
+- single-master k3s flow
+- HA-style multi-master plus workers flow
+- both `k3s` and `rke2` shared cloud-init modes where supported
+- generated inventory and kubeconfig artifacts in `env/<PROVIDER>/<env>/`
 
 ---
 

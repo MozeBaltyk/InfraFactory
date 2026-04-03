@@ -145,17 +145,39 @@ Each environment is defined by a `.tfvars` file in `env/<PROVIDER>/`:
 **Example: `env/KVM/lab.tfvars`**
 ```hcl
 cluster = {
-  name              = "k3s-lab"
-  masters           = 1
-  workers           = 2
+  id                  = "factory"
+  domain              = "lab"
+  timezone            = "Europe/Paris"
   cloud_init_selected = "k3s"
-  username          = "ubuntu"
+  username            = "localadmin"
+  factory_root_path   = "/srv"
+}
+
+infra = {
+  masters = {
+    count     = 1
+    cpu       = 2
+    disk_size = 10
+    memory_gb = 4
+  }
+  workers = {
+    count     = 2
+    cpu       = 2
+    disk_size = 10
+    memory_gb = 4
+  }
+}
+
+network = {
+  mode    = "nat"
+  ip_type = "dhcp"
 }
 
 libvirt = {
-  cpu    = 4
-  memory = 4096
-  disk   = 20
+  remote = false
+  user   = "root"
+  host   = "localhost"
+  system = "system"
 }
 ```
 
@@ -170,10 +192,10 @@ InfraFactory/
 ├── env/                          # Environment configurations
 │   ├── AZ/
 │   │   ├── tfvars.example        # Azure example
-│   │   └── lab.tfvars            # Azure lab environment
+│   │   └── <env>/                # Generated env outputs (hosts.ini, ansible.cfg, kubeconfig, keys)
 │   └── KVM/
 │       ├── tfvars.example        # Libvirt example
-│       └── lab.tfvars            # Libvirt lab environment
+│       └── <env>/                # Generated env outputs (hosts.ini, ansible.cfg, kubeconfig, keys)
 │
 ├── providers/                    # Cloud provider implementations
 │   ├── libvirt/                  # Local KVM/QEMU provider
@@ -184,8 +206,7 @@ InfraFactory/
 │   │   ├── templates.tf          # Cloud-init templates
 │   │   ├── keys.tf               # SSH key management
 │   │   ├── providers.tf          # Provider configuration
-│   │   ├── hosts.ini             # Generated Ansible inventory
-│   │   └── ansible.cfg           # Ansible configuration
+│   │   └── vars_extra.tf         # Optional provider-specific extras
 │   ├── azure/                    # Microsoft Azure provider
 │   │   ├── justfile             # Provider-local Just recipes
 │   │   └── [provider files]
@@ -219,7 +240,7 @@ InfraFactory/
    ↓
 3. Cloud-init templates mount and deploy k3s (or rke2) on VM boot
    ↓
-4. Terraform generates hosts.ini inventory from VM IPs, an ansible.cfg and import kubeconfig.
+4. OpenTofu generates hosts.ini inventory from VM IPs, writes ansible.cfg, and imports kubeconfig into `env/<PROVIDER>/<env>/`.
    ↓
 5. (Optional) Ansible can perform additional configuration post-deployment
 ```
@@ -252,15 +273,15 @@ InfraFactory/
 - Retry: `just validate`
 
 **"SSH key permission denied"**
-- Check permissions: `chmod 600 providers/<provider>/.key.private`
+- Check permissions: `chmod 600 env/<PROVIDER>/<env>/.key.private`
 
 **"Libvirt connection refused"**
-- Start daemon: `sudo systemctl start libvirt-daemon`
-- Check socket: `virsh list` (should work)
+- Ensure libvirt is running on the host before using this repository.
+- Check socket access with `virsh list` if available in your environment.
 
 **"Inventory hosts.ini not generated"**
 - Wait 60+ seconds after deployment (cloud-init initialization)
-- Check: `ls -la providers/<provider>/hosts.ini`
+- Check: `ls -la env/<PROVIDER>/<env>/hosts.ini`
 
 ---
 
@@ -269,7 +290,7 @@ InfraFactory/
 Infrastructure deployments are governed by the [InfraFactory Constitution](.specify/memory/constitution.md), enforcing:
 
 - **Core Principles**: Modular design, provider symmetry, consistent workflows
-- **Development Priority**: Libvirt (dev) → OVH (production) → Azure
+- **Development Priority**: Libvirt (dev) → Azure → OVH
 - **Code Quality**: Incremental implementation, focused commits, no system modifications
 - **Architecture**: Schema coverage policy, provider parity validation
 
@@ -280,5 +301,6 @@ See [AGENTS.md](AGENTS.md) for AI assistant context and [constitution.md](.speci
 ## Known Limitations
 
 - OVH provider not yet implemented
+- OVH top-level orchestration exists, but the provider implementation files are still missing
 - Ansible integration is optional (k3s is fully deployed via cloud-init)
 - IPv6 support requires additional configuration
