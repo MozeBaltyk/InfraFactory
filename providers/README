@@ -1,4 +1,5 @@
-This README.md reflects the functionnalities necessary for each modules.  
+# Functionalities 
+Reflects expected functionalities necessary for each modules.  
 
 ## Common capabilties to all providers
 - Generate SSH keys
@@ -23,6 +24,7 @@ This README.md reflects the functionnalities necessary for each modules.
 - NSG rules 
 
 ## Specific Libvirt model
+- local connexion by default or ssh connexion to QEMU
 - Per-role:
     - optional IP/MAC
 - Network config
@@ -30,3 +32,18 @@ This README.md reflects the functionnalities necessary for each modules.
     - DHCP or Static
 
 ## Specific OVH model
+
+
+# Test Scenario to be run
+
+| Provider | Infra                 | k8s type  | Config   | 
+| ---      | ---                   | ---       | ---      |
+| AZ       | 1 masters             | k3s       | default  |
+| AZ       | 3 masters / 2 workers | k3s       | default  |
+| AZ       | 1 masters             | rke2      | default  |
+| AZ       | 3 masters / 2 workers | rke2      | default  |
+| KVM      | 1 masters             | k3s       | default  |
+| KVM      | 3 masters / 2 workers | k3s       | default  |
+| KVM      | 1 masters             | rke2      | default  |
+| KVM      | 3 masters / 2 workers | rke2      | default  |
+

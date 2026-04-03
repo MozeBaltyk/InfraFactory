@@ -29,6 +29,10 @@ variable "os" {
   }
 }
 
+variable "infra_provider" {
+  default = "KVM"
+}
+
 ###################################
 # Cluster topology
 ###################################
@@ -193,6 +197,9 @@ variable "libvirt" {
 
 # Local Settings
 locals {
+  env_root = "${path.module}/../../env"
+  env_path = "${local.env_root}/${var.infra_provider}/${terraform.workspace}"
+
   libvirt_uri = var.libvirt.remote ? "qemu+ssh://${var.libvirt.user}@${var.libvirt.host}:${var.libvirt.port}/${var.libvirt.system}" : "qemu:///${var.libvirt.system}"
 
   os = var.os_catalog[var.os.selected]
@@ -219,8 +226,6 @@ locals {
   )
 
   factory_pool_path = "${var.cluster.factory_root_path}/${var.cluster.id}/pool"
-
-  local_env_path = "${path.module}/../../env/KVM/${terraform.workspace}"
 
   master_details = [
     for i in range(var.infra.masters.count) : {

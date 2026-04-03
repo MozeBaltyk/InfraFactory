@@ -33,34 +33,69 @@ packages:
 
 
 write_files:
+  - path: /etc/rancher/k3s/config.yaml
+    permissions: "0640"
+    content: |
+%{ if !is_first_master ~}
+      server: "https://${first_master_ip}:6443"
+%{ endif ~}
+      token: "${k3s_token}"
+%{ if node_role == "master" ~}
+      # Only for masters
+%{ if length(k3s_tls_sans) > 0 ~}
+      tls-san:
+%{ for san in k3s_tls_sans ~}
+        - ${san}
+%{ endfor ~}
+%{ endif ~}
+%{ if k3s_etcd_enabled ~}
+      cluster-init: true
+%{ endif ~}
+
+%{ if !k3s_traefik_enabled || !k3s_servicelb_enabled || !k3s_local_storage_enabled || !k3s_metrics_server_enabled ~}
+      disable:
+%{ if !k3s_traefik_enabled ~}
+        - traefik
+%{ endif ~}
+%{ if !k3s_servicelb_enabled ~}
+        - servicelb
+%{ endif ~}
+%{ if !k3s_local_storage_enabled ~}
+        - local-storage
+%{ endif ~}
+%{ if !k3s_metrics_server_enabled ~}
+        - metrics-server
+%{ endif ~}
+%{ endif ~}
+      # Networking
+%{ if !k3s_flannel_enabled ~}
+      # Options: flannel (default), calico, canal, cilium, none
+      flannel-backend: none
+%{ endif ~}
+      # Security
+      secrets-encryption: true
+      write-kubeconfig-mode: '0600'
+
+      # Storage - TODO
+      # K3s data directory
+      # data-dir: "/var/lib/rancher/k3s"
+      # Default local storage path
+      # default-local-storage-path: "/var/lib/rancher/k3s/storage"
+%{ endif ~}
+
   - path: /usr/local/bin/k3s-install.sh
-    permissions: "0755"
+    permissions: "0750"
     content: |
       #!/bin/bash
       set -e
 
       K3S_INSTALL_URL="https://get.k3s.io"
-      TOKEN="${k3s_token}"
-      MASTER_IP="${first_master_ip}"
       K3S_VERSION="${k3s_version}"
-      K3S_ETCD_ENABLED="${k3s_etcd_enabled}"
-      K3S_TRAEFIK_ENABLED="${k3s_traefik_enabled}"
-      K3S_SERVICELB_ENABLED="${k3s_servicelb_enabled}"
-      K3S_LOCAL_STORAGE_ENABLED="${k3s_local_storage_enabled}"
-      K3S_METRICS_SERVER_ENABLED="${k3s_metrics_server_enabled}"
 
       if [[ "$K3S_VERSION" != "latest" ]]; then
         export INSTALL_K3S_VERSION="$K3S_VERSION"
+        # Will attempt to download from the stable channel if not specified.
       fi
-
-      CLUSTER_INIT=""
-      [[ "$K3S_ETCD_ENABLED" == "true" ]] && CLUSTER_INIT="--cluster-init"
-
-      DISABLE_ARGS=""
-      [[ "$K3S_TRAEFIK_ENABLED" == "false" ]] && DISABLE_ARGS="$DISABLE_ARGS --disable traefik"
-      [[ "$K3S_SERVICELB_ENABLED" == "false" ]] && DISABLE_ARGS="$DISABLE_ARGS --disable servicelb"
-      [[ "$K3S_LOCAL_STORAGE_ENABLED" == "false" ]] && DISABLE_ARGS="$DISABLE_ARGS --disable local-storage"
-      [[ "$K3S_METRICS_SERVER_ENABLED" == "false" ]] && DISABLE_ARGS="$DISABLE_ARGS --disable metrics-server"
 
       echo "Test if URL install is reachable: $K3S_INSTALL_URL"
       if ! curl --connect-timeout 5 --max-time 10 -fsSLI "$K3S_INSTALL_URL" >/dev/null 2>curl_error.log; then
@@ -73,58 +108,12 @@ write_files:
       fi
 
       echo "Installing K3s node role: ${node_role}"
-
-%{ if is_first_master }
-      echo "Bootstrapping first master"
-
-      curl -sfL $K3S_INSTALL_URL | \
-        K3S_TOKEN=$TOKEN \
-        sh -s - server \
-        $CLUSTER_INIT \
-        --write-kubeconfig-mode 644 \
-        $DISABLE_ARGS
-
-%{ else }
-
-      echo "Waiting for API server..."
-
-      timeout=1800
-      start_time=$(date +%s)
-
-      until curl -k https://$MASTER_IP:6443/ping >/dev/null 2>&1; do
-        now=$(date +%s)
-        elapsed=$((now - start_time))
-
-        if [ "$elapsed" -ge "$timeout" ]; then
-          echo "Timeout waiting for API server after 30 minutes"
-          exit 1
-        fi
-
-        sleep 5
-      done
-
-      echo "API server is ready"
-
 %{ if node_role == "master" }
-
       echo "Joining additional master"
-
-      curl -sfL $K3S_INSTALL_URL | \
-        K3S_URL=https://$MASTER_IP:6443 \
-        K3S_TOKEN=$TOKEN \
-        sh -s - server \
-        $DISABLE_ARGS
-
+      curl -sfL $K3S_INSTALL_URL | INSTALL_K3S_EXEC="server" sh -s - 
 %{ else }
-
       echo "Joining worker node"
-
-      curl -sfL $K3S_INSTALL_URL | \
-        K3S_URL=https://$MASTER_IP:6443 \
-        K3S_TOKEN=$TOKEN \
-        sh -
-
-%{ endif }
+      curl -sfL $K3S_INSTALL_URL | INSTALL_K3S_EXEC="agent" sh -s - 
 %{ endif }
 
 # --- Ansible Pull setup ---

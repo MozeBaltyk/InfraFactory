@@ -37,7 +37,7 @@ resource "local_file" "ansible_inventory" {
 
   })
 
-  filename = "${local.local_env_path}/hosts.ini"
+  filename = "${local.env_path}/hosts.ini"
 
   depends_on = [
     null_resource.env_directory,
@@ -58,7 +58,7 @@ resource "null_resource" "kubeconfig" {
   ]
 
   triggers = {
-    path = local.local_env_path
+    path = local.env_path
   }
 
   # Create/fetch kubeconfig
@@ -107,15 +107,15 @@ output "cluster_nodes" {
       w.network_interface[0].addresses
     ])
 
-    ssh_first_master = "ssh -o StrictHostKeyChecking=no -i env/KVM/${terraform.workspace}/.key.private ${var.cluster.username}@${libvirt_domain.masters[0].network_interface[0].addresses[0]}"
+    ssh_first_master = "ssh -o StrictHostKeyChecking=no -i env/${var.infra_provider}/${terraform.workspace}/.key.private ${var.cluster.username}@${libvirt_domain.masters[0].network_interface[0].addresses[0]}"
   }
 }
 
 output "kubeconfig_command" {
   value = contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ? (<<-EOT
-kubecm add -cf env/KVM/${terraform.workspace}/kubeconfig --context-name ${var.cluster.cloud_init_selected}-${terraform.workspace} --create
+kubecm add -cf env/${var.infra_provider}/${terraform.workspace}/kubeconfig --context-name ${var.cluster.cloud_init_selected}-${var.infra_provider}-${terraform.workspace} --create
 # Or :
-export KUBECONFIG=env/KVM/${terraform.workspace}/kubeconfig
+export KUBECONFIG=env/${var.infra_provider}/${terraform.workspace}/kubeconfig
 # Then :
 kubectl get nodes
 EOT

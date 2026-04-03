@@ -78,6 +78,7 @@ os = {
 #  servicelb_enabled = true           # Optional 
 #  local_storage_enabled = true       # Optional
 #  metrics_server_enabled = true      # Optional
+#  flannel_enabled   = true           # Optional
 #}
 
 # if cloud_init_selected=rke2

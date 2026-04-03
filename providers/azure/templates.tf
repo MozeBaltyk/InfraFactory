@@ -21,24 +21,36 @@ locals {
         public_key    = tls_private_key.global_key.public_key_openssh
 
         is_first_master   = vm.name == local.master_details[0].name
-        first_master_ip   = azurerm_public_ip.vm-pip[local.first_master_name].ip_address
+        first_master_ip   = azurerm_network_interface.vm-interface[local.first_master_name].private_ip_address
         first_master_fqdn = "${local.first_master_name}.${local.subdomain}"
+        current_public_ip  = azurerm_public_ip.vm-pip[vm.name].ip_address
+        current_private_ip  = azurerm_network_interface.vm-interface[vm.name].private_ip_address
 
         node_role = vm.role
 
         # Optional K3s config
         k3s_token                  = local.cluster_token
         k3s_version                = var.k3s.version
+        k3s_tls_sans               = concat(var.k3s.tls_sans, 
+                                            [for master in local.master_details : azurerm_public_ip.vm-pip[master.name].ip_address],
+                                            [for master in local.master_details : azurerm_network_interface.vm-interface[master.name].private_ip_address],
+                                            [for master in local.master_details : "${master.name}.${local.subdomain}" ]
+                                            )
         k3s_etcd_enabled           = var.k3s.etcd_enabled
         k3s_traefik_enabled        = var.k3s.traefik_enabled
         k3s_servicelb_enabled      = var.k3s.servicelb_enabled
         k3s_local_storage_enabled  = var.k3s.local_storage_enabled
         k3s_metrics_server_enabled = var.k3s.metrics_server_enabled
+        k3s_flannel_enabled        = var.k3s.flannel_enabled
 
         # Optional RKE2 config
         rke2_token                  = local.cluster_token
         rke2_version                = var.rke2.version
-        rke2_tls_sans               = var.rke2.tls_sans
+        rke2_tls_sans               = concat(var.rke2.tls_sans, 
+                                            [for master in local.master_details : azurerm_public_ip.vm-pip[master.name].ip_address],
+                                            [for master in local.master_details : azurerm_network_interface.vm-interface[master.name].private_ip_address],
+                                            [for master in local.master_details : "${master.name}.${local.subdomain}" ]
+                                            )
         rke2_etcd_enabled           = var.rke2.etcd_enabled
         rke2_ingress_nginx_enabled  = var.rke2.ingress_nginx_enabled
         rke2_metrics_server_enabled = var.rke2.metrics_server_enabled
@@ -56,7 +68,7 @@ locals {
 
 # Generate environment-specific ansible.cfg
 resource "local_file" "ansible_config" {
-  filename = "${local.local_env_path}/ansible.cfg"
+  filename = "${local.env_path}/ansible.cfg"
   content = <<-EOT
 [defaults]
 remote_user = ${var.cluster.username}

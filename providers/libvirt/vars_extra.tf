@@ -7,11 +7,13 @@ variable "k3s" {
   type = object({
     version          = optional(string, "latest") #"v1.34.5+k3s1"
     token            = optional(string)
+    tls_sans         = optional(list(string), [])
     etcd_enabled     = optional(bool, true)
     traefik_enabled  = optional(bool, true)
     servicelb_enabled = optional(bool, true)
     local_storage_enabled = optional(bool, true)
     metrics_server_enabled = optional(bool, true)
+    flannel_enabled  = optional(bool, true)
   })
 
   default = {}

@@ -1,6 +1,10 @@
 ##
 ## Azure credentials
 ##
+variable "infra_provider" {
+  default = "AZ"
+}
+
 variable "azure_subscription_id" {
   description = "Azure Subscription ID"
 }
@@ -162,6 +166,9 @@ data "http" "my_ip" {
 }
 
 locals {
+  env_root = "${path.module}/../../env"
+  env_path = "${local.env_root}/${var.infra_provider}/${terraform.workspace}"
+  
   my_public_ip = "${chomp(trimspace(data.http.my_ip.response_body))}/32"
 
   os = var.os_catalog[var.os.selected]
@@ -169,8 +176,6 @@ locals {
   subdomain = "${var.cluster.id}.${var.cluster.domain}"
 
   network_gateway = cidrhost(var.network.cidr, 1)
-
-  local_env_path = "${path.module}/../../env/AZ/${terraform.workspace}"
 
   master_details = [
     for i in range(var.infra.masters.count) : {

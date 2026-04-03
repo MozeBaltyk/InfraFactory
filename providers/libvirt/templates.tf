@@ -34,6 +34,7 @@ resource "libvirt_cloudinit_disk" "commoninit" {
       k3s_servicelb_enabled      = var.k3s.servicelb_enabled
       k3s_local_storage_enabled  = var.k3s.local_storage_enabled
       k3s_metrics_server_enabled = var.k3s.metrics_server_enabled
+      k3s_flannel_enabled        = var.k3s.flannel_enabled
 
       # Optional RKE2 config
       rke2_token                  = local.cluster_token
@@ -73,7 +74,7 @@ resource "libvirt_cloudinit_disk" "commoninit" {
 
 # Generate environment-specific ansible.cfg
 resource "local_file" "ansible_config" {
-  filename = "${local.local_env_path}/ansible.cfg"
+  filename = "${local.env_path}/ansible.cfg"
   content = <<-EOT
 [defaults]
 remote_user = ${var.cluster.username}

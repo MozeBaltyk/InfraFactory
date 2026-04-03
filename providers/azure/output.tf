@@ -6,7 +6,7 @@ resource "local_file" "ansible_inventory" {
     controller_ips = [ for k, vm in local.masters_map : azurerm_public_ip.vm-pip[k].ip_address ]
     worker_ips     = [ for k, vm in local.workers_map : azurerm_public_ip.vm-pip[k].ip_address ]
   })
-  filename = "${local.local_env_path}/hosts.ini"
+  filename = "${local.env_path}/hosts.ini"
   depends_on = [ azurerm_public_ip.vm-pip ]
 }
 
@@ -21,7 +21,7 @@ resource "null_resource" "fetch_kubeconfig" {
   ]
 
   triggers = {
-    path = local.local_env_path
+    path = local.env_path
   }
 
   provisioner "local-exec" {
@@ -60,15 +60,15 @@ output "cluster_nodes" {
   value = {
     controllers = [ for k, vm in local.masters_map : azurerm_public_ip.vm-pip[k].ip_address ]
     workers     = [ for k, vm in local.workers_map : azurerm_public_ip.vm-pip[k].ip_address ]
-    ssh_first_master = "ssh -o StrictHostKeyChecking=no -i env/AZ/${terraform.workspace}/.key.private ${var.cluster.username}@${azurerm_public_ip.vm-pip[local.first_master_name].ip_address}"
+    ssh_first_master = "ssh -o StrictHostKeyChecking=no -i env/${var.infra_provider}/${terraform.workspace}/.key.private ${var.cluster.username}@${azurerm_public_ip.vm-pip[local.first_master_name].ip_address}"
   }
 }
 
 output "kubeconfig_command" {
   value = contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ? (<<-EOT
-kubecm add -cf env/AZ/${terraform.workspace}/kubeconfig --context-name ${var.cluster.cloud_init_selected}-${terraform.workspace} --create
+kubecm add -cf env/${var.infra_provider}/${terraform.workspace}/kubeconfig --context-name ${var.cluster.cloud_init_selected}-${var.infra_provider}-${terraform.workspace} --create
 # Or :
-export KUBECONFIG=env/AZ/${terraform.workspace}/kubeconfig
+export KUBECONFIG=env/${var.infra_provider}/${terraform.workspace}/kubeconfig
 # Then :
 kubectl get nodes
 EOT
