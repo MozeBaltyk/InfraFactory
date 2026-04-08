@@ -2,6 +2,8 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
 ENV := env_var_or_default("ENV", "lab")
 ENV_TFVARS_PATH := "../../env/OVH/" + ENV + ".tfvars"
+FLOATING_IP_CAPTURE_PATH := "../../env/OVH/" + ENV + "/.ovh-floating-ip.json"
+FLOATING_IP_HELPER := "./floating_ip_cleanup.py"
 
 [private]
 _workspace:
@@ -21,7 +23,22 @@ deploy:
     @just _workspace
     @tofu apply -auto-approve -var-file={{ ENV_TFVARS_PATH }}
 
+capture-floating-ip:
+    @tofu init
+    @just _workspace
+    @python3 {{ FLOATING_IP_HELPER }} capture --workspace {{ ENV }} --capture-file {{ FLOATING_IP_CAPTURE_PATH }}
+
+cleanup-floating-ip:
+    @python3 {{ FLOATING_IP_HELPER }} cleanup --tfvars {{ ENV_TFVARS_PATH }} --capture-file {{ FLOATING_IP_CAPTURE_PATH }} --allow-detach
+
 destroy:
     @tofu init
     @just _workspace
-    @tofu destroy -auto-approve -var-file={{ ENV_TFVARS_PATH }}
+    @python3 {{ FLOATING_IP_HELPER }} capture --workspace {{ ENV }} --capture-file {{ FLOATING_IP_CAPTURE_PATH }}
+    @set +e; \
+      tofu destroy -auto-approve -var-file={{ ENV_TFVARS_PATH }}; \
+      destroy_status=$$?; \
+      python3 {{ FLOATING_IP_HELPER }} cleanup --tfvars {{ ENV_TFVARS_PATH }} --capture-file {{ FLOATING_IP_CAPTURE_PATH }} --allow-detach; \
+      cleanup_status=$$?; \
+      if [ $$destroy_status -ne 0 ]; then exit $$destroy_status; fi; \
+      exit $$cleanup_status
