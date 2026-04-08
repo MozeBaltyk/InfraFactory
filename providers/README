@@ -32,18 +32,38 @@ Reflects expected functionalities necessary for each modules.
     - DHCP or Static
 
 ## Specific OVH model
+- Public-IP-based operator access for SSH, inventory, and kubeconfig retrieval
+- Optional private networking for cluster internal traffic via `network.cidr`
+- Deterministic private IP assignment from `network.cidr`
+- Separate masters and workers, with multi-master supported when `network.cidr` is set
+- Kubernetes API exposed through an OVH load balancer when private networking is enabled
+- Load balancer endpoint can be advertised by floating IP or externally managed DNS name
+- Optional exact-match floating-IP cleanup helper for load-balancer destroy leftovers
+- Current limitations:
+    - inventory remains public-IP based even when a private network exists
+    - private networking and the kube-api load balancer are currently coupled
+    - custom root disk sizing not supported yet
+    - extra disks not supported yet
+    - some multi-node readiness scenarios can still be inconsistent
 
 
 # Test Scenario to be run
 
-| Provider | Infra                 | k8s type  | Config   | 
-| ---      | ---                   | ---       | ---      |
-| AZ       | 1 masters             | k3s       | default  |
-| AZ       | 3 masters / 2 workers | k3s       | default  |
-| AZ       | 1 masters             | rke2      | default  |
-| AZ       | 3 masters / 2 workers | rke2      | default  |
-| KVM      | 1 masters             | k3s       | default  |
-| KVM      | 3 masters / 2 workers | k3s       | default  |
-| KVM      | 1 masters             | rke2      | default  |
-| KVM      | 3 masters / 2 workers | rke2      | default  |
+| Provider | Infra                 | k8s type  | Config  | 
+| ---      | ---                   | ---       | ---     |
+| AZ       | 1 masters             | k3s       | default |
+| AZ       | 3 masters / 2 workers | k3s       | default |
+| AZ       | 1 masters             | rke2      | default |
+| AZ       | 3 masters / 2 workers | rke2      | default |
+| KVM      | 1 masters             | k3s       | default |
+| KVM      | 3 masters / 2 workers | k3s       | default |
+| KVM      | 1 masters             | rke2      | default |
+| KVM      | 3 masters / 2 workers | rke2      | default |
+| OVH      | 1 masters             | k3s       | default |
+| OVH      | 1 masters / 2 workers | k3s       | default |
+| OVH      | 3 masters             | k3s       | default |
+| OVH      | 1 masters             | rke2      | default |
+| OVH      | 1 masters / 2 workers | rke2      | default |
+| OVH      | 3 masters             | rke2      | default |
 
+OVH scenarios currently also use `network.cidr`, deterministic private IP assignment, and the kube-api load-balancer flow.

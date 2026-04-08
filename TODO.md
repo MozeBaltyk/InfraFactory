@@ -1,7 +1,25 @@
 # TODO
 
 ## Current Status
-Azure provider is implemented following the Libvirt pattern. Top-level Just orchestration delegates to provider-local justfiles via `mod`. Current priority is repo hygiene and Azure end-to-end validation before OVH development.
+Azure provider is implemented following the Libvirt pattern.
+
+OVH now includes:
+- public-IP-based operator access
+- shared cloud-init bootstrap
+- generated SSH keys, inventory, and kubeconfig
+- optional private networking via `network.cidr`
+- deterministic private IP assignment
+- separate masters and workers
+- multi-master clusters when `network.cidr` is set
+- kube-api load-balancer exposure
+- an optional exact-match floating-IP cleanup helper for destroy leftovers
+
+Current OVH caveats:
+- inventory remains public-IP based even when private networking exists
+- private networking and kube-api load-balancer creation are currently coupled
+- some multi-node readiness scenarios can still be inconsistent
+- custom root disk sizing and extra disks are not supported yet
+- cleanup of other implicit public IP leftovers still depends on OVH/provider behavior
 
 ---
 
@@ -34,13 +52,15 @@ Azure provider is implemented following the Libvirt pattern. Top-level Just orch
 - [ ] Test azure provider end-to-end
 
 ### Phase 4: Provider OVH (Priority 3)
-- [ ] Set up ovh provider directory structure
-- [ ] Implement variables.tf for ovh
-- [ ] Implement keys.tf for ovh
-- [ ] Implement main.tf for ovh
-- [ ] Implement templates.tf for ovh
-- [ ] Implement outputs.tf for ovh
-- [ ] Test ovh provider end-to-end
+- [X] Set up ovh provider directory structure
+- [X] Implement variables.tf for ovh
+- [X] Implement keys.tf for ovh
+- [X] Implement main.tf for ovh
+- [X] Implement templates.tf for ovh
+- [X] Implement outputs.tf for ovh
+- [X] Test ovh provider end-to-end
+- [X] Add optional exact-match orphaned floating-IP cleanup helper for OVH destroy flows
+- [ ] Investigate cleanup of OVH gateway or other implicit public IP leftovers not covered by the exact-match floating-IP helper
 
 ### Phase 5: Ansible Integration
 - [ ] Create ansible playbooks for cluster setup
