@@ -1,8 +1,8 @@
 <!--
 Sync Impact Report
-- Version change: 1.3.0 -> 1.4.0
-- Modified principles: Expanded Provider Symmetry, Schema Coverage Policy, and Provider Parity Validation
-- Added sections: Provider Validation Matrix
+- Version change: 1.5.0 -> 1.6.0
+- Modified principles: Expanded Development Workflow to require synced `env/<PROVIDER>/tfvars.example` files when provider variables change
+- Added sections: None
 - Removed sections: None
 - Implementation Priority updated: No change
 - Templates requiring updates:
@@ -81,7 +81,7 @@ Provider feature development follows strict priority order to optimize feedback 
 
 1. **Libvirt** (Local development): Fast, offline, primary feedback loop - ✅ IMPLEMENTED
 2. **Azure** (Primary cloud target): First production validation - ✅ IMPLEMENTED  
-3. **OVH** (Secondary): After Libvirt + Azure proven - 🔄 NOT STARTED
+3. **OVH** (Secondary): After Libvirt + Azure proven - ✅ IMPLEMENTED
 4. **DigitalOcean** (Experimental): Lowest priority - ❌ REMOVED FROM ROADMAP
 
 New features MUST be validated on Libvirt before cloud implementation.
@@ -92,7 +92,7 @@ New features MUST be validated on Libvirt before cloud implementation.
 Always implement features field-by-field or module-by-module with testing and commits 
 between. Never batch multiple complex changes into single iteration. Pattern:
 1. Add ONE field/feature
-2. Test and verify
+2. Test and verify through the project `just` recipes whenever a matching recipe exists
 3. Commit with focused message
 4. Repeat for next item
 
@@ -101,7 +101,11 @@ between. Never batch multiple complex changes into single iteration. Pattern:
 - Use clear, concise messages (avoid verbose explanations)
 - Reference issues with `Resolves: #xxx` format
 - Exclude promotional text or "Generated with" messages
+- Use project `just` recipes for tests, validation, checks, and deploy/destroy verification
+  instead of calling underlying tools directly when a recipe exists
 - Always run `just` before committing to validate recipes
+- When provider variable definitions change, keep the matching `env/<PROVIDER>/tfvars.example`
+  file in sync
 
 ### No System Modifications
 NEVER use sudo, package managers, or system administration commands. Work only within source 
@@ -163,4 +167,4 @@ This Constitution supersedes all other practices and project guidance. Amendment
 Runtime development guidance is defined in [AGENTS.md](AGENTS.md). All infrastructure 
 feature additions must verify compliance with these Core Principles before implementation.
 
-**Version**: 1.4.0 | **Ratified**: 2025-03-10 | **Last Amended**: 2026-04-03
+**Version**: 1.6.0 | **Ratified**: 2025-03-10 | **Last Amended**: 2026-04-07
