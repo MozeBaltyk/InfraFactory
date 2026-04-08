@@ -44,6 +44,10 @@ deploy:
 destroy:
     @just $(just _provider-module)::destroy
 
+# Check Kubernetes cluster on Provider specified in PROVIDER env variable (default: KVM)
+check:
+    @KUBECONFIG=./env/{{ PROVIDER }}/{{ ENV }}/kubeconfig kubectl get nodes -o wide
+
 # Check ansible connectivity for specified environment
 ping:
     @ANSIBLE_CONFIG=./env/{{ PROVIDER }}/{{ ENV }}/ansible.cfg ansible K8S_CLUSTER -i ./env/{{ PROVIDER }}/{{ ENV }}/hosts.ini -m ping
