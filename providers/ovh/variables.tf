@@ -1,24 +1,37 @@
 ##
-## Azure credentials
+## OVH credentials
 ##
 variable "infra_provider" {
-  default = "AZ"
+  default = "OVH"
 }
 
-variable "azure_subscription_id" {
-  description = "Azure Subscription ID"
+variable "ovh_endpoint" {
+  description = "OVH API endpoint"
+  type        = string
+  default     = "ovh-eu"
 }
 
-variable "azure_client_id" {
-  description = "Azure Client ID"
+variable "ovh_application_key" {
+  description = "OVH application key"
+  type        = string
+  sensitive   = true
 }
 
-variable "azure_client_secret" {
-  description = "Azure Client Secret"
+variable "ovh_application_secret" {
+  description = "OVH application secret"
+  type        = string
+  sensitive   = true
 }
 
-variable "azure_tenant_id" {
-  description = "Azure tenant ID"
+variable "ovh_consumer_key" {
+  description = "OVH consumer key"
+  type        = string
+  sensitive   = true
+}
+
+variable "ovh_project_service_name" {
+  description = "OVHcloud Public Cloud project service name"
+  type        = string
 }
 
 # Version Mapping
@@ -28,10 +41,7 @@ variable "os_catalog" {
     os_name         = string
     hostname_prefix = string
     image = object({
-      publisher = string
-      offer     = string
-      sku       = string
-      version   = string
+      name = string
     })
     default_instance_size = string
   }))
@@ -39,26 +49,20 @@ variable "os_catalog" {
   default = {
     ubuntu24 = {
       os_name         = "ubuntu"
-      hostname_prefix = "slaz"
+      hostname_prefix = "slovh"
       image = {
-        publisher = "Canonical"
-        offer     = "ubuntu-24_04-lts"
-        sku       = "server"
-        version   = "latest"
+        name = "Ubuntu 24.04"
       }
-      default_instance_size = "Standard_B2s"
+      default_instance_size = "b2-7"
     }
 
     ubuntu22 = {
       os_name         = "ubuntu"
-      hostname_prefix = "slaz"
+      hostname_prefix = "slovh"
       image = {
-        publisher = "Canonical"
-        offer     = "0001-com-ubuntu-server-jammy"
-        sku       = "22_04-lts-gen2"
-        version   = "latest"
+        name = "Ubuntu 22.04"
       }
-      default_instance_size = "Standard_B2s"
+      default_instance_size = "b2-7"
     }
   }
 }
@@ -94,7 +98,7 @@ variable "cluster" {
     id                  = "factory"
     domain              = "lab"
     timezone            = "Europe/Paris"
-    region              = "westeurope"
+    region              = "GRA9"
     username            = "localadmin"
     cloud_init_selected = "k3s"
   }
@@ -109,7 +113,7 @@ variable "infra" {
   type = object({
     masters = object({
       count         = number
-      instance_size = optional(string, "Standard_D2s_v5")
+      instance_size = optional(string, "b2-7")
       disk_size     = optional(number, 40)
       extra_disks = optional(list(object({
         size_gb    = number
@@ -121,7 +125,7 @@ variable "infra" {
 
     workers = object({
       count         = number
-      instance_size = optional(string, "Standard_D2s_v5")
+      instance_size = optional(string, "b2-7")
       disk_size     = optional(number, 40)
       extra_disks = optional(list(object({
         size_gb    = number
@@ -140,42 +144,91 @@ variable "infra" {
       count = 0
     }
   }
+
+  validation {
+    condition     = var.infra.masters.count >= 1
+    error_message = "OVH requires at least one master node."
+  }
+
+  validation {
+    condition     = length(try(var.infra.masters.extra_disks, [])) == 0 && length(try(var.infra.workers.extra_disks, [])) == 0
+    error_message = "OVH v1 does not support extra disks yet."
+  }
+
+  validation {
+    condition     = var.infra.masters.disk_size == 40 && var.infra.workers.disk_size == 40
+    error_message = "OVH v1 does not support custom root disk sizing yet; keep disk_size at the default value of 40."
+  }
 }
 
 ###################################
 # Network Config
 ###################################
 variable "network" {
-  description = "Libvirt network configuration"
+  description = "OVH network configuration"
 
   type = object({
-    cidr         = string
-    subnet_index = optional(number, 0)
-    ip_type      = string
+    cidr                   = optional(string)
+    load_balancer_flavor   = optional(string)
+    kube_api_endpoint_mode = optional(string, "lb_ip")
+    kube_api_dns_name      = optional(string)
   })
 
-  default = {
-    cidr    = "192.168.100.0/24"
-    ip_type = "dhcp"
+  default = {}
+
+  validation {
+    condition     = try(var.network.cidr, null) == null || can(cidrhost(var.network.cidr, 0))
+    error_message = "network.cidr must be a valid CIDR block."
+  }
+
+  validation {
+    condition     = contains(["dns", "lb_ip"], try(var.network.kube_api_endpoint_mode, "lb_ip"))
+    error_message = "network.kube_api_endpoint_mode must be either 'dns' or 'lb_ip'."
+  }
+
+  validation {
+    condition = (
+      try(var.network.kube_api_endpoint_mode, "lb_ip") != "dns" ||
+      (try(var.network.kube_api_dns_name, null) != null ? trimspace(var.network.kube_api_dns_name) != "" : false)
+    )
+    error_message = "network.kube_api_dns_name must be set when network.kube_api_endpoint_mode is 'dns'."
   }
 }
 
-# Local Settings
-data "http" "my_ip" {
-  url = "http://ifconfig.me/ip"
+check "ovh_multi_master_requires_private_network" {
+  assert {
+    condition = (
+      var.infra.masters.count <= 1 ||
+      trimspace(try(var.network.cidr, "")) != ""
+    )
+    error_message = "network.cidr must be set when infra.masters.count is greater than 1 so OVH multi-master can use the private-network path."
+  }
+}
+
+check "ovh_private_network_cidr_has_enough_addresses" {
+  assert {
+    condition = (
+      try(var.network.cidr, null) == null ||
+      can(
+        cidrhost(
+          var.network.cidr,
+          (tonumber(split("/", var.network.cidr)[1]) <= 28 ? 10 : 2) + var.infra.masters.count + var.infra.workers.count - 1
+        )
+      )
+    )
+    error_message = "network.cidr must provide enough private IP addresses for all OVH masters and workers."
+  }
 }
 
 locals {
   env_root = "${path.module}/../../env"
   env_path = "${local.env_root}/${var.infra_provider}/${terraform.workspace}"
 
-  my_public_ip = "${chomp(trimspace(data.http.my_ip.response_body))}/32"
-
   os = var.os_catalog[var.os.selected]
 
-  subdomain = "${var.cluster.id}.${var.cluster.domain}"
-
-  network_gateway = cidrhost(var.network.cidr, 1)
+  subdomain            = "${var.cluster.id}.${var.cluster.domain}"
+  private_network_name = "${var.cluster.id}-${terraform.workspace}-private"
+  private_subnet_name  = "${var.cluster.id}-${terraform.workspace}-subnet"
 
   master_details = [
     for i in range(var.infra.masters.count) : {
@@ -197,7 +250,6 @@ locals {
     }
   ]
 
-  # Mapping for easier access
   masters_map = {
     for vm in local.master_details : vm.name => vm
   }
@@ -208,10 +260,9 @@ locals {
 
   all_vms_map = merge(local.masters_map, local.workers_map)
 
-  # Get the first master
-  first_master_name = local.master_details[0].name
+  first_master_name = try(local.master_details[0].name, null)
+  first_master_fqdn = local.first_master_name != null ? "${local.first_master_name}.${local.subdomain}" : null
 
-  # Flattened list of extra disks with VM name and index for easier resource creation
   vm_disks = {
     for vm in concat(local.master_details, local.worker_details) :
     vm.name => [
@@ -221,7 +272,10 @@ locals {
         mount_path = disk.mount_path
         filesystem = disk.filesystem
         label      = disk.label
-        lun        = i # Azure uses LUN instead of WWN
+        wwn = format(
+          "0x6%015x",
+          tonumber(regex("[0-9]+$", vm.name)) * 100 + i
+        )
       }
     ]
   }
@@ -235,30 +289,4 @@ locals {
       })
     }
   ]...)
-
-}
-
-variable "nsg_rules" {
-  description = "List of NSG rules with port, name, and allowed source"
-  type = map(object({
-    port           = number
-    name           = string
-    description    = string
-    source_address = string
-  }))
-
-  default = {
-    ssh = {
-      port           = 22
-      name           = "Allow_SSH"
-      description    = "SSH access from admin IP"
-      source_address = ""
-    }
-    k8s_api = {
-      port           = 6443
-      name           = "Allow_K8S_API"
-      description    = "Kubernetes API access from admin IP"
-      source_address = ""
-    }
-  }
 }

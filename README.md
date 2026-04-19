@@ -18,6 +18,7 @@ It enables you to deploy clusters with varying numbers of control plane (masters
 - ☁️ **Multi-platform**:    
         - Libvirt (local KVM)    
         - Azure    
+        - OVH    
 - 🌍 **Multi-environment**: One codebase, multiple environments via simple `tfvars` files
 - 🔄 **Declarative Infrastructure**: Define your entire cluster in a single configuration
 - ⚙️ **Cloud-init** Bootstrap:   
@@ -75,6 +76,9 @@ vim env/KVM/lab.tfvars
 
 # For Azure
 cp env/AZ/tfvars.example env/AZ/lab.tfvars
+
+# For OVH
+cp env/OVH/tfvars.example env/OVH/lab.tfvars
 ```
 
 ### 2. Validate and Plan
@@ -193,6 +197,9 @@ InfraFactory/
 │   ├── AZ/
 │   │   ├── tfvars.example        # Azure example
 │   │   └── <env>/                # Generated env outputs (hosts.ini, ansible.cfg, kubeconfig, keys)
+│   ├── OVH/
+│   │   ├── tfvars.example        # OVH example
+│   │   └── <env>/                # Generated env outputs (hosts.ini, ansible.cfg, kubeconfig, keys)
 │   └── KVM/
 │       ├── tfvars.example        # Libvirt example
 │       └── <env>/                # Generated env outputs (hosts.ini, ansible.cfg, kubeconfig, keys)
@@ -210,12 +217,12 @@ InfraFactory/
 │   ├── azure/                    # Microsoft Azure provider
 │   │   ├── justfile             # Provider-local Just recipes
 │   │   └── [provider files]
-│   ├── ovh/                      # OVH Cloud provider (not started)
+│   ├── ovh/                      # OVH Cloud provider
 │   │   ├── justfile             # Provider-local Just recipes
 │   │   └── [provider files]
 │   │
 │   └── shared/                   # Shared resources (all providers)
-│       ├── cloud-init/           # Cloud-init templates (k3s, default bootstrap)
+│       ├── cloud-init/           # Cloud-init templates (default, k3s, rke2)
 │       │   ├── default/
 │       │   │   ├── cloud_init.cfg.tftpl
 │       │   │   └── network_config_dhcp.cfg
@@ -260,7 +267,7 @@ InfraFactory/
 |----------|--------|-------|
 | Libvirt | ✅ Implemented | Core functionality complete, tested |
 | Azure | ✅ Implemented | Full implementation with NSG, DNS, and cloud-init |
-| OVH | 🔴 Not Started | Planned for European deployments |
+| OVH | ✅ Implemented | Public-IP-based operator access, deterministic private IP assignment, kube-api load balancer, and floating-IP cleanup helper |
 
 ---
 
@@ -300,7 +307,11 @@ See [AGENTS.md](AGENTS.md) for AI assistant context and [constitution.md](.speci
 
 ## Known Limitations
 
-- OVH provider not yet implemented
-- OVH top-level orchestration exists, but the provider implementation files are still missing
+- OVH uses public-IP-based operator access even when a private network exists
+- OVH multi-master requires `network.cidr`
+- OVH private networking and the kube-api load balancer are currently coupled
+- OVH multi-node readiness can still be inconsistent in some scenarios
+- OVH cleanup of gateway or other implicit public IP leftovers outside the captured load-balancer floating IP still depends on OVH/provider behavior
+- OVH custom root disk sizing and extra disks are not supported yet
 - Ansible integration is optional (k3s is fully deployed via cloud-init)
 - IPv6 support requires additional configuration

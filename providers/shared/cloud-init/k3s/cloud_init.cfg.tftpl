@@ -40,6 +40,12 @@ write_files:
       server: "https://${first_master_ip}:6443"
 %{ endif ~}
       token: "${k3s_token}"
+%{ if current_private_ip != null && current_private_ip != "" ~}
+      node-ip: ${current_private_ip}
+%{ if node_role == "master" ~}
+      advertise-address: ${current_private_ip}
+%{ endif ~}
+%{ endif ~}
 %{ if node_role == "master" ~}
       # Only for masters
 %{ if length(k3s_tls_sans) > 0 ~}
@@ -48,7 +54,7 @@ write_files:
         - ${san}
 %{ endfor ~}
 %{ endif ~}
-%{ if k3s_etcd_enabled ~}
+%{ if k3s_etcd_enabled && is_first_master ~}
       cluster-init: true
 %{ endif ~}
 
@@ -109,6 +115,22 @@ write_files:
 
       echo "Installing K3s node role: ${node_role}"
 %{ if node_role == "master" }
+%{ if !is_first_master ~}
+      echo "Waiting for first master endpoint ${first_master_ip}:6443"
+      ready=0
+      for attempt in $(seq 1 120); do
+        if bash -c "</dev/tcp/${first_master_ip}/6443" >/dev/null 2>&1; then
+          ready=1
+          break
+        fi
+        sleep 5
+      done
+
+      if [[ "$ready" -ne 1 ]]; then
+        echo "Timed out waiting for ${first_master_ip}:6443 after 600 seconds"
+        exit 1
+      fi
+%{ endif ~}
       echo "Joining additional master"
       curl -sfL $K3S_INSTALL_URL | INSTALL_K3S_EXEC="server" sh -s - 
 %{ else }

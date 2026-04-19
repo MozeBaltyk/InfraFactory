@@ -1,0 +1,78 @@
+ovh_endpoint           = "ovh-eu"
+ovh_application_key    = "xxxxxxxxxxxxxxxx"
+ovh_application_secret = "xxxxxxxxxxxxxxxx"
+ovh_consumer_key       = "xxxxxxxxxxxxxxxx"
+ovh_project_service_name = "xxxxxxxxxxxxxxxx"
+
+cluster = {
+  id                  = "factory"
+  domain              = "lab"
+  timezone            = "Europe/Paris"
+  region              = "GRA9"
+  username            = "localadmin"
+  cloud_init_selected = "k3s"
+}
+
+infra = {
+  masters = {
+    count = 1 # Can be >1; set network.cidr for multi-master/private join
+    # instance_size = "b2-7"
+    # disk_size     = 40 # custom root disk sizing not supported yet
+    # extra_disks = [    # not supported yet
+    #   { size_gb = 20, mount_path = "/data", filesystem = "ext4", label = "data" }
+    # ]
+  }
+
+  workers = {
+    count = 0 # Workers are supported
+    # instance_size = "b2-7"
+    # disk_size     = 40 # custom root disk sizing not supported yet
+    # extra_disks   = []  # not supported yet
+  }
+}
+
+os = {
+  selected = "ubuntu24"
+}
+
+# OVH private networking and kube-api endpoint mode example
+# When network.cidr is set, OVH creates the private network/subnet and
+# the kube-api load balancer together. Multi-master requires this.
+# network = {
+#   cidr                   = "10.0.0.0/24"
+#   load_balancer_flavor   = "small"
+#   kube_api_endpoint_mode = "lb_ip" # or "dns"
+#   kube_api_dns_name      = "api.factory.lab" # required for dns mode; record must exist outside Terraform
+# }
+
+# if cloud_init_selected=k3s
+# k3s = {
+#   version                = "v1.35.2+k3s1"
+#   token                  = "shared-token"
+#   etcd_enabled           = true
+#   traefik_enabled        = true
+#   servicelb_enabled      = true
+#   local_storage_enabled  = true
+#   metrics_server_enabled = true
+#   flannel_enabled        = true
+# }
+
+# if cloud_init_selected=rke2
+# rke2 = {
+#   version                = "v1.35.1+rke2r1"
+#   token                  = "shared-token"
+#   tls_sans               = ["api.factory.lab"]
+#   etcd_enabled           = true
+#   ingress_nginx_enabled  = true
+#   metrics_server_enabled = true
+# }
+
+# ansible = {
+#   pull = {
+#     repo     = "https://github.com/MozeBaltyk/InfraFactory.git"
+#     branch   = "main"
+#     playbook = "providers/shared/ansible/local.yml"
+#     token    = "ghp_xxxxxxxxxxxx"
+#     timer    = "1h"
+#   }
+# }
