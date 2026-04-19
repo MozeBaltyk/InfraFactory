@@ -39,28 +39,7 @@ resource "libvirt_volume" "extra_disks" {
 }
 
 ### Network
-resource "libvirt_network" "network" {
-  name = var.cluster.id
-  mode = var.network.mode
-  autostart = true
-
-  # Set domain or addresses only for NAT/Route
-  domain = (var.network.mode == "nat" || var.network.mode == "route") ? local.subdomain : null
-  addresses = (var.network.mode == "nat" || var.network.mode == "route") ? [var.network.cidr] : null
-
-  # DHCP enabled only for NAT/Route and dhcp type
-  dhcp {
-    enabled = var.network.ip_type == "dhcp" && (var.network.mode == "nat" || var.network.mode == "route")
-  }
-
-  # DNS always enabled
-  dns {
-    enabled = true
-  }
-
-  # Set bridge name only for bridge mode
-  bridge = var.network.mode == "bridge" ? var.network.bridge_name : null
-
+resource "null_resource" "network_validation" {
   lifecycle {
     precondition {
       condition = (
@@ -72,6 +51,28 @@ resource "libvirt_network" "network" {
       )
       error_message = "Static IP mode requires enough IP addresses for all VMs."
     }
+  }
+}
+
+resource "libvirt_network" "network" {
+  count = var.network.mode == "bridge" ? 0 : 1
+
+  name      = var.cluster.id
+  mode      = var.network.mode
+  autostart = true
+
+  # Set domain or addresses only for NAT/Route
+  domain    = (var.network.mode == "nat" || var.network.mode == "route") ? local.subdomain : null
+  addresses = (var.network.mode == "nat" || var.network.mode == "route") ? [var.network.cidr] : null
+
+  # DHCP enabled only for NAT/Route and dhcp type
+  dhcp {
+    enabled = var.network.ip_type == "dhcp" && (var.network.mode == "nat" || var.network.mode == "route")
+  }
+
+  # DNS always enabled
+  dns {
+    enabled = true
   }
 
 }
@@ -108,9 +109,10 @@ resource "libvirt_domain" "masters" {
   }
 
   network_interface {
-    network_id     = libvirt_network.network.id
-    wait_for_lease = var.network.ip_type == "dhcp"
-    mac = local.master_details[count.index].mac
+    network_id     = var.network.mode == "bridge" ? null : libvirt_network.network[0].id
+    bridge         = var.network.mode == "bridge" ? var.network.bridge_name : null
+    wait_for_lease = var.network.mode == "bridge" ? false : var.network.ip_type == "dhcp"
+    mac            = local.master_details[count.index].mac
   }
 
   cloudinit = libvirt_cloudinit_disk.commoninit[
@@ -182,9 +184,10 @@ resource "libvirt_domain" "workers" {
   }
 
   network_interface {
-    network_id     = libvirt_network.network.id
-    wait_for_lease = var.network.ip_type == "dhcp"
-    mac = local.worker_details[count.index].mac
+    network_id     = var.network.mode == "bridge" ? null : libvirt_network.network[0].id
+    bridge         = var.network.mode == "bridge" ? var.network.bridge_name : null
+    wait_for_lease = var.network.mode == "bridge" ? false : var.network.ip_type == "dhcp"
+    mac            = local.worker_details[count.index].mac
   }
 
   cloudinit = libvirt_cloudinit_disk.commoninit[
