@@ -35,10 +35,10 @@ resource "azurerm_subnet" "factory-project-internal" {
   name                 = "factory-project-internal"
   resource_group_name  = azurerm_resource_group.factory-project.name
   virtual_network_name = azurerm_virtual_network.factory-project-network.name
-  address_prefixes     =  [cidrsubnet(var.network.cidr, 4, var.network.subnet_index)]
-      # cidrsubnet("192.168.100.0/24", 4, 0)  # → 192.168.100.0/28
-      # cidrsubnet("192.168.100.0/24", 4, 1)  # → 192.168.100.16/28
-      # cidrsubnet("192.168.100.0/24", 4, 2)  # → 192.168.100.32/28
+  address_prefixes     = [cidrsubnet(var.network.cidr, 4, var.network.subnet_index)]
+  # cidrsubnet("192.168.100.0/24", 4, 0)  # → 192.168.100.0/28
+  # cidrsubnet("192.168.100.0/24", 4, 1)  # → 192.168.100.16/28
+  # cidrsubnet("192.168.100.0/24", 4, 2)  # → 192.168.100.32/28
 }
 
 ###
@@ -47,7 +47,7 @@ resource "azurerm_subnet" "factory-project-internal" {
 
 # Public IP for VMs
 resource "azurerm_public_ip" "vm-pip" {
-  for_each = local.all_vms_map
+  for_each            = local.all_vms_map
   name                = "${var.cluster.id}-vm-pip-${each.value.name}"
   location            = azurerm_resource_group.factory-project.location
   resource_group_name = azurerm_resource_group.factory-project.name
@@ -61,7 +61,7 @@ resource "azurerm_public_ip" "vm-pip" {
 
 # Azure network interface
 resource "azurerm_network_interface" "vm-interface" {
-  for_each = local.all_vms_map
+  for_each            = local.all_vms_map
   name                = "${var.cluster.id}-vm-interface-${each.value.name}"
   location            = azurerm_resource_group.factory-project.location
   resource_group_name = azurerm_resource_group.factory-project.name
@@ -81,8 +81,8 @@ resource "azurerm_network_interface" "vm-interface" {
 # VMs
 resource "azurerm_linux_virtual_machine" "vms" {
   for_each = local.all_vms_map
-  name = each.value.name
-  size = each.value.instance_size
+  name     = each.value.name
+  size     = each.value.instance_size
 
   location            = azurerm_resource_group.factory-project.location
   resource_group_name = azurerm_resource_group.factory-project.name
@@ -129,7 +129,7 @@ resource "azurerm_linux_virtual_machine" "vms" {
       host        = azurerm_public_ip.vm-pip[each.key].ip_address
       user        = var.cluster.username
       private_key = tls_private_key.global_key.private_key_pem
-      timeout = "5m"
+      timeout     = "5m"
     }
   }
 
@@ -154,8 +154,8 @@ resource "azurerm_network_security_group" "factory_project_nsg" {
       direction                  = "Inbound"
       access                     = "Allow"
       protocol                   = "Tcp"
-      source_address_prefix      = local.my_public_ip
-      source_port_range          = "*"  
+      source_address_prefix      = trimspace(security_rule.value.source_address) != "" ? security_rule.value.source_address : local.my_public_ip
+      source_port_range          = "*"
       destination_address_prefix = "*"
       destination_port_range     = tostring(security_rule.value.port)
     }
@@ -175,7 +175,7 @@ resource "azurerm_subnet_network_security_group_association" "factory_project_su
 # DNS Zone
 ###########################
 resource "azurerm_private_dns_zone" "factory" {
-  name                = "${local.subdomain}"
+  name                = local.subdomain
   resource_group_name = azurerm_resource_group.factory-project.name
 }
 
@@ -187,8 +187,8 @@ resource "azurerm_private_dns_zone_virtual_network_link" "factory_link" {
 }
 
 resource "azurerm_private_dns_a_record" "private_dns" {
-  for_each = local.all_vms_map
-  name = each.value.name
+  for_each            = local.all_vms_map
+  name                = each.value.name
   zone_name           = azurerm_private_dns_zone.factory.name
   resource_group_name = azurerm_resource_group.factory-project.name
   ttl                 = 300

@@ -7,10 +7,10 @@ resource "libvirt_cloudinit_disk" "commoninit" {
   user_data = templatefile(
     "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/cloud_init.cfg.tftpl",
     {
-      os_name       = local.os.os_name
-      hostname      = each.value.name
-      fqdn          = "${each.value.name}.${local.subdomain}"
-      domain        = local.subdomain
+      os_name  = local.os.os_name
+      hostname = each.value.name
+      fqdn     = "${each.value.name}.${local.subdomain}"
+      domain   = local.subdomain
 
       extra_disks = local.vm_disks[each.value.name]
 
@@ -18,17 +18,20 @@ resource "libvirt_cloudinit_disk" "commoninit" {
       timezone      = var.cluster.timezone
       node_username = var.cluster.username
 
-      public_key    = tls_private_key.global_key.public_key_openssh
+      public_key = tls_private_key.global_key.public_key_openssh
 
-      is_first_master   = each.value.name == local.master_details[0].name
-      first_master_ip   = coalesce(local.master_details[0].ip, local.master_details[0].name)
-      first_master_fqdn = "${local.master_details[0].name}.${local.subdomain}"
+      is_first_master        = each.value.name == local.master_details[0].name
+      first_master_ip        = coalesce(local.master_details[0].ip, local.master_details[0].name)
+      first_master_fqdn      = "${local.master_details[0].name}.${local.subdomain}"
+      current_private_ip     = null
+      prefer_private_node_ip = false
 
       node_role = each.value.role
 
       # Optional K3s config
       k3s_token                  = local.cluster_token
       k3s_version                = var.k3s.version
+      k3s_tls_sans               = concat(var.k3s.tls_sans, [for master in local.master_details : "${master.name}.${local.subdomain}"])
       k3s_etcd_enabled           = var.k3s.etcd_enabled
       k3s_traefik_enabled        = var.k3s.traefik_enabled
       k3s_servicelb_enabled      = var.k3s.servicelb_enabled
@@ -39,13 +42,13 @@ resource "libvirt_cloudinit_disk" "commoninit" {
       # Optional RKE2 config
       rke2_token                  = local.cluster_token
       rke2_version                = var.rke2.version
-      rke2_tls_sans               = var.rke2.tls_sans
+      rke2_tls_sans               = concat(var.rke2.tls_sans, [for master in local.master_details : "${master.name}.${local.subdomain}"])
       rke2_etcd_enabled           = var.rke2.etcd_enabled
       rke2_ingress_nginx_enabled  = var.rke2.ingress_nginx_enabled
       rke2_metrics_server_enabled = var.rke2.metrics_server_enabled
 
       # Optional Ansible
-      ansible_pull_repo     = replace(try(var.ansible.pull.repo, ""),"https://","")
+      ansible_pull_repo     = replace(try(var.ansible.pull.repo, ""), "https://", "")
       ansible_pull_branch   = try(var.ansible.pull.branch, "main")
       ansible_pull_playbook = try(var.ansible.pull.playbook, "local.yml")
       ansible_pull_token    = try(var.ansible.pull.token, null)
@@ -75,7 +78,7 @@ resource "libvirt_cloudinit_disk" "commoninit" {
 # Generate environment-specific ansible.cfg
 resource "local_file" "ansible_config" {
   filename = "${local.env_path}/ansible.cfg"
-  content = <<-EOT
+  content  = <<-EOT
 [defaults]
 remote_user = ${var.cluster.username}
 inventory =  ./hosts.ini

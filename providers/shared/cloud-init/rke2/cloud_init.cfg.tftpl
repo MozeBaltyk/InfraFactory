@@ -39,6 +39,12 @@ write_files:
       server: "https://${first_master_ip}:9345"
 %{ endif ~}
       token: "${rke2_token}"
+%{ if current_private_ip != null && current_private_ip != "" ~}
+      node-ip: ${current_private_ip}
+%{ if node_role == "master" ~}
+      advertise-address: ${current_private_ip}
+%{ endif ~}
+%{ endif ~}
       write-kubeconfig-mode: '0600'
 %{ if length(rke2_tls_sans) > 0 ~}
       tls-san:
@@ -85,6 +91,22 @@ write_files:
       echo "Installing RKE2: ${node_role}"
             
 %{ if node_role == "master" ~}
+%{ if !is_first_master ~}
+      echo "Waiting for first master endpoint ${first_master_ip}:9345"
+      ready=0
+      for attempt in $(seq 1 120); do
+        if bash -c "</dev/tcp/${first_master_ip}/9345" >/dev/null 2>&1; then
+          ready=1
+          break
+        fi
+        sleep 5
+      done
+
+      if [[ "$ready" -ne 1 ]]; then
+        echo "Timed out waiting for ${first_master_ip}:9345 after 600 seconds"
+        exit 1
+      fi
+%{ endif ~}
       curl -sfL https://get.rke2.io | sh -
       systemctl enable rke2-server
       systemctl start rke2-server

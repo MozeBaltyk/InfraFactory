@@ -246,9 +246,10 @@ Follow these rules strictly.
 4. **NEVER create new .md files without explicit user authorization** - ask first before creating any documentation
 5. **NEVER install software or modify system configuration** - only work within the source directories. If dependencies are missing, inform the user.
 6. **NEVER use sudo or any system administration commands** - no system modifications, no service restarts, no package installs
-7. **Run `just` before committing** - that the recipes stay consistent
-8. **Preserve design principles**
-9.  **Track progress continuously** - update TODO.md after completing each feature or task
+7. **Use `just` recipes for execution flows when available** - run tests, validation, checks, and deploy/destroy verification through the project justfile instead of calling underlying tools directly when a recipe exists
+8. **Keep provider deployment templates in sync** - `env/<PROVIDER>/tfvars.example` is the canonical deployment input template for that provider. Any change to provider variables, defaults, schema, or documented deployment inputs must update the matching `tfvars.example` in the same change.
+9. **Preserve design principles**
+10.  **Track progress continuously** - update TODO.md after completing each feature or task
 
 ## Development Workflow - Work Incrementally
 
@@ -262,6 +263,7 @@ Follow these rules strictly.
    - Implement conversion functions (model ↔ XML)
 
 2. **Verify it works**
+   - Use the project `just` recipes for tests, validation, checks, and deploy/destroy verification whenever a matching recipe exists.
 
 3. **Commit immediately**
    - Small, focused commit message
