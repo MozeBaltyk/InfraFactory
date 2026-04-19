@@ -3,11 +3,11 @@
 ###
 resource "local_file" "ansible_inventory" {
   content = templatefile("../shared/inventory/hosts.tpl", {
-    controller_ips = [ for k, vm in local.masters_map : azurerm_public_ip.vm-pip[k].ip_address ]
-    worker_ips     = [ for k, vm in local.workers_map : azurerm_public_ip.vm-pip[k].ip_address ]
+    controller_ips = [for k, vm in local.masters_map : azurerm_public_ip.vm-pip[k].ip_address]
+    worker_ips     = [for k, vm in local.workers_map : azurerm_public_ip.vm-pip[k].ip_address]
   })
-  filename = "${local.env_path}/hosts.ini"
-  depends_on = [ azurerm_public_ip.vm-pip ]
+  filename   = "${local.env_path}/hosts.ini"
+  depends_on = [azurerm_public_ip.vm-pip]
 }
 
 ###
@@ -21,7 +21,9 @@ resource "null_resource" "fetch_kubeconfig" {
   ]
 
   triggers = {
-    path = local.env_path
+    path                     = local.env_path
+    ssh_endpoint             = azurerm_public_ip.vm-pip[local.first_master_name].ip_address
+    public_kube_api_endpoint = local.public_kube_api_endpoint
   }
 
   provisioner "local-exec" {
@@ -36,8 +38,9 @@ else
 fi
 
 ssh -o StrictHostKeyChecking=no -i ${self.triggers.path}/.key.private \
-${var.cluster.username}@${azurerm_public_ip.vm-pip[local.first_master_name].ip_address} \
-"sudo cat $KUBE_CONF_PATH" | sed "s/127.0.0.1/${azurerm_public_ip.vm-pip[local.first_master_name].ip_address}/" \
+${var.cluster.username}@${self.triggers.ssh_endpoint} \
+"sudo cat $KUBE_CONF_PATH" | sed -E \
+  -e "s#server: https://127\\.0\\.0\\.1:[0-9]+#server: https://${self.triggers.public_kube_api_endpoint}:6443#" \
 > ${self.triggers.path}/kubeconfig
 EOT
   }
@@ -55,12 +58,13 @@ EOT
 ###
 
 output "cluster_nodes" {
-  description = "Public IP addresses of cluster nodes"
+  description = "Cluster node connection data"
 
   value = {
-    controllers = [ for k, vm in local.masters_map : azurerm_public_ip.vm-pip[k].ip_address ]
-    workers     = [ for k, vm in local.workers_map : azurerm_public_ip.vm-pip[k].ip_address ]
-    ssh_first_master = "ssh -o StrictHostKeyChecking=no -i env/${var.infra_provider}/${terraform.workspace}/.key.private ${var.cluster.username}@${azurerm_public_ip.vm-pip[local.first_master_name].ip_address}"
+    controllers              = [for k, vm in local.masters_map : azurerm_public_ip.vm-pip[k].ip_address]
+    workers                  = [for k, vm in local.workers_map : azurerm_public_ip.vm-pip[k].ip_address]
+    public_kube_api_endpoint = local.public_kube_api_endpoint
+    ssh_first_master         = "ssh -o StrictHostKeyChecking=no -i env/${var.infra_provider}/${terraform.workspace}/.key.private ${var.cluster.username}@${azurerm_public_ip.vm-pip[local.first_master_name].ip_address}"
   }
 }
 
@@ -72,5 +76,5 @@ export KUBECONFIG=env/${var.infra_provider}/${terraform.workspace}/kubeconfig
 # Then :
 kubectl get nodes
 EOT
-) : ""
+  ) : ""
 }

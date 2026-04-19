@@ -25,8 +25,8 @@ variable "azure_tenant_id" {
 variable "os_catalog" {
   description = "OS image catalog"
   type = map(object({
-    os_name            = string
-    hostname_prefix    = string
+    os_name         = string
+    hostname_prefix = string
     image = object({
       publisher = string
       offer     = string
@@ -82,20 +82,20 @@ variable "cluster" {
   description = "Cluster topology"
 
   type = object({
-    id        = string
-    domain    = string
-    timezone  = string
-    region    = string
-    username  = string
+    id                  = string
+    domain              = string
+    timezone            = string
+    region              = string
+    username            = string
     cloud_init_selected = string
   })
 
   default = {
-    id       = "factory"
-    domain   = "lab"
-    timezone = "Europe/Paris"
-    region = "westeurope"
-    username = "localadmin"
+    id                  = "factory"
+    domain              = "lab"
+    timezone            = "Europe/Paris"
+    region              = "westeurope"
+    username            = "localadmin"
     cloud_init_selected = "k3s"
   }
 }
@@ -109,35 +109,35 @@ variable "infra" {
   type = object({
     masters = object({
       count         = number
-      instance_size = optional(string, "standard_d8s_v5")
+      instance_size = optional(string, "Standard_D2s_v5")
       disk_size     = optional(number, 40)
-      extra_disks   = optional(list(object({
-        size_gb     = number
-        mount_path  = string
-        filesystem  = optional(string, "ext4")
-        label       = string
+      extra_disks = optional(list(object({
+        size_gb    = number
+        mount_path = string
+        filesystem = optional(string, "ext4")
+        label      = string
       })), [])
     })
 
     workers = object({
       count         = number
-      instance_size = optional(string, "standard_d8s_v5")
+      instance_size = optional(string, "Standard_D2s_v5")
       disk_size     = optional(number, 40)
-      extra_disks   = optional(list(object({
-        size_gb     = number
-        mount_path  = string
-        filesystem  = optional(string, "ext4")
-        label       = string
+      extra_disks = optional(list(object({
+        size_gb    = number
+        mount_path = string
+        filesystem = optional(string, "ext4")
+        label      = string
       })), [])
     })
   })
 
   default = {
     masters = {
-      count         = 1
+      count = 1
     }
     workers = {
-      count         = 0
+      count = 0
     }
   }
 }
@@ -149,9 +149,9 @@ variable "network" {
   description = "Libvirt network configuration"
 
   type = object({
-    cidr = string
+    cidr         = string
     subnet_index = optional(number, 0)
-    ip_type = string
+    ip_type      = string
   })
 
   default = {
@@ -168,7 +168,7 @@ data "http" "my_ip" {
 locals {
   env_root = "${path.module}/../../env"
   env_path = "${local.env_root}/${var.infra_provider}/${terraform.workspace}"
-  
+
   my_public_ip = "${chomp(trimspace(data.http.my_ip.response_body))}/32"
 
   os = var.os_catalog[var.os.selected]
@@ -179,21 +179,21 @@ locals {
 
   master_details = [
     for i in range(var.infra.masters.count) : {
-      name = format("${local.os.hostname_prefix}-m%02d", i + 1)
-      role = "master"
+      name          = format("${local.os.hostname_prefix}-m%02d", i + 1)
+      role          = "master"
       instance_size = var.infra.masters.instance_size
       disk_size     = var.infra.masters.disk_size
-      extra_disks = try(var.infra.masters.extra_disks, [])
+      extra_disks   = try(var.infra.masters.extra_disks, [])
     }
   ]
 
   worker_details = [
     for i in range(var.infra.workers.count) : {
-      name = format("${local.os.hostname_prefix}-w%02d", i + 1)
-      role = "worker"
+      name          = format("${local.os.hostname_prefix}-w%02d", i + 1)
+      role          = "worker"
       instance_size = var.infra.workers.instance_size
       disk_size     = var.infra.workers.disk_size
-      extra_disks = try(var.infra.workers.extra_disks, [])
+      extra_disks   = try(var.infra.workers.extra_disks, [])
     }
   ]
 
@@ -221,7 +221,7 @@ locals {
         mount_path = disk.mount_path
         filesystem = disk.filesystem
         label      = disk.label
-        lun = i  # Azure uses LUN instead of WWN
+        lun        = i # Azure uses LUN instead of WWN
       }
     ]
   }
@@ -241,9 +241,9 @@ locals {
 variable "nsg_rules" {
   description = "List of NSG rules with port, name, and allowed source"
   type = map(object({
-    port = number
-    name = string
-    description = string
+    port           = number
+    name           = string
+    description    = string
     source_address = string
   }))
 

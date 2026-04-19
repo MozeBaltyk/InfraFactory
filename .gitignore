@@ -9,3 +9,4 @@ hosts.ini
 ansible.cfg
 kubeconfig
 .token
+.local

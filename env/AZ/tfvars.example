@@ -4,35 +4,56 @@ azure_client_secret   = "xxxxxxxxxxxxxxxxxx"
 azure_tenant_id       = "xxxxxxxxxxxxxxxxxx"
 
 cluster = {
-  id       = "factory"
-  domain   = "lab"
-  timezone = "Europe/Paris"
-  region = "westeurope"
-  username = "localadmin"
+  id                  = "factory"
+  domain              = "lab"
+  timezone            = "Europe/Paris"
+  region              = "westeurope"
+  username            = "localadmin"
   cloud_init_selected = "k3s"
 }
 
 infra = {
-  masters{
-    count  = 1
+  masters = {
+    count = 1
+    # instance_size = "standard_d8s_v5"
+    # disk_size     = 40
+    # extra_disks = [
+    #   { size_gb = 20, mount_path = "/data", filesystem = "ext4", label = "data" }
+    # ]
   }
-  workers{
-    count  = 1
-    # instance_size =  standard_d8s_v5      # Optional
-    # disk_size     =  20                   # Optional
-    # extra_disks{                          # Optional
-    #   size_gb     =  20
-    #   mount_path  =  /data
-    #   filesystem  =  ext4                 # Optional           
-    #   label       =  data
-    #}
+
+  workers = {
+    count = 0
+    # instance_size = "standard_d8s_v5"
+    # disk_size     = 40
+    # extra_disks   = []
   }
-  instance_size = "standard_d8s_v5"
-  disk_size     = 40
 }
 
 os = {
   selected = "ubuntu24"
+}
+
+# Optional override; if omitted, provider defaults are used.
+#network = {
+#  cidr         = "192.168.100.0/24"
+#  subnet_index = 0
+#  ip_type      = "dhcp"
+#}
+
+nsg_rules = {
+  ssh = {
+    port           = 22
+    name           = "Allow_SSH"
+    description    = "SSH access from admin IP"
+    source_address = "" # Empty = autodetect current public IP during apply
+  }
+  k8s_api = {
+    port           = 6443
+    name           = "Allow_K8S_API"
+    description    = "Kubernetes API access from admin IP"
+    source_address = "" # Or set a fixed trusted CIDR like x.x.x.x/32
+  }
 }
 
 # #######################################################

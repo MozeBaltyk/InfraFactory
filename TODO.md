@@ -49,6 +49,7 @@ Current OVH caveats:
 - [X] Implement main.tf for azure
 - [X] Implement templates.tf for azure
 - [X] Implement outputs.tf for azure
+- [X] Introduce `public_kube_api_endpoint` abstraction for Azure kubeconfig/output generation
 - [ ] Test azure provider end-to-end
 
 ### Phase 4: Provider OVH (Priority 3)

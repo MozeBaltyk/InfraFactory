@@ -2,6 +2,8 @@
 
 # Generate cloud-init configuration for all nodes
 locals {
+  public_kube_api_endpoint = azurerm_public_ip.vm-pip[local.first_master_name].ip_address
+
   cloudinit = {
     for vm in concat(local.master_details, local.worker_details) :
     vm.name => templatefile(
@@ -33,7 +35,7 @@ locals {
         k3s_token   = local.cluster_token
         k3s_version = var.k3s.version
         k3s_tls_sans = concat(var.k3s.tls_sans,
-          [for master in local.master_details : azurerm_public_ip.vm-pip[master.name].ip_address],
+          [local.public_kube_api_endpoint],
           [for master in local.master_details : azurerm_network_interface.vm-interface[master.name].private_ip_address],
           [for master in local.master_details : "${master.name}.${local.subdomain}"]
         )
@@ -48,7 +50,7 @@ locals {
         rke2_token   = local.cluster_token
         rke2_version = var.rke2.version
         rke2_tls_sans = concat(var.rke2.tls_sans,
-          [for master in local.master_details : azurerm_public_ip.vm-pip[master.name].ip_address],
+          [local.public_kube_api_endpoint],
           [for master in local.master_details : azurerm_network_interface.vm-interface[master.name].private_ip_address],
           [for master in local.master_details : "${master.name}.${local.subdomain}"]
         )
