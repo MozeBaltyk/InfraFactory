@@ -152,6 +152,7 @@ cluster = {
   id                  = "factory"
   domain              = "lab"
   timezone            = "Europe/Paris"
+  node_name_format    = "serial"
   cloud_init_selected = "k3s"
   username            = "localadmin"
   factory_root_path   = "/srv"
@@ -184,6 +185,23 @@ libvirt = {
   system = "system"
 }
 ```
+
+### Libvirt node naming
+
+The libvirt provider accepts `cluster.node_name_format`:
+
+- `serial` (default): names every node from one shared sequence, for example `factory-node01`, `factory-node02`, `factory-node03`
+- `role`: names masters and workers independently, for example `factory-m01`, `factory-m02`, `factory-w01`
+
+`serial` keeps workers continuing after masters, while `role` keeps per-role numbering stable as long as each role count stays unchanged.
+
+Important lifecycle caveats:
+
+- Changing `cluster.node_name_format` after resources already exist is a migration and will usually require state moves and possibly recreation.
+- In `serial` mode, changing `infra.masters.count` renumbers workers because workers continue after masters.
+- In `serial` mode, that renumbering can also reuse the same node identity across roles. For example, `node02` can be a worker in one topology and become a master after increasing `infra.masters.count`.
+- Because libvirt resources use these names as resource keys and object names, `serial` mode is best treated as stable only when the master count is fixed for that environment.
+- If you need safer per-role scaling over time, prefer `role` mode.
 
 ## Project Structure
 
@@ -272,6 +290,42 @@ InfraFactory/
 ---
 
 ## Troubleshooting
+
+### Libvirt state migration after the `libvirt_domain.vms` refactor and node naming changes
+
+If you already have an existing libvirt workspace created before the `count` → `for_each` refactor and before the `${var.cluster.id}-nodeNN` serial naming scheme, move the old state addresses before your next `plan`/`apply`.
+
+Replace `<cluster-id>` with your real `var.cluster.id` value:
+
+```bash
+cd providers/libvirt
+tofu workspace select <env>
+
+tofu state mv 'libvirt_domain.masters[0]' 'libvirt_domain.vms["<cluster-id>-node01"]'
+tofu state mv 'libvirt_domain.masters[1]' 'libvirt_domain.vms["<cluster-id>-node02"]'
+tofu state mv 'libvirt_domain.workers[0]' 'libvirt_domain.vms["<cluster-id>-node03"]'
+tofu state mv 'libvirt_domain.workers[1]' 'libvirt_domain.vms["<cluster-id>-node04"]'
+
+tofu state mv 'libvirt_volume.resized_os_image["master01"]' 'libvirt_volume.resized_os_image["<cluster-id>-node01"]'
+tofu state mv 'libvirt_volume.resized_os_image["master02"]' 'libvirt_volume.resized_os_image["<cluster-id>-node02"]'
+tofu state mv 'libvirt_volume.resized_os_image["worker01"]' 'libvirt_volume.resized_os_image["<cluster-id>-node03"]'
+tofu state mv 'libvirt_volume.resized_os_image["worker02"]' 'libvirt_volume.resized_os_image["<cluster-id>-node04"]'
+
+tofu state mv 'libvirt_cloudinit_disk.commoninit["master01"]' 'libvirt_cloudinit_disk.commoninit["<cluster-id>-node01"]'
+tofu state mv 'libvirt_cloudinit_disk.commoninit["master02"]' 'libvirt_cloudinit_disk.commoninit["<cluster-id>-node02"]'
+tofu state mv 'libvirt_cloudinit_disk.commoninit["worker01"]' 'libvirt_cloudinit_disk.commoninit["<cluster-id>-node03"]'
+tofu state mv 'libvirt_cloudinit_disk.commoninit["worker02"]' 'libvirt_cloudinit_disk.commoninit["<cluster-id>-node04"]'
+```
+
+Repeat the same pattern for every existing node and for any `libvirt_volume.extra_disks["<old-name>-<index>"]` entries.
+
+`tofu state mv` only updates OpenTofu state addresses. Because the libvirt domain, cloud-init ISO, and disk names also change, an existing deployment can still show replacements on the next plan unless the underlying libvirt objects are recreated or otherwise renamed to match the new names.
+
+Changing `cluster.node_name_format` later also changes VM, disk, and cloud-init object names, so existing libvirt resources will usually need state moves or recreation.
+
+In `serial` mode, changing `infra.masters.count` does more than renumber workers: it can cause the same `${cluster.id}-nodeNN` identity to move from worker to master or from master to worker as the topology changes. Because those names are also OpenTofu `for_each` keys, this can lead to destructive or confusing lifecycle behavior for existing deployments.
+
+If you expect to scale masters and workers independently over time, prefer `role` mode. In `role` mode, changing `infra.masters.count` does not renumber workers, but changing either role count can still add, remove, or recreate nodes for that role.
 
 ### Common Issues
 
