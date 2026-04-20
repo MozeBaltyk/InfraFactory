@@ -1,6 +1,6 @@
 # Use CloudInit ISO to add SSH key to the instances
 resource "libvirt_cloudinit_disk" "commoninit" {
-  for_each = { for vm in concat(local.master_details, local.worker_details) : vm.name => vm }
+  for_each = local.all_vms_map
 
   name = "${each.value.name}-commoninit.iso"
 
@@ -9,7 +9,7 @@ resource "libvirt_cloudinit_disk" "commoninit" {
     {
       os_name  = local.os.os_name
       hostname = each.value.name
-      fqdn     = "${each.value.name}.${local.subdomain}"
+      fqdn     = local.vm_fqdns[each.key]
       domain   = local.subdomain
 
       extra_disks = local.vm_disks[each.value.name]
@@ -20,9 +20,9 @@ resource "libvirt_cloudinit_disk" "commoninit" {
 
       public_key = tls_private_key.global_key.public_key_openssh
 
-      is_first_master        = each.value.name == local.master_details[0].name
-      first_master_ip        = coalesce(local.master_details[0].ip, local.master_details[0].name)
-      first_master_fqdn      = "${local.master_details[0].name}.${local.subdomain}"
+      is_first_master        = each.value.name == local.first_master_name
+      first_master_ip        = local.first_master_ip
+      first_master_fqdn      = local.first_master_fqdn
       current_private_ip     = null
       prefer_private_node_ip = false
 
@@ -31,7 +31,7 @@ resource "libvirt_cloudinit_disk" "commoninit" {
       # Optional K3s config
       k3s_token                  = local.cluster_token
       k3s_version                = var.k3s.version
-      k3s_tls_sans               = concat(var.k3s.tls_sans, [for master in local.master_details : "${master.name}.${local.subdomain}"])
+      k3s_tls_sans               = concat(var.k3s.tls_sans, [for master in local.master_details : local.vm_fqdns[master.name]])
       k3s_etcd_enabled           = var.k3s.etcd_enabled
       k3s_traefik_enabled        = var.k3s.traefik_enabled
       k3s_servicelb_enabled      = var.k3s.servicelb_enabled
@@ -42,7 +42,7 @@ resource "libvirt_cloudinit_disk" "commoninit" {
       # Optional RKE2 config
       rke2_token                  = local.cluster_token
       rke2_version                = var.rke2.version
-      rke2_tls_sans               = concat(var.rke2.tls_sans, [for master in local.master_details : "${master.name}.${local.subdomain}"])
+      rke2_tls_sans               = concat(var.rke2.tls_sans, [for master in local.master_details : local.vm_fqdns[master.name]])
       rke2_etcd_enabled           = var.rke2.etcd_enabled
       rke2_ingress_nginx_enabled  = var.rke2.ingress_nginx_enabled
       rke2_metrics_server_enabled = var.rke2.metrics_server_enabled

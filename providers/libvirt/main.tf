@@ -17,10 +17,7 @@ resource "libvirt_volume" "os_image" {
 
 resource "libvirt_volume" "resized_os_image" {
 
-  for_each = {
-    for vm in concat(local.master_details, local.worker_details) :
-    vm.name => vm
-  }
+  for_each = local.all_vms_map
 
   name = "${each.value.name}-disk01.qcow2"
 
@@ -77,31 +74,27 @@ resource "libvirt_network" "network" {
 
 }
 
-### Master Nodes
-resource "libvirt_domain" "masters" {
+### VM Nodes
+resource "libvirt_domain" "vms" {
 
-  count = var.infra.masters.count
+  for_each = local.all_vms_map
 
-  name   = "${local.master_details[count.index].name}.${local.subdomain}"
-  memory = var.infra.masters.memory_gb * 1024
-  vcpu   = var.infra.masters.cpu
+  name   = each.value.name
+  memory = each.value.memory_mb
+  vcpu   = each.value.cpu
 
   autostart  = true
   qemu_agent = true
 
   disk {
-    volume_id = libvirt_volume.resized_os_image[
-      local.master_details[count.index].name
-    ].id
+    volume_id = libvirt_volume.resized_os_image[each.key].id
   }
 
   dynamic "disk" {
-    for_each = local.vm_disks[local.master_details[count.index].name]
+    for_each = local.vm_disks[each.key]
 
     content {
-      volume_id = libvirt_volume.extra_disks[
-        "${local.master_details[count.index].name}-${disk.value.index}"
-      ].id
+      volume_id = libvirt_volume.extra_disks["${each.key}-${disk.value.index}"].id
 
       scsi = true
       wwn  = disk.value.wwn
@@ -112,12 +105,10 @@ resource "libvirt_domain" "masters" {
     network_id     = var.network.mode == "bridge" ? null : libvirt_network.network[0].id
     bridge         = var.network.mode == "bridge" ? var.network.bridge_name : null
     wait_for_lease = var.network.mode == "bridge" ? false : var.network.ip_type == "dhcp"
-    mac            = local.master_details[count.index].mac
+    mac            = each.value.mac
   }
 
-  cloudinit = libvirt_cloudinit_disk.commoninit[
-    local.master_details[count.index].name
-  ].id
+  cloudinit = libvirt_cloudinit_disk.commoninit[each.key].id
 
   cpu = {
     mode = "host-passthrough"
@@ -144,83 +135,15 @@ resource "libvirt_domain" "masters" {
     ]
 
     connection {
-      type        = "ssh"
-      host        = self.network_interface[0].addresses[0]
-      user        = var.cluster.username
-      private_key = tls_private_key.global_key.private_key_pem
-    }
-  }
-}
-
-### Worker Nodes
-resource "libvirt_domain" "workers" {
-
-  count = var.infra.workers.count
-
-  name   = "${local.worker_details[count.index].name}.${local.subdomain}"
-  memory = var.infra.workers.memory_gb * 1024
-  vcpu   = var.infra.workers.cpu
-
-  autostart  = true
-  qemu_agent = true
-
-  disk {
-    volume_id = libvirt_volume.resized_os_image[
-      local.worker_details[count.index].name
-    ].id
-  }
-
-  dynamic "disk" {
-    for_each = local.vm_disks[local.worker_details[count.index].name]
-
-    content {
-      volume_id = libvirt_volume.extra_disks[
-        "${local.worker_details[count.index].name}-${disk.value.index}"
-      ].id
-
-      scsi = true
-      wwn  = disk.value.wwn
-    }
-  }
-
-  network_interface {
-    network_id     = var.network.mode == "bridge" ? null : libvirt_network.network[0].id
-    bridge         = var.network.mode == "bridge" ? var.network.bridge_name : null
-    wait_for_lease = var.network.mode == "bridge" ? false : var.network.ip_type == "dhcp"
-    mac            = local.worker_details[count.index].mac
-  }
-
-  cloudinit = libvirt_cloudinit_disk.commoninit[
-    local.worker_details[count.index].name
-  ].id
-
-  cpu = {
-    mode = "host-passthrough"
-  }
-
-  console {
-    type        = "pty"
-    target_port = "0"
-    target_type = "serial"
-  }
-
-  graphics {
-    type        = "vnc"
-    listen_type = "address"
-    autoport    = true
-  }
-
-  provisioner "remote-exec" {
-
-    inline = [
-      "echo 'Waiting for cloud-init to complete...'",
-      "cloud-init status --wait > /dev/null",
-      "echo 'Completed cloud-init!'"
-    ]
-
-    connection {
-      type        = "ssh"
-      host        = self.network_interface[0].addresses[0]
+      type = "ssh"
+      host = coalesce(
+        each.value.ip,
+        try(element([
+          for addr in self.network_interface[0].addresses :
+          addr if can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+$", addr))
+        ], 0), null),
+        local.vm_fqdns[each.key]
+      )
       user        = var.cluster.username
       private_key = tls_private_key.global_key.private_key_pem
     }

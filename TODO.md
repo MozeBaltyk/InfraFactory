@@ -40,6 +40,7 @@ Current OVH caveats:
 - [X] Implement main.tf for libvirt (VM provisioning)
 - [X] Implement templates.tf for libvirt (cloud-init)
 - [X] Implement outputs.tf for libvirt (inventory generation)
+- [X] Refactor libvirt VM domains to use unified `local.all_vms_map` resource loops
 - [X] Test libvirt provider end-to-end
 
 ### Phase 3: Provider Azure (Priority 2)

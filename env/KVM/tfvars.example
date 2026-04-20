@@ -1,10 +1,11 @@
 cluster = {
-  id       = "factory"
-  domain   = "lab"
-  timezone = "Europe/Paris"
-  username = "localadmin"
+  id                  = "factory"
+  domain              = "lab"
+  timezone            = "Europe/Paris"
+  username            = "localadmin"
+  node_name_format    = "serial" # serial => factory-node01, role => factory-m01/factory-w01
   cloud_init_selected = "k3s"
-  factory_root_path = "/srv"
+  factory_root_path   = "/srv"
 }
 
 infra = {
