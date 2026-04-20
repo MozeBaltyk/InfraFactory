@@ -1,0 +1,25 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: infra-az-lab
+  namespace: flux-system
+spec:
+  interval: 10m
+  workspace: lab
+  path: ./providers/azure
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  backendConfig:
+    secretSuffix: infra-az-lab
+  fileMappings:
+    - location: workspace
+      path: terraform.tfvars
+      secretRef:
+        name: tfvars-az-lab
+        key: terraform.tfvars
+  tfVarsFiles:
+    - terraform.tfvars
+  writeOutputsToSecret:
+    name: tf-output-az-lab

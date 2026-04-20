@@ -1,0 +1,25 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: infra-ovh-lab
+  namespace: flux-system
+spec:
+  interval: 10m
+  workspace: lab
+  path: ./providers/ovh
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  backendConfig:
+    secretSuffix: infra-ovh-lab
+  fileMappings:
+    - location: workspace
+      path: terraform.tfvars
+      secretRef:
+        name: tfvars-ovh-lab
+        key: terraform.tfvars
+  tfVarsFiles:
+    - terraform.tfvars
+  writeOutputsToSecret:
+    name: tf-output-ovh-lab

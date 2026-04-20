@@ -66,6 +66,8 @@ os = {
 #  port   = 22        # Optional
 #}
 
+#bootstrap_artifacts_mode = "bootstrap" # Optional: set to "bootstrap" to expose outputs instead of writing local artifacts
+
 # #######################################################
 # Optional and extras vars
 # #######################################################
