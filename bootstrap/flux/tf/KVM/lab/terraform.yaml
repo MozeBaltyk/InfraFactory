@@ -15,7 +15,7 @@ spec:
     secretSuffix: infra-kvm-lab
   fileMappings:
     - location: workspace
-      path: terraform.tfvars
+      path: terraform.auto.tfvars
       secretRef:
         name: tfvars-kvm-lab
         key: terraform.tfvars
@@ -29,7 +29,5 @@ spec:
       secretRef:
         name: libvirt-ssh-kvm-lab
         key: config
-  tfVarsFiles:
-    - terraform.tfvars
   writeOutputsToSecret:
     name: tf-output-kvm-lab

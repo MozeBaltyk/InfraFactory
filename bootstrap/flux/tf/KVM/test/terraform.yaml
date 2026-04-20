@@ -15,7 +15,7 @@ spec:
     secretSuffix: infra-kvm-test
   fileMappings:
     - location: workspace
-      path: terraform.tfvars
+      path: terraform.auto.tfvars
       secretRef:
         name: tfvars-kvm-test
         key: terraform.tfvars
@@ -29,7 +29,5 @@ spec:
       secretRef:
         name: libvirt-ssh-kvm-test
         key: config
-  tfVarsFiles:
-    - terraform.tfvars
   writeOutputsToSecret:
     name: tf-output-kvm-test
