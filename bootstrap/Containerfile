@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1.7
+
+ARG TF_CONTROLLER_VERSION=v0.16.1
+ARG BASE_IMAGE=ghcr.io/flux-iac/tf-runner:${TF_CONTROLLER_VERSION}-base
+ARG TOFU_VERSION=1.11.4
+
+FROM ${BASE_IMAGE} AS tf_runner
+
+FROM ghcr.io/opentofu/opentofu:${TOFU_VERSION}-minimal AS tofu
+
+FROM debian:bookworm-slim
+
+LABEL org.opencontainers.image.source="https://github.com/MozeBaltyk/InfraFactory"
+LABEL org.opencontainers.image.description="Custom tofu-controller runner with libvirt runtime dependencies"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    GNUPGHOME=/tmp
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      ca-certificates \
+      genisoimage \
+      git \
+      libvirt0 \
+      openssh-client \
+      qemu-utils \
+      tini && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=tf_runner /usr/local/bin/tf-runner /usr/local/bin/tf-runner
+COPY --from=tofu /usr/local/bin/tofu /usr/local/bin/tofu
+
+RUN groupadd --system --gid 65532 runner && \
+    useradd --system --uid 65532 --gid 65532 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin runner
+
+USER 65532:65532
+
+ENTRYPOINT ["/usr/bin/tini", "--", "tf-runner"]
