@@ -208,7 +208,7 @@ locals {
   env_root = "${path.module}/../../env"
   env_path = "${local.env_root}/${var.infra_provider}/${terraform.workspace}"
 
-  libvirt_uri = var.libvirt.remote ? "qemu+ssh://${var.libvirt.user}@${var.libvirt.host}:${var.libvirt.port}/${var.libvirt.system}" : "qemu:///${var.libvirt.system}"
+  libvirt_uri = var.libvirt.remote ? "qemu+ssh://${var.libvirt.user}@${var.libvirt.host}:${var.libvirt.port}/${var.libvirt.system}?keyfile=/home/runner/.ssh/id_rsa&no_verify=1&no_tty=1" : "qemu:///${var.libvirt.system}"
 
   os = var.os_catalog[var.os.selected]
 
