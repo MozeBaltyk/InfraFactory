@@ -64,6 +64,7 @@ os = {
 #  host   = "localhost"
 #  system = "system"
 #  port   = 22        # Optional
+#  keyfile = "/home/runner/.ssh/id_rsa"  # Optional: for bootstrap/custom runner use absolute path
 #}
 
 #bootstrap_artifacts_mode = "bootstrap" # Optional: set to "bootstrap" to expose outputs instead of writing local artifacts

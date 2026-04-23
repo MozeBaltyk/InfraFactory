@@ -188,18 +188,20 @@ variable "network" {
 # libvirt connection details
 variable "libvirt" {
   type = object({
-    remote = bool
-    user   = string
-    host   = string
-    port   = optional(number, 22)
-    system = string
+    remote  = bool
+    user    = string
+    host    = string
+    port    = optional(number, 22)
+    system  = string
+    keyfile = optional(string, "/home/runner/.ssh/id_rsa")
   })
 
   default = {
-    remote = false
-    user   = "root"
-    host   = "localhost"
-    system = "system"
+    remote  = false
+    user    = "root"
+    host    = "localhost"
+    system  = "system"
+    keyfile = "/home/runner/.ssh/id_rsa"
   }
 }
 
@@ -208,7 +210,7 @@ locals {
   env_root = "${path.module}/../../env"
   env_path = "${local.env_root}/${var.infra_provider}/${terraform.workspace}"
 
-  libvirt_uri = var.libvirt.remote ? "qemu+ssh://${var.libvirt.user}@${var.libvirt.host}:${var.libvirt.port}/${var.libvirt.system}?keyfile=/home/runner/.ssh/id_rsa&no_verify=1&no_tty=1" : "qemu:///${var.libvirt.system}"
+  libvirt_uri = var.libvirt.remote ? "qemu+ssh://${var.libvirt.user}@${var.libvirt.host}:${var.libvirt.port}/${var.libvirt.system}?keyfile=${var.libvirt.keyfile}&no_verify=1&no_tty=1" : "qemu:///${var.libvirt.system}"
 
   os = var.os_catalog[var.os.selected]
 
