@@ -31,7 +31,11 @@ COPY --from=tf_runner /usr/local/bin/tf-runner /usr/local/bin/tf-runner
 COPY --from=tofu /usr/local/bin/tofu /usr/local/bin/tofu
 
 RUN groupadd --system --gid 65532 runner && \
-    useradd --system --uid 65532 --gid 65532 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin runner
+    useradd --system --uid 65532 --gid 65532 --create-home --home-dir /home/runner --shell /usr/sbin/nologin runner && \
+    mkdir -p /home/runner/.ssh && \
+    chown -R 65532:65532 /home/runner
+
+ENV HOME=/home/runner
 
 USER 65532:65532
 
