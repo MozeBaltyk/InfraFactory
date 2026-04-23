@@ -30,7 +30,7 @@ _provider-tfvars-src:
 
 [private]
 _libvirt-key-src:
-    @if [ -f "../env/KVM/{{ ENV }}/.key.private" ]; then echo ../env/KVM/{{ ENV }}/.key.private; else echo ../env/KVM/lab/.key.private; fi
+    @if [ -n "${LIBVIRT_HOST_KEY_PATH:-}" ]; then echo "${LIBVIRT_HOST_KEY_PATH}"; else echo "$HOME/.ssh/ed25519"; fi
 
 [private]
 _tf-dir:
@@ -304,7 +304,7 @@ sync-tfvars:
     @just _require-tfvars
     @kubectl -n flux-system create secret generic $(just _tfvars-secret-name) --from-file=terraform.tfvars=$(just _provider-tfvars-src) --dry-run=client -o yaml | kubectl apply -f -
 
-[doc('Sync libvirt SSH secret from env/KVM/<env>/.key.private')]
+[doc('Sync libvirt host SSH secret from LIBVIRT_HOST_KEY_PATH or $HOME/.ssh/ed25519')]
 sync-libvirt-ssh:
     @just _require-provider
     @if [ "{{ PROVIDER }}" != "KVM" ]; then just log info "Skipping libvirt ssh secret" "provider" "{{ PROVIDER }}"; exit 0; fi

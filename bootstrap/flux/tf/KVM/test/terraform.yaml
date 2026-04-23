@@ -4,6 +4,7 @@ metadata:
   name: infra-kvm-test
   namespace: flux-system
 spec:
+  approvePlan: "plan-refs/heads/feat/bootstrap-fluxcd-38bda945c0"
   interval: 10m
   workspace: test
   path: ./providers/libvirt
