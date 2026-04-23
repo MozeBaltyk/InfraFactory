@@ -9,7 +9,7 @@ spec:
   path: ./providers/libvirt
   runnerPodTemplate:
     spec:
-      image: 192.168.122.1:5000/tf-runner-libvirt:v0.16.1
+      image: local.build/tf-runner-libvirt:v0.16.1
   sourceRef:
     kind: GitRepository
     name: flux-system
