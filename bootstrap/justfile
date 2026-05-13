@@ -61,6 +61,22 @@ _terraform-output-secret:
     @echo tf-output-$(just _provider-lower)-{{ ENV }}
 
 [private]
+_terraform-state-secret:
+    @echo tfstate-{{ ENV }}-$(just _terraform-name)
+
+[private]
+_terraform-default-state-secret:
+    @echo tfstate-default-$(just _terraform-name)
+
+[private]
+_terraform-lock-name:
+    @echo lock-tfstate-{{ ENV }}-$(just _terraform-name)
+
+[private]
+_terraform-default-lock-name:
+    @echo lock-tfstate-default-$(just _terraform-name)
+
+[private]
 _manual-libvirt-artifact-secret:
     @echo libvirt-artifacts-$(just _provider-lower)-{{ ENV }}
 
@@ -331,11 +347,50 @@ reconcile:
     @flux reconcile kustomization flux-system -n flux-system --with-source
     @flux reconcile kustomization tf-controller -n flux-system --with-source
 
-[doc('Show Terraform resource and output secret for selected overlay')]
+[doc('Show Terraform resource, outputs, state secrets, and locks')]
 status:
     @just _require-provider
-    @kubectl -n flux-system get terraform $(just _terraform-name) -o wide
-    @kubectl -n flux-system get secret $(just _terraform-output-secret)
+    @kubectl -n flux-system get terraform $(just _terraform-name) -o wide --ignore-not-found=true
+    @kubectl -n flux-system get secret $(just _terraform-output-secret) --ignore-not-found=true
+    @kubectl -n flux-system get secret $(just _terraform-state-secret) $(just _terraform-default-state-secret) --ignore-not-found=true
+    @kubectl -n flux-system get lease $(just _terraform-lock-name) $(just _terraform-default-lock-name) --ignore-not-found=true
+
+[doc('Describe Terraform resource for selected overlay')]
+describe:
+    @just _require-provider
+    @kubectl -n flux-system describe terraform $(just _terraform-name)
+
+[doc('Watch Terraform resource for selected overlay')]
+watch:
+    @just _require-provider
+    @kubectl -n flux-system get terraform $(just _terraform-name) -w
+
+[doc('Tail tofu-controller logs filtered for selected overlay')]
+logs:
+    @just _require-provider
+    @kubectl -n flux-system logs -f deploy/tofu-controller | rg --line-buffered '$(just _terraform-name)'
+
+[doc('Tail all tofu-controller deployment logs')]
+logs-controller:
+    @kubectl -n flux-system logs -f deploy/tofu-controller
+
+[doc('Show runner pods related to selected overlay')]
+runner:
+    @just _require-provider
+    @kubectl -n flux-system get pods -o wide | { rg 'NAME|$(just _terraform-name)|tf-runner' || true; }
+
+[doc('Show Terraform backend lock leases for selected overlay')]
+locks:
+    @just _require-provider
+    @kubectl -n flux-system get lease $(just _terraform-lock-name) $(just _terraform-default-lock-name) --ignore-not-found=true
+
+[doc('Show recent flux-system events')]
+events:
+    @kubectl -n flux-system get events --sort-by=.lastTimestamp
+
+[doc('Watch recent flux-system events')]
+watch-events:
+    @kubectl -n flux-system get events --sort-by=.lastTimestamp -w
 
 [doc('Publish manual libvirt artifacts into a namespace secret')]
 publish-libvirt-artifacts:

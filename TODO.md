@@ -2,6 +2,7 @@
 
 ## Current Status
 Azure provider is implemented following the Libvirt pattern.
+Bootstrap now includes `just` recipes for Flux/tofu-controller Terraform stack status, watch, logs, runner, lock, and event inspection from the `bootstrap/` folder.
 
 OVH now includes:
 - public-IP-based operator access
@@ -32,6 +33,7 @@ Current OVH caveats:
 - [X] Enforce branch-only workflow for AI-assisted development
 - [X] Align README.md, TODO.md, and AGENTS.md with current implementation paths and priority order
 - [X] Fix top-level Ansible play recipe path
+- [X] Add bootstrap-local monitoring recipes for Flux/tofu-controller Terraform stacks
 
 ### Phase 2: Provider Libvirt (Priority 1)
 - [X] Set up libvirt provider directory structure
