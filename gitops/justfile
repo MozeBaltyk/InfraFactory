@@ -346,7 +346,7 @@ _scaffold:
         secretSuffix: $resource
       fileMappings:
         - location: workspace
-          path: terraform.tfvars
+          path: terraform.auto.tfvars
           secretRef:
             name: $secret
             key: terraform.tfvars
@@ -368,8 +368,6 @@ _scaffold:
     fi
 
     cat >> "$tmp" <<YAML
-      tfVarsFiles:
-        - terraform.tfvars
       writeOutputsToSecret:
         name: $output
     YAML
