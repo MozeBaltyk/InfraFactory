@@ -48,8 +48,26 @@ resource "local_file" "ansible_inventory" {
 }
 
 ###
+### Output the rendered hosts.ini content in gitops mode, otherwise null
+###
+output "gitops_hosts_ini" {
+  description = "GitOps-mode rendered inventory content."
+  value       = local.gitops_mode ? local.rendered_ansible_inventory : null
+}
+
+###
 ### Import Kubeconfig
 ###
+
+locals {
+  kubeconfig_remote_path = (
+    var.cluster.cloud_init_selected == "rke2" ? "/etc/rancher/rke2/rke2.yaml" : (
+      var.cluster.cloud_init_selected == "k3s" ? "/etc/rancher/k3s/k3s.yaml" : null
+    )
+  )
+}
+
+
 resource "null_resource" "kubeconfig" {
   count = local.write_local_artifacts && contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ? 1 : 0
 
@@ -91,8 +109,24 @@ EOT
   }
 }
 
+# Output kubeconfig retrieval details in gitops mode, otherwise null
+output "gitops_kubeconfig_host" {
+  description = "GitOps-mode preferred endpoint for kubeconfig retrieval."
+  value       = contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ? local.vm_operator_endpoints[local.first_master_name] : null
+}
+
+output "gitops_kubeconfig_user" {
+  description = "GitOps-mode SSH username for kubeconfig retrieval."
+  value       = contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ? var.cluster.username : null
+}
+
+output "gitops_kubeconfig_remote_path" {
+  description = "GitOps-mode remote kubeconfig path on the first master."
+  value       = local.kubeconfig_remote_path
+}
+
 ###
-### Output
+### Output on terminal
 ###
 
 # Output the node IPs

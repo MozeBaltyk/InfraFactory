@@ -196,22 +196,36 @@ variable "libvirt" {
   })
 
   default = {
-    remote  = false
-    user    = "root"
-    host    = "localhost"
+    remote = false
+    user   = "root"
+    host   = "localhost"
+  }
+}
+
+variable "gitops_artifacts_mode" {
+  description = "Artifact delivery mode: manual writes local files, gitops exposes outputs only."
+  type        = string
+  default     = "manual"
+
+  validation {
+    condition     = contains(["manual", "gitops"], var.gitops_artifacts_mode)
+    error_message = "gitops_artifacts_mode must be either 'manual' or 'gitops'."
   }
 }
 
 # Local Settings
 locals {
+  gitops_mode           = var.gitops_artifacts_mode == "gitops"
+  write_local_artifacts = !local.gitops_mode
+
   env_root = "${path.module}/../../env"
   env_path = "${local.env_root}/${var.infra_provider}/${terraform.workspace}"
 
   libvirt_query = join("&", compact([
     try(var.libvirt.keyfile, null) != null && try(var.libvirt.keyfile, "") != ""
-      ? "keyfile=${var.libvirt.keyfile}" : null,
-      "no_verify=1",
-      "no_tty=1",
+    ? "keyfile=${var.libvirt.keyfile}" : null,
+    "no_verify=1",
+    "no_tty=1",
   ]))
   libvirt_uri = var.libvirt.remote ? "qemu+ssh://${var.libvirt.user}@${var.libvirt.host}:${var.libvirt.port}/system?${local.libvirt_query}" : "qemu:///system"
 

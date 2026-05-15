@@ -1,0 +1,35 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: infra-kvm-lab
+  namespace: flux-system
+spec:
+  interval: 10m
+  workspace: lab
+  path: ./providers/libvirt
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  backendConfig:
+    secretSuffix: infra-kvm-lab
+  fileMappings:
+    - location: workspace
+      path: terraform.tfvars
+      secretRef:
+        name: tfvars-kvm-lab
+        key: terraform.tfvars
+    - location: home
+      path: .ssh/id_rsa
+      secretRef:
+        name: libvirt-ssh-kvm-lab
+        key: id_rsa
+    - location: home
+      path: .ssh/config
+      secretRef:
+        name: libvirt-ssh-kvm-lab
+        key: config
+  tfVarsFiles:
+    - terraform.tfvars
+  writeOutputsToSecret:
+    name: tf-output-kvm-lab

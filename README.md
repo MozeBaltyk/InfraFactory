@@ -212,6 +212,13 @@ InfraFactory/
 ├── README.md                     # The only doc, I will produce in my life.
 ├── TODO.md                       # Task tracking
 ├── justfile                      # CLI orchestrator (run: just)
+├── gitops/                       # Optional Flux/tofu-controller management layer
+│   ├── apps/                     # Flux-managed platform apps and controllers
+│   ├── flux/                     # Flux system config and Terraform CR overlays
+│   ├── templates/                # Helmfile templates
+│   ├── crds.yaml                 # CRDs required by the GitOps stack
+│   ├── flux.yaml                 # Flux and Flux operator deployment
+│   └── justfile                  # GitOps operation commands
 ├── env/                          # Environment configurations
 │   ├── AZ/
 │   │   ├── tfvars.example        # Azure example
@@ -254,6 +261,34 @@ InfraFactory/
 └── assets/                       # Images and documentation assets
     └── InfraFactory.png
 ```
+
+---
+
+### Optional GitOps Layer
+
+The `gitops/` directory is the optional Kubernetes-side management layer for InfraFactory.
+
+It deploys Flux and tofu-controller into an existing management cluster, then reconciles selected provider/environment OpenTofu stacks from Git. Provider implementation still lives in `providers/`, manual deployment inputs and local artifacts still live in `env/`, and VM/node bootstrap still comes from `providers/shared/cloud-init/`.
+
+Use this layer when you want InfraFactory deployments to be managed by Flux/tofu-controller instead of running `just deploy` locally from the root provider workflow.
+
+Common GitOps commands:
+
+```bash
+# Deploy Flux and GitOps controllers
+just -f gitops/justfile deploy
+
+# Prepare provider/env secrets and Terraform overlay
+PROVIDER=KVM ENV=lab just -f gitops/justfile prepare
+
+# Activate an overlay in the Flux tree
+PROVIDER=KVM ENV=lab just -f gitops/justfile activate
+```
+
+In this context, GitOps bootstrap is different from cloud-init bootstrap:
+
+- Cloud-init bootstrap initializes VMs and installs `default`, `k3s`, or `rke2` node software.
+- The `gitops/` layer initializes and operates the Flux/tofu-controller automation that runs the provider modules.
 
 ---
 
