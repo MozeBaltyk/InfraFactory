@@ -16,7 +16,7 @@ It enables you to deploy clusters with varying numbers of control plane (masters
 
 ✨ **Key Features**
 - ☁️ **Multi-platform**:    
-        - Libvirt (local KVM)    
+        - Libvirt (local and distant KVM)    
         - Azure    
         - OVH    
 - 🌍 **Multi-environment**: One codebase, multiple environments via simple `tfvars` files
@@ -51,6 +51,7 @@ OpenTofu (provision VMs)
   - `arkade get kubectl`
   - `arkade get k9s`
   - `cockpit` to manage in a web interface the libvirt VMs
+  - `ansible`
 
 - **OpenTofu** (>= 1.6.0)
   - Install with `arkade get tofu`

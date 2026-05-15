@@ -62,7 +62,6 @@ os = {
 #  remote = true
 #  user   = "ubuntu"
 #  host   = "localhost"
-#  system = "system"
 #  port   = 22        # Optional
 #  keyfile = "/home/runner/.ssh/id_rsa"  # Optional: for bootstrap/custom runner use absolute path
 #}
