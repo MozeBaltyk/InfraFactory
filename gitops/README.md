@@ -29,7 +29,7 @@ gitops/
 │       ├── KVM/
 │       └── OVH/
 ├── templates/              # Helmfile templates
-├── Containerfile            # Custom runner image build context
+├── runner/                  # Custom tofu runner image build context and recipes
 ├── crds.yaml               # CRD rendering source for the GitOps stack
 ├── flux.yaml               # Flux Operator and Flux deployment Helmfile
 └── justfile                # GitOps operation commands

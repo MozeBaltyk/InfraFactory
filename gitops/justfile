@@ -2,10 +2,13 @@ set positional-arguments := true
 set quiet := true
 set shell := ['bash', '-euo', 'pipefail', '-c']
 
+mod runner_image "runner/mod.justfile"
+
 PROVIDER := env_var_or_default("PROVIDER", "KVM")
 ENV := env_var_or_default("ENV", "lab")
 TF_GITOPS_ROOT := "./flux/tf"
 TARGET_NAMESPACE := env_var_or_default("TARGET_NAMESPACE", "flux-system")
+TOFU_RUNNER_IMAGE := env_var_or_default("TOFU_RUNNER_IMAGE", "registry-zot.flux-system.svc.cluster.local:5000/infrafactory/tf-runner-libvirt:v0.16.2-homefix")
 
 [private]
 default:
@@ -66,6 +69,60 @@ _tf-dir:
 [private]
 _terraform-manifest:
     @printf '%s/terraform.yaml\n' "$(just _tf-dir)"
+
+[private]
+_manifest-runner-image manifest:
+    @if [ ! -f "{{ manifest }}" ]; then \
+        echo missing; \
+      else \
+        python3 -c $'import re\nimport sys\nfrom pathlib import Path\npath = Path(sys.argv[1])\ntext = path.read_text()\nmatch = re.search(r"(?m)^\\s{2}runnerPodTemplate:\\s*$", text)\nif not match:\n    print("controller-default", end="")\n    sys.exit(0)\nlines = text.splitlines()\nstart = next((i for i, line in enumerate(lines) if re.match(r"^\\s{2}runnerPodTemplate:\\s*$", line)), None)\nif start is None:\n    print("controller-default", end="")\n    sys.exit(0)\nfor line in lines[start + 1:]:\n    if line and not line.startswith("    "):\n        break\n    m = re.match(r"^\\s+image:\\s*(.+?)\\s*$", line)\n    if m:\n        print(m.group(1).strip().strip("\\\'\\\""), end="")\n        sys.exit(0)\nprint("controller-default", end="")' "{{ manifest }}"; \
+      fi
+
+[private]
+_manifest-source-ref manifest:
+    @if [ ! -f "{{ manifest }}" ]; then \
+        echo missing; \
+      else \
+        python3 -c $'import re\nimport sys\nfrom pathlib import Path\ntext = Path(sys.argv[1]).read_text()\nlines = text.splitlines()\nstart = next((i for i, line in enumerate(lines) if re.match(r"^\\s{2}sourceRef:\\s*$", line)), None)\nvalues = {}\nif start is not None:\n    for line in lines[start + 1:]:\n        if line and not line.startswith("    "):\n            break\n        m = re.match(r"^\\s+(kind|name|namespace):\\s*(.+?)\\s*$", line)\n        if m:\n            values[m.group(1)] = m.group(2).strip().strip("\\\'\\\"")\nkind = values.get("kind", "unknown")\nname = values.get("name", "unknown")\nnamespace = values.get("namespace", "flux-system")\nprint(f"{kind}/{name} namespace={namespace}", end="")' "{{ manifest }}"; \
+      fi
+
+[private]
+_flux-instance-source:
+    @manifest="./apps/flux-system/flux-instance/app/helmrelease.yaml"; \
+      if [ ! -f "$manifest" ]; then echo missing; exit 0; fi; \
+      python3 -c $'import re\nimport sys\nfrom pathlib import Path\ntext = Path(sys.argv[1]).read_text()\nvalues = {}\nfor name in ("url", "ref", "path"):\n    m = re.search(rf"(?m)^\\s+{name}:\\s*(.+?)\\s*$", text)\n    values[name] = m.group(1).strip().strip("\\\'\\\"") if m else "unknown"\nprint(f"url={values[\'url\']} ref={values[\'ref\']} path={values[\'path\']}", end="")' "$manifest"
+
+[private]
+_live-terraform-runner-image:
+    @name="$(just _terraform-name)"; namespace="flux-system"; \
+      if ! kubectl -n "$namespace" get terraform "$name" >/dev/null 2>&1; then echo missing; exit 0; fi; \
+      image="$(kubectl -n "$namespace" get terraform "$name" -o jsonpath='{.spec.runnerPodTemplate.spec.image}')"; \
+      if [ -n "$image" ]; then echo "$image"; else echo controller-default; fi
+
+[private]
+_live-terraform-source:
+    @name="$(just _terraform-name)"; namespace="flux-system"; \
+      if ! kubectl -n "$namespace" get terraform "$name" >/dev/null 2>&1; then echo missing; exit 0; fi; \
+      kind="$(kubectl -n "$namespace" get terraform "$name" -o jsonpath='{.spec.sourceRef.kind}')"; \
+      source_name="$(kubectl -n "$namespace" get terraform "$name" -o jsonpath='{.spec.sourceRef.name}')"; \
+      source_namespace="$(kubectl -n "$namespace" get terraform "$name" -o jsonpath='{.spec.sourceRef.namespace}')"; \
+      source_namespace="${source_namespace:-flux-system}"; \
+      if [ "$kind" != "GitRepository" ]; then \
+        printf '%s/%s namespace=%s' "$kind" "$source_name" "$source_namespace"; \
+        exit 0; \
+      fi; \
+      if ! kubectl -n "$source_namespace" get gitrepository "$source_name" >/dev/null 2>&1; then \
+        printf 'GitRepository/%s namespace=%s status=missing' "$source_name" "$source_namespace"; \
+        exit 0; \
+      fi; \
+      url="$(kubectl -n "$source_namespace" get gitrepository "$source_name" -o jsonpath='{.spec.url}')"; \
+      branch="$(kubectl -n "$source_namespace" get gitrepository "$source_name" -o jsonpath='{.spec.ref.branch}')"; \
+      name_ref="$(kubectl -n "$source_namespace" get gitrepository "$source_name" -o jsonpath='{.spec.ref.name}')"; \
+      tag="$(kubectl -n "$source_namespace" get gitrepository "$source_name" -o jsonpath='{.spec.ref.tag}')"; \
+      semver="$(kubectl -n "$source_namespace" get gitrepository "$source_name" -o jsonpath='{.spec.ref.semver}')"; \
+      commit="$(kubectl -n "$source_namespace" get gitrepository "$source_name" -o jsonpath='{.spec.ref.commit}')"; \
+      ref="${branch:-${name_ref:-${tag:-${semver:-${commit:-default}}}}}"; \
+      printf 'GitRepository/%s namespace=%s url=%s ref=%s' "$source_name" "$source_namespace" "$url" "$ref"
 
 [private]
 _tf-provider-dir:
@@ -154,6 +211,8 @@ _target-summary:
       just log info "Target" "provider" "{{ PROVIDER }}" "env" "{{ ENV }}"; \
       just log info "Overlay" "dir" "$(just _tf-dir)" "terraform_manifest" "$(just _terraform-manifest)"; \
       just log info "Terraform CR" "name" "$(just _terraform-name)" "namespace" "flux-system"; \
+      just log info "Runner image" "manifest" "$(just _manifest-runner-image $(just _terraform-manifest))" "live" "$(just _live-terraform-runner-image)"; \
+      just log info "Terraform source" "sourceRef" "$(just _manifest-source-ref $(just _terraform-manifest))" "repo" "$(just _flux-instance-source)"; \
       just log info "Module" "path" "$(just _provider-module-path)" "workspace" "{{ ENV }}"; \
       just log info "Provider kustomization" "path" "$(just _tf-provider-kustomization)" "state" "$state"; \
       just log info "Inputs" "tfvars" "$(just _provider-tfvars-src)" "tfvars_secret" "$(just _tfvars-secret-name)"; \
@@ -247,7 +306,7 @@ _namespaces:
 _crds:
     just log info "Running stage..." "stage" "$0"
 
-    if ! helmfile -f "crds.yaml" template -q | yq ea -e 'select(.kind == "CustomResourceDefinition")' | kubectl apply --server-side --field-manager bootstrap --force-conflicts -f -; then \
+    if ! helmfile -f "crds.yaml" template -q | yq -e 'select(.kind == "CustomResourceDefinition")' | kubectl apply --server-side --field-manager bootstrap --force-conflicts -f -; then \
         just log fatal "Failed to apply crds" "stage" "$0"; \
     fi;
 
@@ -298,6 +357,51 @@ delete:
 forward-ui:
     kubectl -n flux-system port-forward svc/flux-operator 9080:9080
 
+[doc('Port-forward Zot registry on localhost:5000')]
+[group('Runner')]
+registry-forward:
+    kubectl -n flux-system port-forward svc/registry-zot 5000:5000
+
+[doc('Build custom tofu-controller runner image')]
+[group('Runner')]
+runner-build:
+    @just runner_image::build
+
+[doc('Export custom tofu runner image to a tar archive')]
+[group('Runner')]
+runner-export:
+    @just runner_image::export
+
+[doc('Tag custom tofu runner image for the registry')]
+[group('Runner')]
+runner-tag:
+    @just runner_image::tag
+
+[doc('Push custom tofu runner image to the registry')]
+[group('Runner')]
+runner-push:
+    @just runner_image::push
+
+[doc('Build, tag, and push custom tofu runner image to the registry')]
+[group('Runner')]
+runner-publish:
+    @just runner_image::publish
+
+[doc('Import custom tofu runner image into k3s/containerd')]
+[group('Runner')]
+runner-import-k3s:
+    @just runner_image::import-k3s
+
+[doc('Import custom tofu runner image with ctr into k8s.io namespace')]
+[group('Runner')]
+runner-import-ctr:
+    @just runner_image::import-ctr
+
+[doc('Build, export, and import custom tofu runner image into k3s')]
+[group('Runner')]
+runner-load-k3s:
+    @just runner_image::load-k3s
+
 [private]
 _scaffold:
     #!/usr/bin/env bash
@@ -338,6 +442,17 @@ _scaffold:
       interval: 10m
       workspace: {{ ENV }}
       path: $module
+    YAML
+
+    if [ "{{ PROVIDER }}" = "KVM" ]; then
+      cat >> "$tmp" <<YAML
+      runnerPodTemplate:
+        spec:
+          image: {{ TOFU_RUNNER_IMAGE }}
+    YAML
+    fi
+
+    cat >> "$tmp" <<YAML
       sourceRef:
         kind: GitRepository
         name: flux-system
@@ -452,7 +567,10 @@ list:
           else \
             status='inactive'; \
           fi; \
-          printf '%-4s %-12s %s\n' "$provider" "$env_name" "$status"; \
+          manifest="$env_dir/terraform.yaml"; \
+          runner="$(just _manifest-runner-image "$manifest")"; \
+          source_ref="$(just _manifest-source-ref "$manifest")"; \
+          printf '%-4s %-12s %-8s runner=%s source=%s repo=%s\n' "$provider" "$env_name" "$status" "$runner" "$source_ref" "$(just _flux-instance-source)"; \
         done; \
       done
 
@@ -543,6 +661,11 @@ status:
     @provider_kustomization="$(just _tf-provider-kustomization)"; \
       if [ -f "$provider_kustomization" ] && grep -Fxq "  - ./{{ ENV }}" "$provider_kustomization"; then status='active'; else status='inactive'; fi; \
       just log info "Overlay activation" "provider" "{{ PROVIDER }}" "env" "{{ ENV }}" "status" "$status"
+    @manifest="$(just _terraform-manifest)"; \
+      just log info "Manifest runner image" "image" "$(just _manifest-runner-image "$manifest")"; \
+      just log info "Manifest source" "sourceRef" "$(just _manifest-source-ref "$manifest")" "repo" "$(just _flux-instance-source)"; \
+      just log info "Live runner image" "image" "$(just _live-terraform-runner-image)"; \
+      just log info "Live source" "source" "$(just _live-terraform-source)"
     @kubectl -n flux-system get terraform $(just _terraform-name) -o wide --ignore-not-found=true
     @kubectl -n flux-system get secret $(just _terraform-output-secret) --ignore-not-found=true
     @kubectl -n flux-system get secret $(just _terraform-state-secret) $(just _terraform-default-state-secret) --ignore-not-found=true

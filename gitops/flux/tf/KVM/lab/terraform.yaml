@@ -7,6 +7,9 @@ spec:
   interval: 10m
   workspace: lab
   path: ./providers/libvirt
+  runnerPodTemplate:
+    spec:
+      image: registry-zot.flux-system.svc.cluster.local:5000/infrafactory/tf-runner-libvirt:v0.16.2-homefix
   sourceRef:
     kind: GitRepository
     name: flux-system
