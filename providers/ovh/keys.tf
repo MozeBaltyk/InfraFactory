@@ -9,13 +9,6 @@ resource "null_resource" "env_directory" {
   }
 }
 
-resource "local_file" "env_directory_placeholder" {
-  filename = "${local.env_path}/.keep"
-  content  = ""
-
-  depends_on = [null_resource.env_directory]
-}
-
 resource "tls_private_key" "global_key" {
   algorithm = "RSA"
   rsa_bits  = 4096
@@ -36,10 +29,14 @@ resource "local_sensitive_file" "ssh_private_key" {
   depends_on = [null_resource.env_directory]
 }
 
+resource "random_id" "ssh_key_suffix" {
+  byte_length = 4
+}
+
 # Push the key to OVH so it can be injected into the VMs
 resource "ovh_cloud_project_ssh_key" "cluster" {
   service_name = var.ovh_project_service_name
-  name         = "${var.cluster.id}-${terraform.workspace}"
+  name         = "${terraform.workspace}-${random_id.ssh_key_suffix.hex}"
   public_key   = trimspace(tls_private_key.global_key.public_key_openssh)
 }
 

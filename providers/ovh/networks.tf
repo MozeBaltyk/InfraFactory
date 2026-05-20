@@ -1,4 +1,6 @@
 data "ovh_cloud_project_loadbalancer_flavors" "kube_api" {
+  count = local.kube_api_lb_enabled ? 1 : 0
+
   service_name = var.ovh_project_service_name
   region_name  = var.cluster.region
 }
@@ -18,7 +20,7 @@ resource "ovh_cloud_project_network_private_subnet_v2" "cluster" {
   network_id                      = ovh_cloud_project_network_private.cluster[0].regions_openstack_ids[var.cluster.region]
   region                          = var.cluster.region
   name                            = local.private_subnet_name
-  cidr                            = var.network.cidr
+  cidr                            = local.private_cidr
   dhcp                            = true
   enable_gateway_ip               = true
   use_default_public_dns_resolver = true
@@ -52,10 +54,6 @@ resource "ovh_cloud_project_gateway" "kube_api" {
   model        = "s"
   network_id   = local.private_network_id
   subnet_id    = local.private_subnet_id
-
-  depends_on = [
-    null_resource.private_network_destroy_grace,
-  ]
 }
 
 resource "ovh_cloud_project_loadbalancer" "kube_api" {
@@ -117,35 +115,38 @@ resource "ovh_cloud_project_loadbalancer" "kube_api" {
   }]
 
   depends_on = [
-    null_resource.private_network_destroy_grace,
     ovh_cloud_project_instance.masters,
-    ovh_cloud_project_gateway.kube_api,
-    ovh_cloud_project_network_private_subnet_v2.cluster,
+    ovh_cloud_project_gateway.kube_api
   ]
 }
 
 locals {
-  private_network_enabled = try(var.network.cidr, null) != null
+  private_cidr            = try(trimspace(var.network.private_cidr), "")
+  private_network_enabled = local.private_cidr != ""
   private_network_id      = try(ovh_cloud_project_network_private.cluster[0].regions_openstack_ids[var.cluster.region], null)
   private_subnet_id       = try(ovh_cloud_project_network_private_subnet_v2.cluster[0].id, null)
-  kube_api_lb_enabled     = local.private_network_enabled
+  kube_api_lb_enabled     = local.private_network_enabled && var.network.kube_api_lb_enabled
   kube_api_endpoint_mode  = try(var.network.kube_api_endpoint_mode, "lb_ip")
   kube_api_dns_name       = try(var.network.kube_api_dns_name, null)
-  kube_api_lb_flavors_by_name = {
-    for flavor in data.ovh_cloud_project_loadbalancer_flavors.kube_api.flavors : flavor.name => flavor
+  kube_api_lb_flavors_by_name = local.kube_api_lb_enabled ? {
+    for flavor in data.ovh_cloud_project_loadbalancer_flavors.kube_api[0].flavors : flavor.name => flavor
     if try(var.network.load_balancer_flavor, null) == null || flavor.name == var.network.load_balancer_flavor
-  }
+  } : {}
   kube_api_lb_flavor_name     = try(sort(keys(local.kube_api_lb_flavors_by_name))[0], null)
   kube_api_lb_flavor          = local.kube_api_lb_flavor_name != null ? local.kube_api_lb_flavors_by_name[local.kube_api_lb_flavor_name] : null
   kube_api_gateway_name       = "${var.cluster.id}-${terraform.workspace}-kube-api-gateway"
   kube_api_lb_name            = "${var.cluster.id}-${terraform.workspace}-kube-api"
   kube_api_bootstrap_endpoint = local.kube_api_endpoint_mode == "dns" ? local.kube_api_dns_name : null
+  kube_api_tls_san_reconcile_enabled = (
+    contains(["k3s", "rke2"], var.cluster.cloud_init_selected) &&
+    local.kube_api_bootstrap_endpoint == null
+  )
 
-  private_ip_host_offset_base = local.private_network_enabled ? (tonumber(split("/", var.network.cidr)[1]) <= 28 ? 10 : 2) : null
+  private_ip_host_offset_base = local.private_network_enabled ? (tonumber(split("/", local.private_cidr)[1]) <= 28 ? 10 : 2) : null
 
   node_private_ip_map = local.private_network_enabled ? {
     for idx, vm in concat(local.master_details, local.worker_details) :
-    vm.name => cidrhost(var.network.cidr, local.private_ip_host_offset_base + idx)
+    vm.name => cidrhost(local.private_cidr, local.private_ip_host_offset_base + idx)
   } : {}
 
   master_private_ip_map = {
@@ -203,9 +204,17 @@ locals {
   first_master_public_ip  = try(local.master_public_ips[0], null)
   first_master_private_ip = try(local.master_private_ips[0], null)
 
-  # Keep SSH and inventory on public IPs, but reserve cluster_join_endpoint for the private join path.
-  ssh_endpoint          = local.first_master_public_ip
-  cluster_join_endpoint = local.first_master_private_ip
+  # Keep SSH and inventory on public IPs. Workers can use the first master public IP
+  # when no private network exists; masters avoid that path to prevent a self-cycle
+  # in first-master cloud-init rendering.
+  ssh_endpoint         = local.first_master_public_ip
+  master_join_endpoint = local.private_network_enabled ? local.first_master_private_ip : local.first_master_name
+  worker_join_endpoint = local.private_network_enabled ? local.first_master_private_ip : local.first_master_public_ip
+  cluster_join_endpoint = (
+    local.private_network_enabled
+    ? local.first_master_private_ip
+    : local.first_master_public_ip
+  )
   public_kube_api_endpoint = local.kube_api_lb_enabled ? coalesce(
     local.kube_api_bootstrap_endpoint,
     try(ovh_cloud_project_loadbalancer.kube_api[0].floating_ip.ip, null),

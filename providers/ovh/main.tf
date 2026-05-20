@@ -70,11 +70,6 @@ resource "ovh_cloud_project_instance" "masters" {
       }
     }
   }
-
-  depends_on = [
-    null_resource.private_network_destroy_grace,
-    ovh_cloud_project_network_private_subnet_v2.cluster,
-  ]
 }
 
 resource "null_resource" "wait_for_master_cloud_init" {
@@ -179,11 +174,6 @@ resource "ovh_cloud_project_instance" "workers" {
       }
     }
   }
-
-  depends_on = [
-    null_resource.private_network_destroy_grace,
-    ovh_cloud_project_network_private_subnet_v2.cluster,
-  ]
 }
 
 resource "null_resource" "wait_for_worker_cloud_init" {

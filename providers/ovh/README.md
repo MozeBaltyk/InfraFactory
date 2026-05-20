@@ -66,9 +66,8 @@ Under `env/OVH/<workspace>/`:
 
 Important current behavior:
 
-- private networking and the kube API load balancer are currently coupled
-- when `network.cidr` is set, the provider creates the private network, subnet, gateway, and kube API load balancer together
-- there is no separate toggle today for "private network yes, load balancer no"
+- when `network.private_cidr` is set, the provider creates the private network and subnet
+- when `network.kube_api_lb_enabled` is true, the provider also creates the gateway and kube API load balancer
 
 ### Bootstrap and post-bootstrap actions
 
@@ -102,10 +101,13 @@ In other words, this implementation does **not** currently switch Ansible or SSH
 
 ### Private side
 
-When `network.cidr` is set, Terraform also creates:
+When `network.private_cidr` is set, Terraform also creates:
 
 - an OVH private network
 - a subnet on that private network
+
+When `network.kube_api_lb_enabled` is true, Terraform also creates:
+
 - a gateway
 - a Kubernetes API load balancer attached to that private network
 
@@ -261,7 +263,7 @@ This is the key reason the private IP mapping must be known in advance.
 
 Important caveat for multi-master:
 
-- the current implementation explicitly requires `network.cidr` when `infra.masters.count > 1`
+- the current implementation explicitly requires `network.private_cidr` when `infra.masters.count > 1`
 - secondary masters rely on the private join path
 - a public-IP fallback is implemented for workers, but not as the normal multi-master path
 
@@ -269,7 +271,7 @@ Important caveat for multi-master:
 
 ## Kubernetes API exposure on OVH
 
-When `network.cidr` is configured, OVH creates a dedicated load balancer for the Kubernetes API.
+When `network.kube_api_lb_enabled` is true, OVH creates a dedicated load balancer for the Kubernetes API.
 
 ### Current behavior
 
@@ -424,9 +426,9 @@ So the OVH subnet is not operating like a pure DHCP-assigned node network in thi
 
 Even when a private network exists, Ansible inventory remains on public IPs.
 
-### 4. Private networking and the kube-api load balancer are currently coupled
+### 4. Private networking and the kube-api load balancer are separate
 
-When `network.cidr` is set, the current implementation creates the private network, subnet, gateway, and kube-api load balancer together.
+When `network.private_cidr` is set, the current implementation creates the private network and subnet. Set `network.kube_api_lb_enabled` to also create the gateway and kube-api load balancer.
 
 ### 5. Floating IP cleanup is an explicit lifecycle concern
 

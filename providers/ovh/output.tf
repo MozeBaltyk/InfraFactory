@@ -25,6 +25,7 @@ resource "null_resource" "fetch_kubeconfig" {
   depends_on = [
     null_resource.wait_for_master_cloud_init,
     null_resource.wait_for_worker_cloud_init,
+    null_resource.reconcile_kube_api_tls_sans,
   ]
 
   triggers = {
@@ -32,6 +33,7 @@ resource "null_resource" "fetch_kubeconfig" {
     ssh_endpoint             = local.ssh_endpoint
     public_kube_api_endpoint = local.public_kube_api_endpoint
     cloud_init_selected      = var.cluster.cloud_init_selected
+    tls_sans_reconciled      = try(null_resource.reconcile_kube_api_tls_sans[0].id, "")
   }
 
   provisioner "local-exec" {
@@ -60,10 +62,11 @@ EOT
 }
 
 resource "null_resource" "reconcile_kube_api_tls_sans" {
-  count = contains(["k3s", "rke2"], var.cluster.cloud_init_selected) && local.kube_api_lb_enabled && local.kube_api_endpoint_mode == "lb_ip" ? 1 : 0
+  count = local.kube_api_tls_san_reconcile_enabled ? 1 : 0
 
   depends_on = [
     null_resource.wait_for_master_cloud_init,
+    null_resource.wait_for_worker_cloud_init,
     ovh_cloud_project_loadbalancer.kube_api,
   ]
 
@@ -76,101 +79,15 @@ resource "null_resource" "reconcile_kube_api_tls_sans" {
 
   provisioner "local-exec" {
     command = <<EOT
-ssh_opts='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=3'
+ssh_opts='-T -o LogLevel=ERROR -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=3'
 per_master_timeout='180'
 recovery_delay='10'
 
 for ssh_endpoint in ${self.triggers.master_endpoints}; do
 timeout --foreground "$per_master_timeout" \
 ssh $ssh_opts -i ${self.triggers.path}/.key.private \
-${var.cluster.username}@$ssh_endpoint <<'REMOTE'
-set -eu
-
-endpoint='${self.triggers.public_kube_api_endpoint}'
-mode='${self.triggers.cloud_init_selected}'
-
-case "$mode" in
-  rke2)
-    config_path='/etc/rancher/rke2/config.yaml'
-    service_name='rke2-server'
-    cert_dir='/var/lib/rancher/rke2/server/tls'
-    ;;
-  k3s)
-    config_path='/etc/rancher/k3s/config.yaml'
-    service_name='k3s'
-    cert_dir='/var/lib/rancher/k3s/server/tls'
-    ;;
-  *)
-    exit 0
-    ;;
-esac
-
-if sudo grep -Fqx "  - $endpoint" "$config_path"; then
-  exit 0
-fi
-
-tmp_file="$(mktemp)"
-sudo awk -v endpoint="$endpoint" '
-  BEGIN {
-    in_tls_san = 0
-    inserted = 0
-  }
-
-  function insert_endpoint() {
-    if (!inserted) {
-      print "  - " endpoint
-      inserted = 1
-    }
-  }
-
-  {
-    if ($0 == "tls-san:") {
-      in_tls_san = 1
-      print $0
-      next
-    }
-
-    if (in_tls_san && $0 ~ /^  - /) {
-      print $0
-      next
-    }
-
-    if (in_tls_san) {
-      insert_endpoint()
-      in_tls_san = 0
-    }
-
-    print $0
-  }
-
-  END {
-    if (in_tls_san) {
-      insert_endpoint()
-    }
-  }
-' "$config_path" > "$tmp_file"
-
-sudo mv "$tmp_file" "$config_path"
-sudo systemctl stop "$service_name"
-sudo rm -f "$cert_dir/serving-kube-apiserver.crt" "$cert_dir/serving-kube-apiserver.key"
-sudo systemctl start "$service_name"
-
-deadline="$(($(date +%s) + 120))"
-while true; do
-  if sudo systemctl is-active --quiet "$service_name" && sudo ss -H -lnt '( sport = :6443 )' | grep -q ':6443'; then
-    break
-  fi
-
-  if [ "$(date +%s)" -ge "$deadline" ]; then
-    echo "Timed out waiting for $service_name readiness on $(hostname)" >&2
-    sudo systemctl status "$service_name" --no-pager || true
-    sudo ss -H -lnt '( sport = :6443 )' || true
-    exit 1
-  fi
-
-  sleep 2
-done
-REMOTE
+${var.cluster.username}@$ssh_endpoint \
+"sudo /usr/local/bin/reconcile-${self.triggers.cloud_init_selected}-kube-api-tls-san.sh '${self.triggers.public_kube_api_endpoint}'"
 
 sleep "$recovery_delay"
 done

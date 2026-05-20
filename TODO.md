@@ -8,16 +8,16 @@ OVH now includes:
 - public-IP-based operator access
 - shared cloud-init bootstrap
 - generated SSH keys, inventory, and kubeconfig
-- optional private networking via `network.cidr`
+- optional private networking via `network.private_cidr`
 - deterministic private IP assignment
 - separate masters and workers
-- multi-master clusters when `network.cidr` is set
+- multi-master clusters when `network.private_cidr` is set
 - kube-api load-balancer exposure
 - an optional exact-match floating-IP cleanup helper for destroy leftovers
 
 Current OVH caveats:
 - inventory remains public-IP based even when private networking exists
-- private networking and kube-api load-balancer creation are currently coupled
+- kube-api load-balancer creation is controlled by `network.kube_api_lb_enabled`
 - some multi-node readiness scenarios can still be inconsistent
 - custom root disk sizing and extra disks are not supported yet
 - cleanup of other implicit public IP leftovers still depends on OVH/provider behavior

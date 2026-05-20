@@ -116,6 +116,12 @@ write_files:
       systemctl start rke2-agent
 %{ endif ~}
 
+%{ if kube_api_tls_san_reconcile_script != "" ~}
+  - path: /usr/local/bin/reconcile-rke2-kube-api-tls-san.sh
+    permissions: "0755"
+    content: |
+${kube_api_tls_san_reconcile_script}
+%{ endif ~}
 
 %{ if ansible_pull_repo != null && ansible_pull_repo != "" ~}
   - path: /usr/local/bin/run-ansible-pull.sh

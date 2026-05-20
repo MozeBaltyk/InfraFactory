@@ -398,8 +398,8 @@ See [AGENTS.md](AGENTS.md) for AI assistant context and [constitution.md](.speci
 ## Known Limitations
 
 - OVH uses public-IP-based operator access even when a private network exists
-- OVH multi-master requires `network.cidr`
-- OVH private networking and the kube-api load balancer are currently coupled
+- OVH multi-master requires `network.private_cidr`
+- OVH kube-api load balancer creation is controlled by `network.kube_api_lb_enabled`
 - OVH multi-node readiness can still be inconsistent in some scenarios
 - OVH cleanup of gateway or other implicit public IP leftovers outside the captured load-balancer floating IP still depends on OVH/provider behavior
 - OVH custom root disk sizing and extra disks are not supported yet

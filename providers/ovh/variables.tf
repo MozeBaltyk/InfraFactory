@@ -38,8 +38,7 @@ variable "ovh_project_service_name" {
 variable "os_catalog" {
   description = "OS image catalog"
   type = map(object({
-    os_name         = string
-    hostname_prefix = string
+    os_name = string
     image = object({
       name = string
     })
@@ -48,8 +47,7 @@ variable "os_catalog" {
 
   default = {
     ubuntu24 = {
-      os_name         = "ubuntu"
-      hostname_prefix = "slovh"
+      os_name = "ubuntu"
       image = {
         name = "Ubuntu 24.04"
       }
@@ -57,8 +55,7 @@ variable "os_catalog" {
     }
 
     ubuntu22 = {
-      os_name         = "ubuntu"
-      hostname_prefix = "slovh"
+      os_name = "ubuntu"
       image = {
         name = "Ubuntu 22.04"
       }
@@ -91,6 +88,7 @@ variable "cluster" {
     timezone            = string
     region              = string
     username            = string
+    node_name_format    = optional(string, "serial")
     cloud_init_selected = string
   })
 
@@ -100,6 +98,7 @@ variable "cluster" {
     timezone            = "Europe/Paris"
     region              = "GRA9"
     username            = "localadmin"
+    node_name_format    = "serial"
     cloud_init_selected = "k3s"
   }
 }
@@ -168,7 +167,8 @@ variable "network" {
   description = "OVH network configuration"
 
   type = object({
-    cidr                   = optional(string)
+    private_cidr           = optional(string)
+    kube_api_lb_enabled    = optional(bool, false)
     load_balancer_flavor   = optional(string)
     kube_api_endpoint_mode = optional(string, "lb_ip")
     kube_api_dns_name      = optional(string)
@@ -177,8 +177,19 @@ variable "network" {
   default = {}
 
   validation {
-    condition     = try(var.network.cidr, null) == null || can(cidrhost(var.network.cidr, 0))
-    error_message = "network.cidr must be a valid CIDR block."
+    condition = (
+      try(trimspace(var.network.private_cidr), "") == "" ||
+      can(cidrhost(var.network.private_cidr, 0))
+    )
+    error_message = "network.private_cidr must be a valid CIDR block."
+  }
+
+  validation {
+    condition = (
+      !var.network.kube_api_lb_enabled ||
+      try(trimspace(var.network.private_cidr), "") != ""
+    )
+    error_message = "network.private_cidr must be set when network.kube_api_lb_enabled is true."
   }
 
   validation {
@@ -195,31 +206,6 @@ variable "network" {
   }
 }
 
-check "ovh_multi_master_requires_private_network" {
-  assert {
-    condition = (
-      var.infra.masters.count <= 1 ||
-      trimspace(try(var.network.cidr, "")) != ""
-    )
-    error_message = "network.cidr must be set when infra.masters.count is greater than 1 so OVH multi-master can use the private-network path."
-  }
-}
-
-check "ovh_private_network_cidr_has_enough_addresses" {
-  assert {
-    condition = (
-      try(var.network.cidr, null) == null ||
-      can(
-        cidrhost(
-          var.network.cidr,
-          (tonumber(split("/", var.network.cidr)[1]) <= 28 ? 10 : 2) + var.infra.masters.count + var.infra.workers.count - 1
-        )
-      )
-    )
-    error_message = "network.cidr must provide enough private IP addresses for all OVH masters and workers."
-  }
-}
-
 locals {
   env_root = "${path.module}/../../env"
   env_path = "${local.env_root}/${var.infra_provider}/${terraform.workspace}"
@@ -232,7 +218,11 @@ locals {
 
   master_details = [
     for i in range(var.infra.masters.count) : {
-      name          = format("${local.os.hostname_prefix}-m%02d", i + 1)
+      name = (
+        var.cluster.node_name_format == "serial"
+        ? format("${var.cluster.id}-node%02d", i + 1)
+        : format("${var.cluster.id}-m%02d", i + 1)
+      )
       role          = "master"
       instance_size = var.infra.masters.instance_size
       disk_size     = var.infra.masters.disk_size
@@ -240,19 +230,23 @@ locals {
     }
   ]
 
+  masters_map = {
+    for vm in local.master_details : vm.name => vm
+  }
+
   worker_details = [
     for i in range(var.infra.workers.count) : {
-      name          = format("${local.os.hostname_prefix}-w%02d", i + 1)
+      name = (
+        var.cluster.node_name_format == "serial"
+        ? format("${var.cluster.id}-node%02d", i + 1 + var.infra.masters.count)
+        : format("${var.cluster.id}-w%02d", i + 1)
+      )
       role          = "worker"
       instance_size = var.infra.workers.instance_size
       disk_size     = var.infra.workers.disk_size
       extra_disks   = try(var.infra.workers.extra_disks, [])
     }
   ]
-
-  masters_map = {
-    for vm in local.master_details : vm.name => vm
-  }
 
   workers_map = {
     for vm in local.worker_details : vm.name => vm
