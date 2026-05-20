@@ -29,7 +29,9 @@ gitops/
 │       ├── KVM/
 │       └── OVH/
 ├── templates/              # Helmfile templates
-├── runner/                  # Custom tofu runner image build context and recipes
+├── scripts/
+│   ├── runner/             # Manage Custom tofu runner image (build and push)
+│   ├── scaffolder          # Scaffold a new env in flux/tf
 ├── crds.yaml               # CRD rendering source for the GitOps stack
 ├── flux.yaml               # Flux Operator and Flux deployment Helmfile
 └── justfile                # GitOps operation commands
@@ -54,6 +56,7 @@ Expected local tools:
 - `helm`
 - `flux`
 - `just`
+- `podman` for custom tofu-controller runner image build/push recipes
 - `python3`
 - `tofu` for some local helper commands
 - `rg` for log/runner filtering helpers

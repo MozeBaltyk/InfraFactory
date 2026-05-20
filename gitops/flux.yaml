@@ -51,12 +51,3 @@ releases:
         showlogs: true
     needs:
       - flux-system/flux-instance
-
-  - name: registry
-    namespace: flux-system
-    chart: zot/zot
-    version: 0.1.113
-    values:
-      - ./templates/values.yaml.gotmpl
-    needs:
-      - flux-system/flux-instance

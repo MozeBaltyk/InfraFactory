@@ -3,7 +3,7 @@ cluster = {
   domain              = "local"
   timezone            = "Europe/Paris"
   username            = "localadmin"
-  cloud_init_selected = "k3s"
+  cloud_init_selected = "rke2"
   factory_root_path   = "/srv"
   node_name_format    = "role"
 }

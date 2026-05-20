@@ -357,50 +357,25 @@ delete:
 forward-ui:
     kubectl -n flux-system port-forward svc/flux-operator 9080:9080
 
-[doc('Port-forward Zot registry on localhost:5000')]
+[doc('Build, tag, and push custom tofu runner image through a temporary Zot port-forward')]
 [group('Runner')]
-registry-forward:
-    kubectl -n flux-system port-forward svc/registry-zot 5000:5000
+runner-publish-forwarded:
+    @just runner_image::publish-forwarded
 
-[doc('Build custom tofu-controller runner image')]
+[doc('Render K3s registries.yaml mirror config for the Zot registry')]
 [group('Runner')]
-runner-build:
-    @just runner_image::build
+runner-k3s-registry-mirror-render:
+    @just runner_image::k3s-registry-mirror-render
 
-[doc('Export custom tofu runner image to a tar archive')]
+[doc('Install K3s registries.yaml mirror config on a remote VM over SSH')]
 [group('Runner')]
-runner-export:
-    @just runner_image::export
+runner-k3s-registry-mirror-install-remote:
+    @just runner_image::k3s-registry-mirror-install-remote
 
-[doc('Tag custom tofu runner image for the registry')]
+[doc('Verify remote K3s node status over SSH')]
 [group('Runner')]
-runner-tag:
-    @just runner_image::tag
-
-[doc('Push custom tofu runner image to the registry')]
-[group('Runner')]
-runner-push:
-    @just runner_image::push
-
-[doc('Build, tag, and push custom tofu runner image to the registry')]
-[group('Runner')]
-runner-publish:
-    @just runner_image::publish
-
-[doc('Import custom tofu runner image into k3s/containerd')]
-[group('Runner')]
-runner-import-k3s:
-    @just runner_image::import-k3s
-
-[doc('Import custom tofu runner image with ctr into k8s.io namespace')]
-[group('Runner')]
-runner-import-ctr:
-    @just runner_image::import-ctr
-
-[doc('Build, export, and import custom tofu runner image into k3s')]
-[group('Runner')]
-runner-load-k3s:
-    @just runner_image::load-k3s
+runner-k3s-registry-mirror-verify-remote:
+    @just runner_image::k3s-registry-mirror-verify-remote
 
 [private]
 _scaffold:
