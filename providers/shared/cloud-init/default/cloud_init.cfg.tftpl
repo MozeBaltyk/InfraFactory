@@ -38,7 +38,11 @@ packages:
   - tar
   - unzip
 %{ endif ~}
-
+%{ if length(extra_packages) > 0 }
+%{ for p in extra_packages ~}
+  - ${p}
+%{ endfor ~}
+%{ endif }
 
 %{ if ansible_pull_repo != null && ansible_pull_repo != "" ~}
 write_files:

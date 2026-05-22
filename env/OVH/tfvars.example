@@ -35,16 +35,57 @@ os = {
   selected = "ubuntu24"
 }
 
-# OVH private networking and kube-api endpoint mode example
-# When network.private_cidr is set, OVH creates the private network/subnet.
-# Enable kube_api_lb_enabled when a public kube-api load balancer is needed.
+###
+### Optional network configuration
+### 
+
+# Minimal
+# network = {}
+
+# With private network
 # network = {
-#   private_cidr           = "192.168.122.0/24"
-#   kube_api_lb_enabled    = true
-#   load_balancer_flavor   = "small"
-#   kube_api_endpoint_mode = "lb_ip" # or "dns"
-#   kube_api_dns_name      = "api.factory.lab" # required for dns mode; record must exist outside Terraform
+#   private = {
+#     cidr = "10.0.0.0/24"
+#   }
 # }
+
+# LB enabled
+# network = {
+#   private = {
+#     cidr = "10.0.0.0/24"
+#   }
+# 
+#   kube_api = {
+#     load_balancer = {
+#       enabled = true
+#     }
+#   }
+# }
+
+# DNS mode activate
+# network = {
+#   private = {
+#     cidr = "10.0.0.0/24"
+#   }
+# 
+#   kube_api = {
+#     endpoint = "dns"
+# 
+#     dns = {
+#       name = "kube.example.com"
+#     }
+# 
+#     load_balancer = {
+#       enabled = true
+#       flavor  = "small"
+#     }
+#   }
+# }
+
+
+###
+### Extra vars
+###
 
 # if cloud_init_selected=k3s
 # k3s = {

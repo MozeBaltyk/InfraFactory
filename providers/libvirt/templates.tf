@@ -13,6 +13,7 @@ resource "libvirt_cloudinit_disk" "commoninit" {
       domain   = local.subdomain
 
       extra_disks = local.vm_disks[each.value.name]
+      extra_packages = var.extra_packages
 
       clusterid     = var.cluster.id
       timezone      = var.cluster.timezone

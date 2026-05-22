@@ -1,3 +1,12 @@
+################################
+# Extra Packages installed on the nodes by cloud-init
+################################
+variable "extra_packages" {
+  description = "Extra packages to be installed on the nodes by cloud-init"
+  type        = list(string)
+  default     = []
+}
+
 ###################################
 # K3s specific variables
 ###################################
