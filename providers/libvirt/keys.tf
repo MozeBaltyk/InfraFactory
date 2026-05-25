@@ -1,9 +1,11 @@
 ###
-### SSH
+### SSH Output in env_path when write_local_artifacts is enabled, otherwise null
 ###
 
 # Ensure environment directory exists
 resource "null_resource" "env_directory" {
+  count = local.write_local_artifacts ? 1 : 0
+
   provisioner "local-exec" {
     command = "mkdir -p ${local.env_path}"
   }
@@ -17,6 +19,8 @@ resource "tls_private_key" "global_key" {
 
 # Save the public key to a local file
 resource "local_file" "ssh_public_key" {
+  count = local.write_local_artifacts ? 1 : 0
+
   filename = "${local.env_path}/.key.pub"
   content  = tls_private_key.global_key.public_key_openssh
 
@@ -25,17 +29,37 @@ resource "local_file" "ssh_public_key" {
 
 # Save the private key to a local file
 resource "local_sensitive_file" "ssh_private_key" {
-  filename = "${local.env_path}/.key.private"
-  content = tls_private_key.global_key.private_key_pem
+  count = local.write_local_artifacts ? 1 : 0
+
+  filename        = "${local.env_path}/.key.private"
+  content         = tls_private_key.global_key.private_key_pem
   file_permission = "0600"
 
   depends_on = [null_resource.env_directory]
 }
 
-# Generate a random token for K3s/RKE2 if not provided via variables
+###
+### Output when gitops mode is enabled (writeOutputsToSecret: true) - otherwise null
+###
+
+output "gitops_ssh_private_key_pem" {
+  description = "GitOps-mode SSH private key for cluster access."
+  sensitive   = true
+  value       = local.gitops_mode ? tls_private_key.global_key.private_key_pem : null
+}
+
+output "gitops_ssh_public_key_openssh" {
+  description = "GitOps-mode SSH public key for cluster access."
+  value       = local.gitops_mode ? tls_private_key.global_key.public_key_openssh : null
+}
+
+###
+### Generate a random token for K3s/RKE2 if not provided via variables
+###
+
 resource "random_string" "cluster_token" {
-  length  = 32
-  special = true
+  length           = 32
+  special          = true
   override_special = "-_"
 }
 
@@ -44,10 +68,26 @@ locals {
   cluster_token  = local.selected_token != null && local.selected_token != "" ? local.selected_token : "${random_string.cluster_token.result}"
 }
 
+###
+### Output the token to a local file if write_local_artifacts is enabled
+###
+
 resource "local_file" "cluster_token" {
-  filename = "${local.env_path}/.token"
-  content  = local.cluster_token
+  count = local.write_local_artifacts ? 1 : 0
+
+  filename        = "${local.env_path}/.token"
+  content         = local.cluster_token
   file_permission = "0600"
 
   depends_on = [null_resource.env_directory]
+}
+
+###
+### Outputs for GitOps mode
+###
+
+output "gitops_cluster_token" {
+  description = "GitOps-mode generated cluster token."
+  sensitive   = true
+  value       = local.gitops_mode ? local.cluster_token : null
 }

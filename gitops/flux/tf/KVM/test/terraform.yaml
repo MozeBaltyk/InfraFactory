@@ -1,0 +1,37 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: infra-kvm-test
+  namespace: flux-system
+spec:
+  approvePlan: auto
+  interval: 10m
+  workspace: test
+  path: ./providers/libvirt
+  runnerPodTemplate:
+    spec:
+      image: local.build/tf-runner-libvirt:v0.16.2-homefix
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  backendConfig:
+    secretSuffix: infra-kvm-test
+  fileMappings:
+    - location: workspace
+      path: terraform.auto.tfvars
+      secretRef:
+        name: tfvars-kvm-test
+        key: terraform.tfvars
+    - location: home
+      path: .ssh/id_rsa
+      secretRef:
+        name: libvirt-ssh-kvm-test
+        key: id_rsa
+    - location: home
+      path: .ssh/config
+      secretRef:
+        name: libvirt-ssh-kvm-test
+        key: config
+  writeOutputsToSecret:
+    name: tf-output-kvm-test

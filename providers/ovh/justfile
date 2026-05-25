@@ -29,16 +29,16 @@ capture-floating-ip:
     @python3 {{ FLOATING_IP_HELPER }} capture --workspace {{ ENV }} --capture-file {{ FLOATING_IP_CAPTURE_PATH }}
 
 cleanup-floating-ip:
-    @python3 {{ FLOATING_IP_HELPER }} cleanup --tfvars {{ ENV_TFVARS_PATH }} --capture-file {{ FLOATING_IP_CAPTURE_PATH }} --allow-detach
+    @if [ -f {{ FLOATING_IP_CAPTURE_PATH }} ]; then \
+        python3 {{ FLOATING_IP_HELPER }} cleanup \
+          --tfvars {{ ENV_TFVARS_PATH }} \
+          --capture-file {{ FLOATING_IP_CAPTURE_PATH }} \
+          --allow-detach; \
+    else \
+        echo "No OVH floating IP capture file at {{ FLOATING_IP_CAPTURE_PATH }}; skipping cleanup."; \
+    fi
 
 destroy:
     @tofu init
     @just _workspace
-    @python3 {{ FLOATING_IP_HELPER }} capture --workspace {{ ENV }} --capture-file {{ FLOATING_IP_CAPTURE_PATH }}
-    @set +e; \
-      tofu destroy -auto-approve -var-file={{ ENV_TFVARS_PATH }}; \
-      destroy_status=$$?; \
-      python3 {{ FLOATING_IP_HELPER }} cleanup --tfvars {{ ENV_TFVARS_PATH }} --capture-file {{ FLOATING_IP_CAPTURE_PATH }} --allow-detach; \
-      cleanup_status=$$?; \
-      if [ $$destroy_status -ne 0 ]; then exit $$destroy_status; fi; \
-      exit $$cleanup_status
+    @tofu destroy -auto-approve -var-file={{ ENV_TFVARS_PATH }}; 

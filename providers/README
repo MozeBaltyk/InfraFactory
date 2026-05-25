@@ -1,5 +1,23 @@
 # Functionalities 
-Reflects expected functionalities necessary for each modules.  
+Reflects expected functionalities necessary for each modules.
+
+## Provider-specific implementation notes
+
+### OVH: `addresses` attribute on `ovh_cloud_project_instance`
+
+The `ovh_cloud_project_instance` resource exposes a computed attribute named
+**`addresses`** (NOT `ip_addresses`). Each entry in the `addresses` list has
+`ip` and `version` keys but **no `type` key** — there is no
+`type = "public"` / `type = "private"` discriminator.
+
+Public vs. private IP classification is done by checking
+`cidrcontains(local.private_cidr, addr.ip)`.  Any IPv4 address that does
+**not** fall inside the private CIDR is treated as a public address.
+
+If a provider migration or update ever adds a `type` key to the address
+objects, the filtering logic in `main.tf` (both `vm_public_ipv4_addresses`
+and `vm_private_ipv4_addresses`) should be updated to prefer the explicit
+type over the CIDR-based heuristic. 
 
 ## Common capabilties to all providers
 - Generate SSH keys
@@ -33,15 +51,15 @@ Reflects expected functionalities necessary for each modules.
 
 ## Specific OVH model
 - Public-IP-based operator access for SSH, inventory, and kubeconfig retrieval
-- Optional private networking for cluster internal traffic via `network.cidr`
-- Deterministic private IP assignment from `network.cidr`
-- Separate masters and workers, with multi-master supported when `network.cidr` is set
-- Kubernetes API exposed through an OVH load balancer when private networking is enabled
+- Optional private networking for cluster internal traffic via `network.private_cidr`
+- Deterministic private IP assignment from `network.private_cidr`
+- Separate masters and workers, with multi-master supported when `network.private_cidr` is set
+- Kubernetes API exposed through an OVH load balancer when `network.kube_api_lb_enabled` is enabled
 - Load balancer endpoint can be advertised by floating IP or externally managed DNS name
 - Optional exact-match floating-IP cleanup helper for load-balancer destroy leftovers
 - Current limitations:
     - inventory remains public-IP based even when a private network exists
-    - private networking and the kube-api load balancer are currently coupled
+    - multi-master requires private networking
     - custom root disk sizing not supported yet
     - extra disks not supported yet
     - some multi-node readiness scenarios can still be inconsistent
@@ -66,4 +84,4 @@ Reflects expected functionalities necessary for each modules.
 | OVH      | 1 masters / 2 workers | rke2      | default |
 | OVH      | 3 masters             | rke2      | default |
 
-OVH scenarios currently also use `network.cidr`, deterministic private IP assignment, and the kube-api load-balancer flow.
+OVH scenarios currently also use `network.private_cidr`, deterministic private IP assignment, and the optional kube-api load-balancer flow.

@@ -1,53 +1,153 @@
-data "ovh_cloud_project_images" "os" {
+###
+### Look for the image id and flavor id in the region and validate it exists before creating any resources
+###
+
+data "ovh_cloud_project_images" "all" {
   service_name = var.ovh_project_service_name
   region       = var.cluster.region
-  os_type      = "linux"
 }
 
-data "ovh_cloud_project_flavors" "masters" {
+data "ovh_cloud_project_flavors" "all" {
   service_name = var.ovh_project_service_name
   region       = var.cluster.region
-  name_filter  = var.infra.masters.instance_size
 }
 
-data "ovh_cloud_project_flavors" "workers" {
+###
+### SSH key — push the generated public key to OVH so it can be injected into VMs
+###
+
+resource "random_id" "ssh_key_suffix" {
+  byte_length = 4
+}
+
+resource "ovh_cloud_project_ssh_key" "cluster" {
   service_name = var.ovh_project_service_name
-  region       = var.cluster.region
-  name_filter  = var.infra.workers.instance_size
+  name         = "${terraform.workspace}-${random_id.ssh_key_suffix.hex}"
+  public_key   = trimspace(tls_private_key.global_key.public_key_openssh)
+}
+
+###
+### Private Network and Subnet
+###
+
+resource "ovh_cloud_project_network_private" "cluster" {
+  service_name = var.ovh_project_service_name
+  name         = format("%s-private", var.cluster.id)
+  regions      = [var.cluster.region]
+}
+
+resource "ovh_cloud_project_network_private_subnet_v2" "cluster" {
+  service_name                    = var.ovh_project_service_name
+  network_id                      = ovh_cloud_project_network_private.cluster.regions_openstack_ids[var.cluster.region]
+  region                          = var.cluster.region
+  name                            = format("%s-subnet", var.cluster.id)
+  cidr                            = local.private_cidr
+  dhcp                            = true
+  enable_gateway_ip               = true
+  use_default_public_dns_resolver = true
+}
+
+resource "null_resource" "private_network_destroy_grace" {
+  triggers = {
+    network_id   = local.private_network_id
+    subnet_id    = local.private_subnet_id
+    wait_seconds = "20"
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "sleep ${self.triggers.wait_seconds}"
+  }
+
+  depends_on = [
+    ovh_cloud_project_network_private_subnet_v2.cluster,
+  ]
 }
 
 locals {
-  master_image = one([
-    for image in data.ovh_cloud_project_images.os.images : image
-    if image.name == local.os.image.name && image.region == var.cluster.region
-  ])
+  requested_flavors = toset(compact([
+    var.infra.masters.instance_size,
+    var.infra.workers.instance_size
+  ]))
 
-  master_flavor = one([
-    for flavor in data.ovh_cloud_project_flavors.masters.flavors : flavor
-    if flavor.name == var.infra.masters.instance_size && flavor.available
-  ])
+  flavor_map = {
+    for flavor in data.ovh_cloud_project_flavors.all.flavors :
+    flavor.name => flavor
+    if contains(local.requested_flavors, flavor.name)
+  }
 
-  worker_flavor = one([
-    for flavor in data.ovh_cloud_project_flavors.workers.flavors : flavor
-    if flavor.name == var.infra.workers.instance_size && flavor.available
-  ])
+  selected_images = [
+    for image in data.ovh_cloud_project_images.all.images :
+    image
+    if (
+      alltrue([
+        for pattern in local.os.image.search_patterns :
+        strcontains(lower(image.name), lower(pattern))
+      ])
+      &&
+      !strcontains(lower(image.name), "nvidia")
+    )
+  ]
+
+  preferred_images = [
+    for image in local.selected_images :
+    image
+    if !strcontains(lower(image.name), "uefi")
+  ]
+
+  selected_image = try(
+    one(local.preferred_images),
+    one(local.selected_images),
+    null
+  )
 }
 
-resource "ovh_cloud_project_instance" "masters" {
-  for_each = local.masters_map
+resource "terraform_data" "validate_image" {
+  lifecycle {
+    precondition {
+      condition     = local.selected_image != null
+      error_message = format(
+        "No OVH image matching patterns [%s] found in region '%s'.",
+        join(", ", local.os.image.search_patterns),
+        var.cluster.region
+      )
+    }
+  }
+}
+
+resource "terraform_data" "validate_flavors" {
+  lifecycle {
+    precondition {
+      condition = alltrue([
+        for flavor_name in local.requested_flavors :
+        contains(keys(local.flavor_map), flavor_name)
+      ])
+
+      error_message = "One or more OVH flavors were not found in region '${var.cluster.region}'."
+    }
+  }
+}
+
+###
+### Create VMs
+###
+
+resource "ovh_cloud_project_instance" "vms" {
+  for_each = local.all_vms_map
 
   service_name   = var.ovh_project_service_name
   region         = var.cluster.region
   billing_period = "hourly"
-  name           = each.value.name
-  user_data      = local.master_cloudinit[each.key]
+
+  name      = each.value.name
+  user_data = local.common_cloudinit[each.key]
 
   boot_from {
-    image_id = local.master_image.id
+    image_id = local.selected_image.id
   }
 
   flavor {
-    flavor_id = local.master_flavor.id
+    flavor_id = local.flavor_map[each.value.instance_size].id
   }
 
   ssh_key {
@@ -57,196 +157,63 @@ resource "ovh_cloud_project_instance" "masters" {
   network {
     public = true
 
-    dynamic "private" {
-      for_each = local.private_network_enabled ? [1] : []
+    private {
+      ip = each.value.private_ip
 
-      content {
-        ip = local.master_private_ip_map[each.key]
-
-        network {
+      network {
           id        = local.private_network_id
           subnet_id = local.private_subnet_id
-        }
       }
     }
   }
 
-  depends_on = [
-    null_resource.private_network_destroy_grace,
-    ovh_cloud_project_network_private_subnet_v2.cluster,
-  ]
-}
-
-resource "null_resource" "wait_for_master_cloud_init" {
-  for_each = local.masters_map
-
-  triggers = {
-    instance_id      = ovh_cloud_project_instance.masters[each.key].id
-    ssh_endpoint     = local.master_public_ip_map[each.key]
-    username         = var.cluster.username
-    private_key_path = local_sensitive_file.ssh_private_key.filename
-    timeout_seconds  = "1800"
-  }
-
-  provisioner "local-exec" {
-    interpreter = ["/bin/bash", "-c"]
-    command     = <<-EOT
-      set -eu
-
-      host='${self.triggers.ssh_endpoint}'
-      user='${self.triggers.username}'
-      key='${self.triggers.private_key_path}'
-      deadline=$(( $(date +%s) + ${self.triggers.timeout_seconds} ))
-
-      ssh_ready() {
-        ssh \
-          -o BatchMode=yes \
-          -o StrictHostKeyChecking=no \
-          -o UserKnownHostsFile=/dev/null \
-          -o ConnectTimeout=10 \
-          -i "$key" \
-          "$user@$host" true >/dev/null 2>&1
-      }
-
-      cloud_init_ready() {
-        ssh \
-          -o BatchMode=yes \
-          -o StrictHostKeyChecking=no \
-          -o UserKnownHostsFile=/dev/null \
-          -o ConnectTimeout=10 \
-          -i "$key" \
-          "$user@$host" 'cloud-init status --wait >/dev/null 2>&1 || sudo cloud-init status --wait >/dev/null 2>&1'
-      }
-
-      until ssh_ready; do
-        if [ "$(date +%s)" -ge "$deadline" ]; then
-          echo "Timed out waiting for SSH on $host" >&2
-          exit 1
-        fi
-        sleep 10
-      done
-
-      until cloud_init_ready; do
-        if [ "$(date +%s)" -ge "$deadline" ]; then
-          echo "Timed out waiting for cloud-init on $host" >&2
-          exit 1
-        fi
-        sleep 15
-      done
-    EOT
+  timeouts {
+    create = "20m"
   }
 
   depends_on = [
-    ovh_cloud_project_instance.masters,
-    local_sensitive_file.ssh_private_key,
+    terraform_data.validate_image,
+    terraform_data.validate_flavors
   ]
 }
 
-resource "ovh_cloud_project_instance" "workers" {
-  for_each = local.workers_map
+### 
+### Topology Dynamic: Catch the ips
+###
+resource "time_sleep" "wait_instance_networks" {
+  depends_on = [
+    ovh_cloud_project_instance.vms
+  ]
 
-  service_name   = var.ovh_project_service_name
-  region         = var.cluster.region
-  billing_period = "hourly"
-  name           = each.value.name
-  user_data      = local.worker_cloudinit[each.key]
+  create_duration = "15s"
+}
 
-  boot_from {
-    image_id = local.master_image.id
-  }
+data "ovh_cloud_project_instance" "vms" {
+  for_each = ovh_cloud_project_instance.vms
 
-  flavor {
-    flavor_id = local.worker_flavor.id
-  }
-
-  ssh_key {
-    name = ovh_cloud_project_ssh_key.cluster.name
-  }
-
-  network {
-    public = true
-
-    dynamic "private" {
-      for_each = local.private_network_enabled ? [1] : []
-
-      content {
-        ip = local.worker_private_ip_map[each.key]
-
-        network {
-          id        = local.private_network_id
-          subnet_id = local.private_subnet_id
-        }
-      }
-    }
-  }
+  service_name = var.ovh_project_service_name
+  region        = var.cluster.region
+  instance_id   = each.value.id
 
   depends_on = [
-    null_resource.private_network_destroy_grace,
-    ovh_cloud_project_network_private_subnet_v2.cluster,
+    time_sleep.wait_instance_networks
   ]
 }
 
-resource "null_resource" "wait_for_worker_cloud_init" {
-  for_each = local.workers_map
-
-  triggers = {
-    instance_id      = ovh_cloud_project_instance.workers[each.key].id
-    ssh_endpoint     = local.worker_public_ip_map[each.key]
-    username         = var.cluster.username
-    private_key_path = local_sensitive_file.ssh_private_key.filename
-    timeout_seconds  = "1800"
+locals {
+  # Public IPv4: any IPv4 that is NOT the known private IP of that VM.
+  vm_public_ipv4_addresses = {
+    for name, instance in data.ovh_cloud_project_instance.vms :
+    name => try(one([
+      for addr in instance.addresses : addr.ip
+      if addr.version == 4 && addr.ip != local.all_vms_map[name].private_ip
+    ]), null)
   }
 
-  provisioner "local-exec" {
-    interpreter = ["/bin/bash", "-c"]
-    command     = <<-EOT
-      set -eu
-
-      host='${self.triggers.ssh_endpoint}'
-      user='${self.triggers.username}'
-      key='${self.triggers.private_key_path}'
-      deadline=$(( $(date +%s) + ${self.triggers.timeout_seconds} ))
-
-      ssh_ready() {
-        ssh \
-          -o BatchMode=yes \
-          -o StrictHostKeyChecking=no \
-          -o UserKnownHostsFile=/dev/null \
-          -o ConnectTimeout=10 \
-          -i "$key" \
-          "$user@$host" true >/dev/null 2>&1
-      }
-
-      cloud_init_ready() {
-        ssh \
-          -o BatchMode=yes \
-          -o StrictHostKeyChecking=no \
-          -o UserKnownHostsFile=/dev/null \
-          -o ConnectTimeout=10 \
-          -i "$key" \
-          "$user@$host" 'cloud-init status --wait >/dev/null 2>&1 || sudo cloud-init status --wait >/dev/null 2>&1'
-      }
-
-      until ssh_ready; do
-        if [ "$(date +%s)" -ge "$deadline" ]; then
-          echo "Timed out waiting for SSH on $host" >&2
-          exit 1
-        fi
-        sleep 10
-      done
-
-      until cloud_init_ready; do
-        if [ "$(date +%s)" -ge "$deadline" ]; then
-          echo "Timed out waiting for cloud-init on $host" >&2
-          exit 1
-        fi
-        sleep 15
-      done
-    EOT
+  # Private IPv4: already known from the deterministic cidrhost assignment.
+  vm_private_ipv4_addresses = {
+    for name, vm in local.all_vms_map :
+    name => vm.private_ip
   }
-
-  depends_on = [
-    ovh_cloud_project_instance.workers,
-    local_sensitive_file.ssh_private_key,
-  ]
 }
+

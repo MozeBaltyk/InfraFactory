@@ -1,0 +1,729 @@
+set positional-arguments := true
+set quiet := true
+set shell := ['bash', '-euo', 'pipefail', '-c']
+
+mod runner_image "runner/mod.justfile"
+
+PROVIDER := env_var_or_default("PROVIDER", "KVM")
+ENV := env_var_or_default("ENV", "lab")
+TF_GITOPS_ROOT := "./flux/tf"
+TARGET_NAMESPACE := env_var_or_default("TARGET_NAMESPACE", "flux-system")
+TOFU_RUNNER_IMAGE := env_var_or_default("TOFU_RUNNER_IMAGE", "registry-zot.flux-system.svc.cluster.local:5000/infrafactory/tf-runner-libvirt:v0.16.2-homefix")
+
+[private]
+default:
+    just -l
+
+[private]
+_require-provider:
+    @just _require-env
+    case "{{ PROVIDER }}" in KVM|AZ|OVH) ;; *) just log fatal "Unsupported provider" "provider" "{{ PROVIDER }}" ;; esac
+
+[private]
+_require-env:
+    @env_name='{{ ENV }}'; \
+      if [[ ! "$env_name" =~ ^[A-Za-z0-9_-]+$ ]]; then \
+        just log fatal "Unsafe ENV value" "env" "$env_name" "hint" "Use only letters, numbers, underscore, and dash"; \
+      fi
+
+[private]
+_provider-lower:
+    @case "{{ PROVIDER }}" in AZ) echo az ;; KVM) echo kvm ;; OVH) echo ovh ;; *) exit 1 ;; esac
+
+[private]
+_provider-module-path:
+    @case "{{ PROVIDER }}" in KVM) echo ./providers/libvirt ;; AZ) echo ./providers/azure ;; OVH) echo ./providers/ovh ;; *) exit 1 ;; esac
+
+[private]
+_provider-tfvars-src:
+    @case "{{ PROVIDER }}" in AZ) echo ./flux/tf/AZ/{{ ENV }}/{{ ENV }}.tfvars ;; KVM) echo ./flux/tf/KVM/{{ ENV }}/{{ ENV }}.tfvars ;; OVH) echo ./flux/tf/OVH/{{ ENV }}/{{ ENV }}.tfvars ;; *) exit 1 ;; esac
+
+[private]
+_provider-example-tfvars:
+    @case "{{ PROVIDER }}" in AZ) echo ../env/AZ/tfvars.example ;; KVM) echo ../env/KVM/tfvars.example ;; OVH) echo ../env/OVH/tfvars.example ;; *) exit 1 ;; esac
+
+[private]
+_provider-local-tfvars:
+    @case "{{ PROVIDER }}" in AZ) echo ../env/AZ/{{ ENV }}.tfvars ;; KVM) echo ../env/KVM/{{ ENV }}.tfvars ;; OVH) echo ../env/OVH/{{ ENV }}.tfvars ;; *) exit 1 ;; esac
+
+[private]
+_tfvars-source:
+    @just _require-provider
+    @tfvars="$(just _provider-tfvars-src)"; \
+      if [ -f "$tfvars" ]; then \
+        echo existing; \
+      elif [ -f "$(just _provider-local-tfvars)" ]; then \
+        echo local; \
+      else \
+        echo example; \
+      fi
+
+[private]
+_libvirt-key-src:
+    @if [ -n "${LIBVIRT_HOST_KEY_PATH:-}" ]; then echo "${LIBVIRT_HOST_KEY_PATH}"; else echo "$HOME/.ssh/ed25519"; fi
+
+[private]
+_tf-dir:
+    @printf '%s/%s/%s\n' "{{ TF_GITOPS_ROOT }}" "{{ PROVIDER }}" "{{ ENV }}"
+
+[private]
+_terraform-manifest:
+    @printf '%s/terraform.yaml\n' "$(just _tf-dir)"
+
+[private]
+_manifest-runner-image manifest:
+    @if [ ! -f "{{ manifest }}" ]; then \
+        echo missing; \
+      else \
+        python3 -c $'import re\nimport sys\nfrom pathlib import Path\npath = Path(sys.argv[1])\ntext = path.read_text()\nmatch = re.search(r"(?m)^\\s{2}runnerPodTemplate:\\s*$", text)\nif not match:\n    print("controller-default", end="")\n    sys.exit(0)\nlines = text.splitlines()\nstart = next((i for i, line in enumerate(lines) if re.match(r"^\\s{2}runnerPodTemplate:\\s*$", line)), None)\nif start is None:\n    print("controller-default", end="")\n    sys.exit(0)\nfor line in lines[start + 1:]:\n    if line and not line.startswith("    "):\n        break\n    m = re.match(r"^\\s+image:\\s*(.+?)\\s*$", line)\n    if m:\n        print(m.group(1).strip().strip("\\\'\\\""), end="")\n        sys.exit(0)\nprint("controller-default", end="")' "{{ manifest }}"; \
+      fi
+
+[private]
+_manifest-source-ref manifest:
+    @if [ ! -f "{{ manifest }}" ]; then \
+        echo missing; \
+      else \
+        python3 -c $'import re\nimport sys\nfrom pathlib import Path\ntext = Path(sys.argv[1]).read_text()\nlines = text.splitlines()\nstart = next((i for i, line in enumerate(lines) if re.match(r"^\\s{2}sourceRef:\\s*$", line)), None)\nvalues = {}\nif start is not None:\n    for line in lines[start + 1:]:\n        if line and not line.startswith("    "):\n            break\n        m = re.match(r"^\\s+(kind|name|namespace):\\s*(.+?)\\s*$", line)\n        if m:\n            values[m.group(1)] = m.group(2).strip().strip("\\\'\\\"")\nkind = values.get("kind", "unknown")\nname = values.get("name", "unknown")\nnamespace = values.get("namespace", "flux-system")\nprint(f"{kind}/{name} namespace={namespace}", end="")' "{{ manifest }}"; \
+      fi
+
+[private]
+_flux-instance-source:
+    @manifest="./apps/flux-system/flux-instance/app/helmrelease.yaml"; \
+      if [ ! -f "$manifest" ]; then echo missing; exit 0; fi; \
+      python3 -c $'import re\nimport sys\nfrom pathlib import Path\ntext = Path(sys.argv[1]).read_text()\nvalues = {}\nfor name in ("url", "ref", "path"):\n    m = re.search(rf"(?m)^\\s+{name}:\\s*(.+?)\\s*$", text)\n    values[name] = m.group(1).strip().strip("\\\'\\\"") if m else "unknown"\nprint(f"url={values[\'url\']} ref={values[\'ref\']} path={values[\'path\']}", end="")' "$manifest"
+
+[private]
+_live-terraform-runner-image:
+    @name="$(just _terraform-name)"; namespace="flux-system"; \
+      if ! kubectl -n "$namespace" get terraform "$name" >/dev/null 2>&1; then echo missing; exit 0; fi; \
+      image="$(kubectl -n "$namespace" get terraform "$name" -o jsonpath='{.spec.runnerPodTemplate.spec.image}')"; \
+      if [ -n "$image" ]; then echo "$image"; else echo controller-default; fi
+
+[private]
+_live-terraform-source:
+    @name="$(just _terraform-name)"; namespace="flux-system"; \
+      if ! kubectl -n "$namespace" get terraform "$name" >/dev/null 2>&1; then echo missing; exit 0; fi; \
+      kind="$(kubectl -n "$namespace" get terraform "$name" -o jsonpath='{.spec.sourceRef.kind}')"; \
+      source_name="$(kubectl -n "$namespace" get terraform "$name" -o jsonpath='{.spec.sourceRef.name}')"; \
+      source_namespace="$(kubectl -n "$namespace" get terraform "$name" -o jsonpath='{.spec.sourceRef.namespace}')"; \
+      source_namespace="${source_namespace:-flux-system}"; \
+      if [ "$kind" != "GitRepository" ]; then \
+        printf '%s/%s namespace=%s' "$kind" "$source_name" "$source_namespace"; \
+        exit 0; \
+      fi; \
+      if ! kubectl -n "$source_namespace" get gitrepository "$source_name" >/dev/null 2>&1; then \
+        printf 'GitRepository/%s namespace=%s status=missing' "$source_name" "$source_namespace"; \
+        exit 0; \
+      fi; \
+      url="$(kubectl -n "$source_namespace" get gitrepository "$source_name" -o jsonpath='{.spec.url}')"; \
+      branch="$(kubectl -n "$source_namespace" get gitrepository "$source_name" -o jsonpath='{.spec.ref.branch}')"; \
+      name_ref="$(kubectl -n "$source_namespace" get gitrepository "$source_name" -o jsonpath='{.spec.ref.name}')"; \
+      tag="$(kubectl -n "$source_namespace" get gitrepository "$source_name" -o jsonpath='{.spec.ref.tag}')"; \
+      semver="$(kubectl -n "$source_namespace" get gitrepository "$source_name" -o jsonpath='{.spec.ref.semver}')"; \
+      commit="$(kubectl -n "$source_namespace" get gitrepository "$source_name" -o jsonpath='{.spec.ref.commit}')"; \
+      ref="${branch:-${name_ref:-${tag:-${semver:-${commit:-default}}}}}"; \
+      printf 'GitRepository/%s namespace=%s url=%s ref=%s' "$source_name" "$source_namespace" "$url" "$ref"
+
+[private]
+_tf-provider-dir:
+    @printf '%s/%s\n' "{{ TF_GITOPS_ROOT }}" "{{ PROVIDER }}"
+
+[private]
+_tf-provider-kustomization:
+    @printf '%s/%s/kustomization.yaml\n' "{{ TF_GITOPS_ROOT }}" "{{ PROVIDER }}"
+
+[private]
+_tfvars-secret-name:
+    @echo tfvars-$(just _provider-lower)-{{ ENV }}
+
+[private]
+_libvirt-ssh-secret-name:
+    @echo libvirt-ssh-$(just _provider-lower)-{{ ENV }}
+
+[private]
+_terraform-name:
+    @echo infra-$(just _provider-lower)-{{ ENV }}
+
+[private]
+_terraform-output-secret:
+    @echo tf-output-$(just _provider-lower)-{{ ENV }}
+
+[private]
+_terraform-state-secret:
+    @echo tfstate-{{ ENV }}-$(just _terraform-name)
+
+[private]
+_terraform-default-state-secret:
+    @echo tfstate-default-$(just _terraform-name)
+
+[private]
+_terraform-lock-name:
+    @echo lock-tfstate-{{ ENV }}-$(just _terraform-name)
+
+[private]
+_terraform-default-lock-name:
+    @echo lock-tfstate-default-$(just _terraform-name)
+
+[private]
+_manual-libvirt-artifact-secret:
+    @echo libvirt-artifacts-$(just _provider-lower)-{{ ENV }}
+
+[private]
+_manual-kubeconfig-path:
+    @echo ../env/KVM/{{ ENV }}/kubeconfig
+
+[private]
+_require-tfvars:
+    @test -f "$(just _provider-tfvars-src)" || just log fatal "Missing GitOps tfvars" "path" "$(just _provider-tfvars-src)" "hint" "run just prepare to initialize it"
+
+[private]
+_overlay-activation-state:
+    @provider_kustomization="$(just _tf-provider-kustomization)"; \
+      if [ -f "$provider_kustomization" ] && grep -Fxq "  - ./{{ ENV }}" "$provider_kustomization"; then echo active; else echo inactive; fi
+
+[private]
+_libvirt-target:
+    @tfvars="$(just _provider-tfvars-src)"; \
+      if [ ! -f "$tfvars" ]; then printf 'missing\t%s' "$tfvars"; exit 0; fi; \
+      python3 -c $'import re\nimport sys\nfrom pathlib import Path\npath = Path(sys.argv[1])\ntext = path.read_text()\nmatch = re.search(r"(?m)^\\s*libvirt\\s*=\\s*\\{", text)\nif not match:\n    print("local\\tremote=false or missing", end="")\n    sys.exit(0)\nstart = match.end()\ndepth = 1\nend = start\nwhile end < len(text) and depth:\n    char = text[end]\n    if char == "{":\n        depth += 1\n    elif char == "}":\n        depth -= 1\n    end += 1\nbody = text[start:end - 1]\nbody = re.sub(r"(?m)#.*$", "", body)\nbody = re.sub(r"(?m)//.*$", "", body)\ndef value(name):\n    m = re.search(rf"(?m)^\\s*{name}\\s*=\\s*(\\\"(?:[^\\\"\\\\]|\\\\.)*\\\"|\\d+|true|false)\\s*(?:$|\\n)", body)\n    if not m:\n        return ""\n    raw = m.group(1).strip()\n    if raw.startswith("\\\"") and raw.endswith("\\\""):\n        return bytes(raw[1:-1], "utf-8").decode("unicode_escape")\n    return raw\nremote = value("remote").lower()\nif remote != "true":\n    print("local\\tremote=false or missing", end="")\n    sys.exit(0)\nuser = value("user")\nhost = value("host")\nport = value("port") or "22"\nif not user or not host:\n    print("error\\tlibvirt.remote=true requires libvirt.user and libvirt.host", end="")\nelse:\n    print(f"remote\\t{user}\\t{host}\\t{port}", end="")' "$tfvars"
+
+[private]
+_require-kvm-libvirt-remote:
+    @if [ "{{ PROVIDER }}" != "KVM" ]; then exit 0; fi
+    @target="$(just _libvirt-target)"; \
+      tfvars="$(just _provider-tfvars-src)"; \
+      if [[ "$target" == remote$'\t'* ]]; then \
+        exit 0; \
+      fi; \
+      detail="libvirt.remote=false or missing"; \
+      if [[ "$target" == missing$'\t'* ]]; then \
+        detail="missing GitOps tfvars: ${target#missing$'\t'}"; \
+      elif [[ "$target" == error$'\t'* ]]; then \
+        detail="${target#error$'\t'}"; \
+      fi; \
+      just log fatal "KVM GitOps requires libvirt.remote=true" "tfvars" "$tfvars" "detail" "$detail" "reason" "tofu-controller runs in a Kubernetes runner pod, so qemu:///system would target the pod/container, not the libvirt host" "hint" "set libvirt.remote=true plus libvirt.user, libvirt.host, and libvirt.port in $tfvars"
+
+[private]
+_target-summary:
+    @just _require-provider
+    @state="$(just _overlay-activation-state)"; \
+      just title "GitOps Terraform target summary" "provider" "{{ PROVIDER }}" "env" "{{ ENV }}"; \
+      just log info "Target" "provider" "{{ PROVIDER }}" "env" "{{ ENV }}"; \
+      just log info "Overlay" "dir" "$(just _tf-dir)" "terraform_manifest" "$(just _terraform-manifest)"; \
+      just log info "Terraform CR" "name" "$(just _terraform-name)" "namespace" "flux-system"; \
+      just log info "Runner image" "manifest" "$(just _manifest-runner-image $(just _terraform-manifest))" "live" "$(just _live-terraform-runner-image)"; \
+      just log info "Terraform source" "sourceRef" "$(just _manifest-source-ref $(just _terraform-manifest))" "repo" "$(just _flux-instance-source)"; \
+      just log info "Module" "path" "$(just _provider-module-path)" "workspace" "{{ ENV }}"; \
+      just log info "Provider kustomization" "path" "$(just _tf-provider-kustomization)" "state" "$state"; \
+      just log info "Inputs" "tfvars" "$(just _provider-tfvars-src)" "tfvars_secret" "$(just _tfvars-secret-name)"; \
+      just log info "Outputs and backend" "output_secret" "$(just _terraform-output-secret)" "state_secret" "$(just _terraform-state-secret)" "default_state_secret" "$(just _terraform-default-state-secret)" "lock" "$(just _terraform-lock-name)" "default_lock" "$(just _terraform-default-lock-name)"; \
+      if [ "{{ PROVIDER }}" = "KVM" ]; then \
+        target="$(just _libvirt-target)"; \
+        if [[ "$target" == remote$'\t'* ]]; then \
+          IFS=$'\t' read -r _ ssh_user ssh_host ssh_port <<< "$target"; \
+          just log info "KVM libvirt target" "mode" "remote" "target" "$ssh_user@$ssh_host:$ssh_port"; \
+          just log info "KVM libvirt SSH" "secret" "$(just _libvirt-ssh-secret-name)" "local_key_source" "$(just _libvirt-key-src)"; \
+        elif [[ "$target" == error$'\t'* ]]; then \
+          just log warn "KVM libvirt target invalid" "detail" "${target#error$'\t'}" "requirement" "GitOps requires libvirt.remote=true" "hint" "set libvirt user/host/port in $(just _provider-tfvars-src)"; \
+        elif [[ "$target" == missing$'\t'* ]]; then \
+          just log warn "KVM libvirt target missing" "path" "${target#missing$'\t'}" "requirement" "GitOps requires libvirt.remote=true" "hint" "run prepare and set libvirt user/host/port in $(just _provider-tfvars-src)"; \
+        else \
+          just log warn "KVM libvirt target is local" "requirement" "GitOps requires libvirt.remote=true" "reason" "tofu-controller runs in a Kubernetes runner pod, so qemu:///system would target the pod/container, not the libvirt host" "hint" "set libvirt user/host/port in $(just _provider-tfvars-src)"; \
+        fi; \
+      fi; \
+      if [ "$state" != "active" ]; then \
+        just log warn "Overlay is inactive" "hint" "run PROVIDER={{ PROVIDER }} ENV={{ ENV }} just activate, then commit/push and just reconcile"; \
+      fi
+
+[private]
+_require-terraform-resource:
+    @just _require-provider
+    @name="$(just _terraform-name)"; namespace="flux-system"; overlay="$(just _tf-dir)"; \
+      if ! resource="$(kubectl -n "$namespace" get terraform "$name" --ignore-not-found=true -o name 2>&1)"; then \
+        just log fatal "Kubernetes Terraform check failed" "provider" "{{ PROVIDER }}" "env" "{{ ENV }}" "name" "$name" "namespace" "$namespace" "detail" "$resource" "hint" "check kubeconfig/context, cluster access, and Terraform CRD installation"; \
+      fi; \
+      if [ -z "$resource" ]; then \
+        just log fatal "Terraform CR not found" "provider" "{{ PROVIDER }}" "env" "{{ ENV }}" "name" "$name" "namespace" "$namespace" "overlay" "$overlay" "hint" "Terraform CR is created only after the overlay is active and Flux reconciles; check just list, run activate, commit/push, and reconcile"; \
+      fi
+
+[private]
+_prepare-context:
+    @just _require-provider
+    @just log info "Preparing GitOps target" "provider" "{{ PROVIDER }}" "env" "{{ ENV }}" "overlay" "$(just _tf-dir)" "tfvars" "$(just _provider-tfvars-src)" "provider_kustomization" "$(just _tf-provider-kustomization)"
+
+[private]
+_bootstrap-secret-notice:
+    @just log warn "Cluster-local bootstrap Secret sync" "scope" "tfvars/SSH" "gitops" "not Flux-managed desired state"
+
+[private]
+log lvl msg *args:
+    @ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"; \
+    color=''; reset=''; label='{{ lvl }}'; \
+    if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != "dumb" ]; then \
+        reset=$'\033[0m'; \
+        case "{{ lvl }}" in \
+            info) color=$'\033[36m' ;; \
+            ok) color=$'\033[32m' ;; \
+            warn) color=$'\033[33m' ;; \
+            fatal) color=$'\033[31m' ;; \
+        esac; \
+    fi; \
+    case "{{ lvl }}" in \
+        info) label='INFO' ;; \
+        ok) label='OK' ;; \
+        warn) label='WARN' ;; \
+        fatal) label='KO' ;; \
+    esac; \
+    printf '%s %b[%s]%b %s' "$ts" "$color" "$label" "$reset" "{{ msg }}"; \
+    for arg in {{ args }}; do \
+        printf ' %s' "$arg"; \
+    done; \
+    printf '\n'; \
+    if [ "{{ lvl }}" = "fatal" ]; then exit 1; fi
+
+[private]
+title msg *args:
+    @color=''; reset=''; \
+    if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != "dumb" ]; then \
+        color=$'\033[36;1m'; reset=$'\033[0m'; \
+    fi; \
+    printf '\n%b==> %s%b' "$color" "{{ msg }}" "$reset"; \
+    for arg in {{ args }}; do \
+        printf ' %s' "$arg"; \
+    done; \
+    printf '\n'
+
+[doc('Apply Kubernetes namespaces')]
+_namespaces:
+    just log info "Running stage..." "stage" "$0"
+    find "./apps" -mindepth 2 -maxdepth 2 -name namespace.yaml | while IFS= read -r namespace_file; do \
+        if ! kubectl apply --server-side --field-manager gitops --force-conflicts -f "$namespace_file"; then \
+            just log fatal "Failed to apply namespace" "stage" "$0" "path" "$namespace_file"; \
+        fi; \
+    done
+
+[doc('Apply Helmfile CRDs')]
+_crds:
+    just log info "Running stage..." "stage" "$0"
+
+    if ! helmfile -f "crds.yaml" template -q | yq -e 'select(.kind == "CustomResourceDefinition")' | kubectl apply --server-side --field-manager bootstrap --force-conflicts -f -; then \
+        just log fatal "Failed to apply crds" "stage" "$0"; \
+    fi;
+
+[doc('Apply Helmfile Flux')]
+_apps:
+    just log info "Running stage..." "stage" "$0"
+    if ! helmfile -f "flux.yaml" sync --hide-notes; then \
+        just log fatal "Failed to sync helmfile" "stage" "$0"; \
+    fi
+
+[doc('Deploy Flux and GitOps controllers')]
+[group('Deploy')]
+deploy:
+    @just title "Deploy Flux and GitOps controllers" "namespace" "{{ TARGET_NAMESPACE }}"
+    @just _namespaces
+    @just _crds
+    @just _apps
+    @just log ok "Deployed Flux and GitOps controllers" "namespace" "{{ TARGET_NAMESPACE }}"
+
+[doc('Delete Flux')]
+[group('Deploy')]
+delete:
+    @just title "Delete Flux" "namespace" "{{ TARGET_NAMESPACE }}"
+    @if [ "${CONFIRM_DELETE:-}" != "flux" ]; then \
+        just log fatal "Delete confirmation required" "hint" "rerun with CONFIRM_DELETE=flux"; \
+      fi
+    @just log info "Running stage..." "stage" "$0"
+
+    # 1. Trigger proper cleanup via operator
+    kubectl delete fluxinstance --all -A --ignore-not-found=true
+
+    # 2. Wait until it's really gone
+    kubectl wait --for=delete fluxinstance --all -A --timeout=60s || true
+
+    # 3. Now it's safe to remove Helm releases
+    helmfile -f "flux.yaml" destroy
+    helmfile -f "crds.yaml" destroy
+
+    # 4. Fallback cleanup
+    while read -r crd; do \
+        kubectl patch "$crd" -p '{"metadata":{"finalizers":[]}}' --type=merge; \
+        kubectl delete "$crd"; \
+    done < <(kubectl get crd -o name | grep .fluxcd.io)
+    @just log ok "Deleted Flux" "namespace" "{{ TARGET_NAMESPACE }}"
+
+[doc('Port-forward Flux UI')]
+[group('Deploy')]
+forward-ui:
+    kubectl -n flux-system port-forward svc/flux-operator 9080:9080
+
+[doc('Build, tag, and push custom tofu runner image through a temporary Zot port-forward')]
+[group('Runner')]
+runner-publish-forwarded:
+    @just runner_image::publish-forwarded
+
+[doc('Render K3s registries.yaml mirror config for the Zot registry')]
+[group('Runner')]
+runner-k3s-registry-mirror-render:
+    @just runner_image::k3s-registry-mirror-render
+
+[doc('Install K3s registries.yaml mirror config on a remote VM over SSH')]
+[group('Runner')]
+runner-k3s-registry-mirror-install-remote:
+    @just runner_image::k3s-registry-mirror-install-remote
+
+[doc('Verify remote K3s node status over SSH')]
+[group('Runner')]
+runner-k3s-registry-mirror-verify-remote:
+    @just runner_image::k3s-registry-mirror-verify-remote
+
+[private]
+_scaffold:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    just _require-provider
+
+    dir="$(just _tf-dir)"
+    mkdir -p "$dir"
+
+    tmp="$(mktemp)"
+    cat > "$tmp" <<'YAML'
+    apiVersion: kustomize.config.k8s.io/v1beta1
+    kind: Kustomization
+
+    resources:
+      - terraform.yaml
+    YAML
+    mv "$tmp" "$dir/kustomization.yaml"
+
+    resource="$(just _terraform-name)"
+    secret="$(just _tfvars-secret-name)"
+    output="$(just _terraform-output-secret)"
+    module="$(just _provider-module-path)"
+    ssh_secret="$(just _libvirt-ssh-secret-name)"
+    if [ "{{ PROVIDER }}" = "KVM" ]; then
+      just _require-kvm-libvirt-remote
+    fi
+
+    tmp="$(mktemp)"
+    cat > "$tmp" <<YAML
+    apiVersion: infra.contrib.fluxcd.io/v1alpha2
+    kind: Terraform
+    metadata:
+      name: $resource
+      namespace: flux-system
+    spec:
+      interval: 10m
+      workspace: {{ ENV }}
+      path: $module
+    YAML
+
+    if [ "{{ PROVIDER }}" = "KVM" ]; then
+      cat >> "$tmp" <<YAML
+      runnerPodTemplate:
+        spec:
+          image: {{ TOFU_RUNNER_IMAGE }}
+    YAML
+    fi
+
+    cat >> "$tmp" <<YAML
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      backendConfig:
+        secretSuffix: $resource
+      fileMappings:
+        - location: workspace
+          path: terraform.auto.tfvars
+          secretRef:
+            name: $secret
+            key: terraform.tfvars
+    YAML
+
+    if [ "{{ PROVIDER }}" = "KVM" ]; then
+      cat >> "$tmp" <<YAML
+        - location: home
+          path: .ssh/id_rsa
+          secretRef:
+            name: $ssh_secret
+            key: id_rsa
+        - location: home
+          path: .ssh/config
+          secretRef:
+            name: $ssh_secret
+            key: config
+    YAML
+    fi
+
+    cat >> "$tmp" <<YAML
+      writeOutputsToSecret:
+        name: $output
+    YAML
+    mv "$tmp" "$dir/terraform.yaml"
+
+    just _ensure-provider-kustomization
+    just log ok "Scaffolded tf overlay" "provider" "{{ PROVIDER }}" "env" "{{ ENV }}" "path" "$(just _tf-dir)"
+
+[private]
+_init-tfvars:
+    @just _require-provider
+    @tfvars="$(just _provider-tfvars-src)"; \
+      if [ -f "$tfvars" ]; then \
+        just log ok "GitOps tfvars already exists" "path" "$tfvars"; \
+        exit 0; \
+      fi; \
+      mkdir -p "$(dirname "$tfvars")"; \
+      if [ -f "$(just _provider-local-tfvars)" ]; then \
+        cp "$(just _provider-local-tfvars)" "$tfvars"; \
+        just log ok "Initialized GitOps tfvars from local env" "src" "$(just _provider-local-tfvars)" "dst" "$tfvars"; \
+      else \
+        cp "$(just _provider-example-tfvars)" "$tfvars"; \
+        just log ok "Initialized GitOps tfvars from example" "src" "$(just _provider-example-tfvars)" "dst" "$tfvars"; \
+      fi; \
+      if [ "{{ PROVIDER }}" = "KVM" ] && ! grep -q '^gitops_artifacts_mode[[:space:]]*=' "$tfvars"; then \
+        printf '\n# GitOps mode exposes provider artifacts as Terraform outputs for tofu-controller.\ngitops_artifacts_mode = "gitops"\n' >> "$tfvars"; \
+      fi
+
+[private]
+_ensure-provider-kustomization:
+    @just _require-provider
+    @provider_dir="$(just _tf-provider-dir)"; \
+      mkdir -p "$provider_dir"; \
+      if [ ! -f "$provider_dir/kustomization.yaml" ]; then \
+        tmp="$(mktemp)"; \
+        printf '%s\n' \
+          'apiVersion: kustomize.config.k8s.io/v1beta1' \
+          'kind: Kustomization' \
+          'resources: []' > "$tmp"; \
+        mv "$tmp" "$provider_dir/kustomization.yaml"; \
+      fi
+
+[private]
+_set-provider-resource resource present:
+    @provider_kustomization="$(just _tf-provider-kustomization)"; \
+      python3 -c $'import sys\nfrom pathlib import Path\npath = Path(sys.argv[1])\nresource = sys.argv[2]\npresent = sys.argv[3] == "true"\ntext = path.read_text() if path.exists() else ""\nlines = text.splitlines()\nstart = None\nend = None\nfor index, line in enumerate(lines):\n    if line.strip() == "resources:" or line.strip() == "resources: []":\n        start = index\n        end = index + 1\n        if line.strip() == "resources:":\n            while end < len(lines):\n                stripped = lines[end].strip()\n                if lines[end].startswith((" ", "\\t")) or stripped == "" or stripped.startswith("#"):\n                    end += 1\n                else:\n                    break\n        break\nresources = []\nkept = []\nif start is not None and lines[start].strip() == "resources:":\n    for line in lines[start + 1:end]:\n        stripped = line.strip()\n        if stripped.startswith("- "):\n            item = stripped[2:].strip()\n            if item and item not in resources:\n                resources.append(item)\n        elif stripped == "" or stripped.startswith("#"):\n            kept.append(line)\nif present and resource not in resources:\n    resources.append(resource)\nif not present:\n    resources = [item for item in resources if item != resource]\nblock = ["resources:"] + kept + [f"  - {item}" for item in resources] if resources or kept else ["resources: []"]\nif start is None:\n    if lines and lines[-1].strip() != "":\n        lines.append("")\n    new_lines = lines + block\nelse:\n    new_lines = lines[:start] + block + lines[end:]\npath.write_text("\\n".join(new_lines).rstrip() + "\\n")' "$provider_kustomization" "{{ resource }}" "{{ present }}"
+
+[doc('Activate selected tf overlay in Flux tree')]
+[group('Overlay')]
+activate:
+    @just title "Activate tf overlay" "provider" "{{ PROVIDER }}" "env" "{{ ENV }}"
+    @just _require-provider
+    @dir="$(just _tf-dir)"; \
+      [ -f "$dir/terraform.yaml" ] || just log fatal "Missing scaffold" "path" "$dir"
+    @just _ensure-provider-kustomization
+    @just _set-provider-resource ./{{ ENV }} true
+    @just log ok "Activated tf overlay" "provider" "{{ PROVIDER }}" "env" "{{ ENV }}"
+
+[doc('Deactivate selected tf overlay from Flux tree')]
+[group('Overlay')]
+deactivate:
+    @just title "Deactivate tf overlay" "provider" "{{ PROVIDER }}" "env" "{{ ENV }}"
+    @just _require-provider
+    @just _ensure-provider-kustomization
+    @just _set-provider-resource ./{{ ENV }} false
+    @just log ok "Deactivated tf overlay" "provider" "{{ PROVIDER }}" "env" "{{ ENV }}"
+
+[doc('List scaffolded tf overlays and activation status')]
+[group('Overlay')]
+list:
+    @root="{{ TF_GITOPS_ROOT }}"; \
+      for provider in KVM AZ OVH; do \
+        provider_dir="$root/$provider"; \
+        provider_kustomization="$provider_dir/kustomization.yaml"; \
+        [ -d "$provider_dir" ] || continue; \
+        for env_dir in "$provider_dir"/*; do \
+          [ -d "$env_dir" ] || continue; \
+          [ -f "$env_dir/terraform.yaml" ] || continue; \
+          env_name="$(basename "$env_dir")"; \
+          if [ -f "$provider_kustomization" ] && grep -Fxq "  - ./$env_name" "$provider_kustomization"; then \
+            status='active'; \
+          else \
+            status='inactive'; \
+          fi; \
+          manifest="$env_dir/terraform.yaml"; \
+          runner="$(just _manifest-runner-image "$manifest")"; \
+          source_ref="$(just _manifest-source-ref "$manifest")"; \
+          printf '%-4s %-12s %-8s runner=%s source=%s repo=%s\n' "$provider" "$env_name" "$status" "$runner" "$source_ref" "$(just _flux-instance-source)"; \
+        done; \
+      done
+
+[doc('Sync selected tfvars as cluster-local Secret, not Flux-managed')]
+[group('Secrets')]
+sync-tfvars:
+    @just _require-provider
+    @just _require-tfvars
+    @just log info "Syncing cluster-local tfvars Secret" "namespace" "flux-system" "secret" "$(just _tfvars-secret-name)" "gitops" "not Flux-managed"
+    @if [ "{{ PROVIDER }}" = "AZ" ] || [ "{{ PROVIDER }}" = "OVH" ]; then \
+        just log warn "Cloud tfvars may contain credentials" "provider" "{{ PROVIDER }}" "action" "do not commit plaintext secrets" "sync" "imperative cluster-local Secret for now"; \
+      fi
+    @kubectl -n flux-system create secret generic $(just _tfvars-secret-name) --from-file=terraform.tfvars=$(just _provider-tfvars-src) --dry-run=client -o yaml | kubectl apply -f -
+    @just log ok "Synced cluster-local tfvars Secret" "namespace" "flux-system" "secret" "$(just _tfvars-secret-name)" "gitops" "not Flux-managed"
+
+[doc('Check configured KVM libvirt SSH connectivity')]
+[group('Checks')]
+check-libvirt-ssh:
+    @just title "Check libvirt SSH connectivity" "provider" "{{ PROVIDER }}" "env" "{{ ENV }}"
+    @just _require-provider
+    @if [ "{{ PROVIDER }}" != "KVM" ]; then just log info "Skipping libvirt ssh connectivity check" "provider" "{{ PROVIDER }}"; exit 0; fi
+    @just _require-kvm-libvirt-remote
+    @key_src="$(just _libvirt-key-src)"; \
+      target="$(just _libvirt-target)"; \
+      test -f "$key_src" || just log fatal "Missing libvirt key" "path" "$key_src"; \
+      IFS=$'\t' read -r _ ssh_user ssh_host ssh_port <<< "$target"; \
+      ssh_opts=(-i "$key_src" -p "$ssh_port" -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null); \
+      just log info "Checking libvirt ssh connectivity" "user" "$ssh_user" "host" "$ssh_host" "port" "$ssh_port" "key" "$key_src"; \
+      ssh "${ssh_opts[@]}" "$ssh_user@$ssh_host" true || \
+        just log fatal "Libvirt ssh connectivity check failed" "user" "$ssh_user" "host" "$ssh_host" "port" "$ssh_port" "key" "$key_src"; \
+      just log ok "Libvirt ssh connectivity check succeeded" "user" "$ssh_user" "host" "$ssh_host" "port" "$ssh_port"; \
+      uri="qemu+ssh://$ssh_user@$ssh_host:$ssh_port/system?keyfile=$key_src&no_verify=1&no_tty=1"; \
+      just log info "List remote libvirt VMs" "target" "$ssh_user@$ssh_host:$ssh_port"; \
+      printf 'libvirt_uri=%s\n' "$uri"; \
+      virsh -c "$uri" list --all || \
+        just log fatal "Provider-style qemu/libvirt URI check failed" "key" "$key_src" "hint" "ensure local virsh is available, SSH key path is readable, and the remote SSH user has libvirt/qemu permissions"; \
+      just log ok "Provider-style qemu/libvirt access check succeeded" "target" "$ssh_user@$ssh_host:$ssh_port"
+
+[doc('Sync libvirt host SSH secret from LIBVIRT_HOST_KEY_PATH or $HOME/.ssh/ed25519')]
+[group('Secrets')]
+sync-libvirt-ssh:
+    @just _require-provider
+    @if [ "{{ PROVIDER }}" != "KVM" ]; then just log info "Skipping libvirt ssh secret" "provider" "{{ PROVIDER }}"; exit 0; fi
+    @just check-libvirt-ssh
+    @test -f "$(just _libvirt-key-src)" || just log fatal "Missing libvirt key" "path" "$(just _libvirt-key-src)"
+    @ssh_config_file="$(mktemp)"; \
+      printf '%s\n' 'Host *' '  StrictHostKeyChecking no' '  UserKnownHostsFile /dev/null' '  IdentityFile ~/.ssh/id_rsa' > "$ssh_config_file"; \
+      kubectl -n flux-system create secret generic $(just _libvirt-ssh-secret-name) \
+        --from-file=id_rsa=$(just _libvirt-key-src) \
+        --from-file=config="$ssh_config_file" \
+        --dry-run=client -o yaml | kubectl apply -f -; \
+      rm -f "$ssh_config_file"
+    @just log ok "Synced cluster-local libvirt SSH Secret" "namespace" "flux-system" "secret" "$(just _libvirt-ssh-secret-name)" "gitops" "not Flux-managed"
+
+[doc('Scaffold selected tf overlay and sync cluster-local secrets')]
+[group('Overlay')]
+prepare:
+    @just title "Prepare tf overlay" "provider" "{{ PROVIDER }}" "env" "{{ ENV }}"
+    @tfvars_source="$(just _tfvars-source)"; \
+      just _prepare-context; \
+      just _init-tfvars; \
+      just _scaffold; \
+      just _bootstrap-secret-notice; \
+      just sync-tfvars; \
+      if [ "{{ PROVIDER }}" = "KVM" ]; then just sync-libvirt-ssh; fi; \
+      just _target-summary; \
+      if [ "$tfvars_source" = "example" ]; then \
+        just log warn "Cluster-local tfvars Secret was synced from an example/template" "secret" "$(just _tfvars-secret-name)" "tfvars" "$(just _provider-tfvars-src)" "action" "review and update before relying on it"; \
+      fi; \
+      just log ok "Prepared tf overlay" "provider" "{{ PROVIDER }}" "env" "{{ ENV }}"
+
+[doc('Reconcile Flux root and tf overlays')]
+[group('Operations')]
+reconcile:
+    @just title "Reconcile Flux and tf overlays" "provider" "{{ PROVIDER }}" "env" "{{ ENV }}"
+    @just _require-provider
+    @just log info "Assumes scaffold and activation are committed and pushed"
+    @flux reconcile source git flux-system -n flux-system
+    @flux reconcile kustomization flux-system -n flux-system --with-source
+    @flux reconcile kustomization tf-controller -n flux-system --with-source
+    @just log ok "Reconciled Flux and tf overlays" "provider" "{{ PROVIDER }}" "env" "{{ ENV }}"
+
+[doc('Show Terraform resource, outputs, state secrets, and locks')]
+[group('Operations')]
+status:
+    @just title "Show tf overlay status" "provider" "{{ PROVIDER }}" "env" "{{ ENV }}"
+    @just _require-provider
+    @provider_kustomization="$(just _tf-provider-kustomization)"; \
+      if [ -f "$provider_kustomization" ] && grep -Fxq "  - ./{{ ENV }}" "$provider_kustomization"; then status='active'; else status='inactive'; fi; \
+      just log info "Overlay activation" "provider" "{{ PROVIDER }}" "env" "{{ ENV }}" "status" "$status"
+    @manifest="$(just _terraform-manifest)"; \
+      just log info "Manifest runner image" "image" "$(just _manifest-runner-image "$manifest")"; \
+      just log info "Manifest source" "sourceRef" "$(just _manifest-source-ref "$manifest")" "repo" "$(just _flux-instance-source)"; \
+      just log info "Live runner image" "image" "$(just _live-terraform-runner-image)"; \
+      just log info "Live source" "source" "$(just _live-terraform-source)"
+    @kubectl -n flux-system get terraform $(just _terraform-name) -o wide --ignore-not-found=true
+    @kubectl -n flux-system get secret $(just _terraform-output-secret) --ignore-not-found=true
+    @kubectl -n flux-system get secret $(just _terraform-state-secret) $(just _terraform-default-state-secret) --ignore-not-found=true
+    @kubectl -n flux-system get lease $(just _terraform-lock-name) $(just _terraform-default-lock-name) --ignore-not-found=true
+    @just log ok "Displayed tf overlay status" "provider" "{{ PROVIDER }}" "env" "{{ ENV }}"
+
+[doc('Describe Terraform resource for selected overlay')]
+[group('Operations')]
+describe:
+    @just _require-terraform-resource
+    @kubectl -n flux-system describe terraform $(just _terraform-name)
+
+[doc('Watch Terraform resource for selected overlay')]
+[group('Operations')]
+watch:
+    @just _require-terraform-resource
+    @kubectl -n flux-system get terraform $(just _terraform-name) -w
+
+[doc('Tail tofu-controller logs filtered for selected overlay')]
+[group('Troubleshooting')]
+logs:
+    @just _require-provider
+    @kubectl -n flux-system logs -f deploy/tofu-controller | rg --line-buffered '$(just _terraform-name)'
+
+[doc('Tail all tofu-controller deployment logs')]
+[group('Troubleshooting')]
+logs-controller:
+    @kubectl -n flux-system logs -f deploy/tofu-controller
+
+[doc('Show runner pods related to selected overlay')]
+[group('Operations')]
+runner:
+    @just _require-provider
+    @pods="$(kubectl -n flux-system get pods -o wide | { rg 'NAME|$(just _terraform-name)|tf-runner' || true; })"; \
+      if [ -z "$pods" ]; then \
+        just log warn "No tofu runner pods matched selected overlay" "provider" "{{ PROVIDER }}" "env" "{{ ENV }}" "terraform" "$(just _terraform-name)" "namespace" "flux-system" "hint" "runner pods exist only while tofu-controller is reconciling"; \
+      else \
+        printf '%s\n' "$pods"; \
+      fi
+
+[doc('Show Terraform backend lock leases for selected overlay')]
+[group('Operations')]
+locks:
+    @just _require-provider
+    @kubectl -n flux-system get lease $(just _terraform-lock-name) $(just _terraform-default-lock-name) --ignore-not-found=true
+
+[doc('Show recent flux-system events')]
+[group('Troubleshooting')]
+events:
+    @kubectl -n flux-system get events --sort-by=.lastTimestamp
+
+[doc('Watch recent flux-system events')]
+[group('Troubleshooting')]
+watch-events:
+    @kubectl -n flux-system get events --sort-by=.lastTimestamp -w
+
+[doc('Publish manual libvirt artifacts into a namespace secret')]
+[group('Secrets')]
+publish-libvirt-artifacts:
+    @just _require-provider
+    @if [ "{{ PROVIDER }}" != "KVM" ]; then just log fatal "publish-libvirt-artifacts only supports KVM" "provider" "{{ PROVIDER }}"; fi
+    @artifact_dir="../env/KVM/{{ ENV }}"; \
+      [ -f "$artifact_dir/.key.private" ] || just log fatal "Missing manual artifact" "path" "$artifact_dir/.key.private"; \
+      [ -f "$artifact_dir/.key.pub" ] || just log fatal "Missing manual artifact" "path" "$artifact_dir/.key.pub"; \
+      [ -f "$artifact_dir/.token" ] || just log fatal "Missing manual artifact" "path" "$artifact_dir/.token"; \
+      [ -f "$artifact_dir/hosts.ini" ] || just log fatal "Missing manual artifact" "path" "$artifact_dir/hosts.ini"; \
+      [ -f "$artifact_dir/ansible.cfg" ] || just log fatal "Missing manual artifact" "path" "$artifact_dir/ansible.cfg"
+    @kubeconfig_path="$(just _manual-kubeconfig-path)"; \
+      if [ ! -f "$kubeconfig_path" ]; then \
+        output_json="$(cd ../providers/libvirt && tofu workspace select {{ ENV }} >/dev/null && tofu output -json)"; \
+        ssh_endpoint="$(printf '%s' "$output_json" | python3 -c 'import json,sys; data=json.load(sys.stdin); print(data.get("gitops_kubeconfig_host", {}).get("value") or "")')"; \
+        ssh_user="$(printf '%s' "$output_json" | python3 -c 'import json,sys; data=json.load(sys.stdin); print(data.get("gitops_kubeconfig_user", {}).get("value") or "")')"; \
+        remote_path="$(printf '%s' "$output_json" | python3 -c 'import json,sys; data=json.load(sys.stdin); print(data.get("gitops_kubeconfig_remote_path", {}).get("value") or "")')"; \
+        if [ -n "$ssh_endpoint" ] && [ -n "$ssh_user" ] && [ -n "$remote_path" ]; then \
+          mkdir -p "$(dirname "$kubeconfig_path")"; \
+          ssh -o StrictHostKeyChecking=no -i "$artifact_dir/.key.private" "$ssh_user@$ssh_endpoint" "sudo cat $remote_path" > "$kubeconfig_path"; \
+        fi; \
+      fi
+    @secret_name="$(just _manual-libvirt-artifact-secret)"; \
+      artifact_dir="../env/KVM/{{ ENV }}"; \
+      kubeconfig_path="$(just _manual-kubeconfig-path)"; \
+      cmd="kubectl -n {{ TARGET_NAMESPACE }} create secret generic $secret_name --from-file=.key.private=$artifact_dir/.key.private --from-file=.key.pub=$artifact_dir/.key.pub --from-file=.token=$artifact_dir/.token --from-file=hosts.ini=$artifact_dir/hosts.ini --from-file=ansible.cfg=$artifact_dir/ansible.cfg"; \
+      if [ -f "$kubeconfig_path" ]; then cmd="$cmd --from-file=kubeconfig=$kubeconfig_path"; fi; \
+      eval "$cmd --dry-run=client -o yaml" | kubectl apply -f -; \
+      kubectl -n {{ TARGET_NAMESPACE }} label secret/$secret_name infrafactory.io/provider=KVM infrafactory.io/env={{ ENV }} infrafactory.io/source=manual-gitops-bridge --overwrite >/dev/null
+    @just log ok "Published manual libvirt artifacts" "namespace" "{{ TARGET_NAMESPACE }}" "secret" "$(just _manual-libvirt-artifact-secret)"

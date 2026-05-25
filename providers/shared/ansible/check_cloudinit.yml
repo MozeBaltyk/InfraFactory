@@ -1,0 +1,16 @@
+---
+- name: Wait for cloud-init to complete on all nodes
+  hosts: K8S_CLUSTER
+  gather_facts: false
+  become: false
+
+  tasks:
+    - name: Wait for cloud-init to finish
+      ansible.builtin.command:
+        cmd: cloud-init status --wait
+      register: cloudinit_result
+      changed_when: false
+
+    - name: Report cloud-init status
+      ansible.builtin.debug:
+        msg: "cloud-init status: {{ cloudinit_result.stdout }}"

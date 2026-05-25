@@ -13,6 +13,7 @@ resource "libvirt_cloudinit_disk" "commoninit" {
       domain   = local.subdomain
 
       extra_disks = local.vm_disks[each.value.name]
+      extra_packages = var.extra_packages
 
       clusterid     = var.cluster.id
       timezone      = var.cluster.timezone
@@ -75,10 +76,22 @@ resource "libvirt_cloudinit_disk" "commoninit" {
   }
 }
 
-# Generate environment-specific ansible.cfg
-resource "local_file" "ansible_config" {
-  filename = "${local.env_path}/ansible.cfg"
-  content  = <<-EOT
+###
+### Generate the ansible.cfg file
+###
+
+locals {
+  rendered_ansible_inventory = templatefile("../shared/inventory/hosts.tpl", {
+    controller_ips = [
+      for vm_name, vm in local.masters_map : local.vm_operator_endpoints[vm_name]
+    ]
+
+    worker_ips = [
+      for vm_name, vm in local.workers_map : local.vm_operator_endpoints[vm_name]
+    ]
+  })
+
+  rendered_ansible_config = <<-EOT
 [defaults]
 remote_user = ${var.cluster.username}
 inventory =  ./hosts.ini
@@ -90,6 +103,21 @@ force_color       = True
 stdout_callback   = yaml
 private_key_file = ./.key.private
 EOT
+}
+
+
+# Generate environment-specific ansible.cfg
+resource "local_file" "ansible_config" {
+  count = local.write_local_artifacts ? 1 : 0
+
+  filename = "${local.env_path}/ansible.cfg"
+  content  = local.rendered_ansible_config
 
   depends_on = [null_resource.env_directory]
+}
+
+# Output the rendered ansible.cfg content in gitops mode, otherwise null
+output "gitops_ansible_cfg" {
+  description = "GitOps-mode rendered ansible.cfg content."
+  value       = local.gitops_mode ? local.rendered_ansible_config : null
 }

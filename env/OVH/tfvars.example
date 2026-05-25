@@ -15,7 +15,7 @@ cluster = {
 
 infra = {
   masters = {
-    count = 1 # Can be >1; set network.cidr for multi-master/private join
+    count = 1 # Can be >1; set network.private_cidr for multi-master/private join
     # instance_size = "b2-7"
     # disk_size     = 40 # custom root disk sizing not supported yet
     # extra_disks = [    # not supported yet
@@ -35,15 +35,57 @@ os = {
   selected = "ubuntu24"
 }
 
-# OVH private networking and kube-api endpoint mode example
-# When network.cidr is set, OVH creates the private network/subnet and
-# the kube-api load balancer together. Multi-master requires this.
+###
+### Optional network configuration
+### 
+
+# Minimal
+# network = {}
+
+# With private network
 # network = {
-#   cidr                   = "10.0.0.0/24"
-#   load_balancer_flavor   = "small"
-#   kube_api_endpoint_mode = "lb_ip" # or "dns"
-#   kube_api_dns_name      = "api.factory.lab" # required for dns mode; record must exist outside Terraform
+#   private = {
+#     cidr = "10.0.0.0/24"
+#   }
 # }
+
+# LB enabled
+# network = {
+#   private = {
+#     cidr = "10.0.0.0/24"
+#   }
+# 
+#   kube_api = {
+#     load_balancer = {
+#       enabled = true
+#     }
+#   }
+# }
+
+# DNS mode activate
+# network = {
+#   private = {
+#     cidr = "10.0.0.0/24"
+#   }
+# 
+#   kube_api = {
+#     endpoint = "dns"
+# 
+#     dns = {
+#       name = "kube.example.com"
+#     }
+# 
+#     load_balancer = {
+#       enabled = true
+#       flavor  = "small"
+#     }
+#   }
+# }
+
+
+###
+### Extra vars
+###
 
 # if cloud_init_selected=k3s
 # k3s = {

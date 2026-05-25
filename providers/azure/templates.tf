@@ -15,6 +15,7 @@ locals {
         domain   = local.subdomain
 
         extra_disks = try(local.vm_disks[vm.name], [])
+        extra_packages = var.extra_packages
 
         clusterid     = var.cluster.id
         timezone      = var.cluster.timezone

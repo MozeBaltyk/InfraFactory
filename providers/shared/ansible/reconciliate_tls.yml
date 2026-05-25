@@ -1,0 +1,107 @@
+---
+- name: Reconcile TLS SAN on first master
+  hosts: CONTROLLERS
+  gather_facts: false
+  become: true
+
+  vars:
+    endpoint: "{{ kube_api_endpoint | default('') }}"
+    # Set based on cloud_init_selected — injected via -e
+    config_dir: >-
+      {{
+        '/etc/rancher/k3s'
+        if cloud_init_selected == 'k3s'
+        else '/etc/rancher/rke2'
+      }}
+    config_path: "{{ config_dir }}/config.yaml"
+    service_name: >-
+      {{
+        'k3s'
+        if cloud_init_selected == 'k3s'
+        else 'rke2-server'
+      }}
+    cert_dir: >-
+      {{
+        '/var/lib/rancher/k3s/server/tls'
+        if cloud_init_selected == 'k3s'
+        else '/var/lib/rancher/rke2/server/tls'
+      }}
+
+  tasks:
+    - name: Fail if endpoint is not provided
+      ansible.builtin.fail:
+        msg: "kube_api_endpoint variable is required"
+      when: endpoint | length == 0
+
+    - name: Fail if cloud_init_selected is not supported
+      ansible.builtin.fail:
+        msg: "Unsupported cloud_init_selected: {{ cloud_init_selected }} (expected k3s or rke2)"
+      when: cloud_init_selected not in ['k3s', 'rke2']
+
+    - name: Fail if config file does not exist
+      ansible.builtin.stat:
+        path: "{{ config_path }}"
+      register: config_stat
+
+    - name: Assert config file exists
+      ansible.builtin.fail:
+        msg: "Config file not found: {{ config_path }}"
+      when: not config_stat.stat.exists
+
+    - name: Read existing config file
+      ansible.builtin.slurp:
+        src: "{{ config_path }}"
+      register: config_slurp
+
+    - name: Decode config and check if endpoint already present
+      ansible.builtin.set_fact:
+        config_text: "{{ config_slurp.content | b64decode }}"
+        tls_san_key_exists: "{{ 'tls-san:' in (config_slurp.content | b64decode) }}"
+        endpoint_already_present: >-
+          {{
+            ('  - ' ~ endpoint) in (config_slurp.content | b64decode)
+          }}
+
+    - name: Endpoint already present — nothing to do
+      ansible.builtin.meta: end_play
+      when: endpoint_already_present
+
+    - name: Ensure tls-san key exists in config
+      ansible.builtin.lineinfile:
+        path: "{{ config_path }}"
+        line: "tls-san:"
+        state: present
+      when: not tls_san_key_exists
+
+    - name: Add endpoint to tls-san list
+      ansible.builtin.lineinfile:
+        path: "{{ config_path }}"
+        line: "  - {{ endpoint }}"
+        insertafter: "^{{ 'tls-san:' | regex_escape }}"
+        state: present
+
+    - name: Stop the service
+      ansible.builtin.systemd:
+        name: "{{ service_name }}"
+        state: stopped
+
+    - name: Remove old serving certificate
+      ansible.builtin.file:
+        path: "{{ cert_dir }}/serving-kube-apiserver.crt"
+        state: absent
+
+    - name: Remove old serving key
+      ansible.builtin.file:
+        path: "{{ cert_dir }}/serving-kube-apiserver.key"
+        state: absent
+
+    - name: Start the service
+      ansible.builtin.systemd:
+        name: "{{ service_name }}"
+        state: started
+
+    - name: Wait for kube-apiserver port 6443
+      ansible.builtin.wait_for:
+        port: 6443
+        state: started
+        timeout: 120
