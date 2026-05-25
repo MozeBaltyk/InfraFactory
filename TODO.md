@@ -65,6 +65,6 @@ OVH now includes:
 - [X] Create shared ansible playbook: `fetch_kubeconfig.yml` — fetch kubeconfig from first master, rewrite server endpoint
 - [X] Create shared ansible playbook: `reconciliate_tls.yml` — add public IP to kube-apiserver TLS SAN, restart service
 - [X] Wire ansible integration into OVH provider (`ansible.tf`) — full deploy flow with check → reconcile → fetch
-- [ ] Wire ansible integration into Azure provider
+- [X] Wire ansible integration into Azure provider
 - [X] Wire ansible integration into Libvirt provider
 - [ ] Create ansible playbooks for additional cluster setup / post-provisioning
