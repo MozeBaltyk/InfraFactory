@@ -33,7 +33,7 @@ resource "null_resource" "reconcile_tls_san" {
 
   triggers = {
     abs_env_path        = abspath(local.env_path)
-    kube_api_endpoint   = local.vm_operator_endpoints[local.first_master_name]
+    kube_api_endpoint   = local.kube_api_endpoint
     cloud_init_selected = var.cluster.cloud_init_selected
   }
 
@@ -64,7 +64,7 @@ resource "null_resource" "fetch_kubeconfig" {
     cluster_name              = var.cluster.id
     abs_env_path              = abspath(local.env_path)
     ssh_host                  = local.vm_operator_endpoints[local.first_master_name]
-    kube_api_endpoint         = local.vm_operator_endpoints[local.first_master_name]
+    kube_api_endpoint         = local.kube_api_endpoint
     cloud_init_selected       = var.cluster.cloud_init_selected
   }
 
