@@ -38,6 +38,16 @@ OpenTofu (provision VMs)
 
 ## Prerequisites
 
+- **OpenTofu** (>= 1.6.0)
+  - Install with `arkade get tofu` stuck to version 1.6.0
+  - For Debian/Ubuntu:
+      `curl --proto '=https' --tlsv1.2 -fsSL https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh`
+      `chmod +x install-opentofu.sh && ./install-opentofu.sh --install-method deb`
+
+- **Just** (>= 1.0.0)
+  - Install with `arkade get just`
+  - Or: `apt install just` (Debian/Ubuntu)
+
 - **Provider-specific requirements:**
   - **Libvirt**: KVM/QEMU installed and running (`libvirt-daemon`, `libvirt-dev`, `mkisofs`)
       - `sudo usermod -aG libvirt $(whoami)`
@@ -52,14 +62,6 @@ OpenTofu (provision VMs)
   - `arkade get k9s`
   - `cockpit` to manage in a web interface the libvirt VMs
   - `ansible`
-
-- **OpenTofu** (>= 1.6.0)
-  - Install with `arkade get tofu`
-  - Or: `apt install opentofu` (Debian/Ubuntu)
-
-- **Just** (>= 1.0.0)
-  - Install with `arkade get just`
-  - Or: `apt install just` (Debian/Ubuntu)
 
 ---
 
@@ -141,6 +143,9 @@ Available commands:
 | `just plan` | Plan infrastructure changes |
 | `just deploy` | Apply and create infrastructure |
 | `just destroy` | Tear down infrastructure |
+| `just ping` | Ping VMs with ansible |
+| `just check` | Check k8s access |
+
 
 
 ### Configuration Files
@@ -248,12 +253,19 @@ InfraFactory/
 │   │   └── [provider files]
 │   │
 │   └── shared/                   # Shared resources (all providers)
+│       ├── ansible/              # Shared Ansible playbooks (post-deployment steps)
+│       │   ├── check_cloudinit.yml
+│       │   ├── fetch_kubeconfig.yml
+│       │   └── reconciliate_tls.yml
 │       ├── cloud-init/           # Cloud-init templates (default, k3s, rke2)
 │       │   ├── default/
 │       │   │   ├── cloud_init.cfg.tftpl
 │       │   │   └── network_config_dhcp.cfg
-│       │   └── k3s/
-│       │       ├── cloud_init.cfg.tftpl      # k3s deployment template
+│       │   ├── k3s/
+│       │   │   ├── cloud_init.cfg.tftpl      # k3s deployment template
+│       │   │   └── network_config_dhcp.cfg
+│       │   └── rke2/
+│       │       ├── cloud_init.cfg.tftpl      # rke2 deployment template
 │       │       └── network_config_dhcp.cfg
 │       └── inventory/
 │           └── hosts.tpl         # Ansible inventory template (generated post-deployment)
@@ -301,16 +313,20 @@ In this context, GitOps bootstrap is different from cloud-init bootstrap:
    ↓
 3. Cloud-init templates mount and deploy k3s (or rke2) on VM boot
    ↓
-4. OpenTofu generates hosts.ini inventory from VM IPs, writes ansible.cfg, and imports kubeconfig into `env/<PROVIDER>/<env>/`.
+4. OpenTofu generates hosts.ini inventory and ansible.cfg in `env/<PROVIDER>/<env>/`
    ↓
-5. (Optional) Ansible can perform additional configuration post-deployment
+5. Ansible checks cloud-init readiness on all nodes (via shared playbook)
+   ↓
+6. Ansible reconciles kube-apiserver TLS SAN with public IP and restarts the service (k3s/rke2 only)
+   ↓
+7. Ansible fetches kubeconfig from first master, rewrites server endpoint to public IP (k3s/rke2 only)
 ```
 
 **Deployment Flow:**
 - You select `cloud_init_selected = "<value>"` in your `.tfvars` where `<value>` can be `[default|k3s|rke2]`
 - OpenTofu uses the `providers/shared/cloud-init/<value>/` templates
 - These templates are mounted on each VM at boot
-- cluster is fully initialized and running **immediately after VM boot** (no additional provisioning needed)
+- After cloud-init completes, Ansible runs post-deployment steps (TLS SAN reconciliation, kubeconfig fetch)
 - You can access kubeconfig right after `just deploy` completes
 
 ---
@@ -321,64 +337,7 @@ In this context, GitOps bootstrap is different from cloud-init bootstrap:
 |----------|--------|-------|
 | Libvirt | ✅ Implemented | Core functionality complete, tested |
 | Azure | ✅ Implemented | Full implementation with NSG, DNS, and cloud-init |
-| OVH | ✅ Implemented | Public-IP-based operator access, deterministic private IP assignment, kube-api load balancer, and floating-IP cleanup helper |
-
----
-
-## Troubleshooting
-
-### Libvirt state migration after the `libvirt_domain.vms` refactor and node naming changes
-
-If you already have an existing libvirt workspace created before the `count` → `for_each` refactor and before the `${var.cluster.id}-nodeNN` serial naming scheme, move the old state addresses before your next `plan`/`apply`.
-
-Replace `<cluster-id>` with your real `var.cluster.id` value:
-
-```bash
-cd providers/libvirt
-tofu workspace select <env>
-
-tofu state mv 'libvirt_domain.masters[0]' 'libvirt_domain.vms["<cluster-id>-node01"]'
-tofu state mv 'libvirt_domain.masters[1]' 'libvirt_domain.vms["<cluster-id>-node02"]'
-tofu state mv 'libvirt_domain.workers[0]' 'libvirt_domain.vms["<cluster-id>-node03"]'
-tofu state mv 'libvirt_domain.workers[1]' 'libvirt_domain.vms["<cluster-id>-node04"]'
-
-tofu state mv 'libvirt_volume.resized_os_image["master01"]' 'libvirt_volume.resized_os_image["<cluster-id>-node01"]'
-tofu state mv 'libvirt_volume.resized_os_image["master02"]' 'libvirt_volume.resized_os_image["<cluster-id>-node02"]'
-tofu state mv 'libvirt_volume.resized_os_image["worker01"]' 'libvirt_volume.resized_os_image["<cluster-id>-node03"]'
-tofu state mv 'libvirt_volume.resized_os_image["worker02"]' 'libvirt_volume.resized_os_image["<cluster-id>-node04"]'
-
-tofu state mv 'libvirt_cloudinit_disk.commoninit["master01"]' 'libvirt_cloudinit_disk.commoninit["<cluster-id>-node01"]'
-tofu state mv 'libvirt_cloudinit_disk.commoninit["master02"]' 'libvirt_cloudinit_disk.commoninit["<cluster-id>-node02"]'
-tofu state mv 'libvirt_cloudinit_disk.commoninit["worker01"]' 'libvirt_cloudinit_disk.commoninit["<cluster-id>-node03"]'
-tofu state mv 'libvirt_cloudinit_disk.commoninit["worker02"]' 'libvirt_cloudinit_disk.commoninit["<cluster-id>-node04"]'
-```
-
-Repeat the same pattern for every existing node and for any `libvirt_volume.extra_disks["<old-name>-<index>"]` entries.
-
-`tofu state mv` only updates OpenTofu state addresses. Because the libvirt domain, cloud-init ISO, and disk names also change, an existing deployment can still show replacements on the next plan unless the underlying libvirt objects are recreated or otherwise renamed to match the new names.
-
-Changing `cluster.node_name_format` later also changes VM, disk, and cloud-init object names, so existing libvirt resources will usually need state moves or recreation.
-
-In `serial` mode, changing `infra.masters.count` does more than renumber workers: it can cause the same `${cluster.id}-nodeNN` identity to move from worker to master or from master to worker as the topology changes. Because those names are also OpenTofu `for_each` keys, this can lead to destructive or confusing lifecycle behavior for existing deployments.
-
-If you expect to scale masters and workers independently over time, prefer `role` mode. In `role` mode, changing `infra.masters.count` does not renumber workers, but changing either role count can still add, remove, or recreate nodes for that role.
-
-### Common Issues
-
-**"tofu init fails: provider not found"**
-- Clear cache: `rm -rf providers/<provider>/.terraform`
-- Retry: `just validate`
-
-**"SSH key permission denied"**
-- Check permissions: `chmod 600 env/<PROVIDER>/<env>/.key.private`
-
-**"Libvirt connection refused"**
-- Ensure libvirt is running on the host before using this repository.
-- Check socket access with `virsh list` if available in your environment.
-
-**"Inventory hosts.ini not generated"**
-- Wait 60+ seconds after deployment (cloud-init initialization)
-- Check: `ls -la env/<PROVIDER>/<env>/hosts.ini`
+| OVH | ✅ Implemented | Public-IP-based operator access, deterministic private IP assignment, kube-api load balancer, floating-IP cleanup helper, Ansible-based cloud-init check, TLS SAN reconciliation, and kubeconfig fetch |
 
 ---
 
@@ -403,5 +362,6 @@ See [AGENTS.md](AGENTS.md) for AI assistant context and [constitution.md](.speci
 - OVH multi-node readiness can still be inconsistent in some scenarios
 - OVH cleanup of gateway or other implicit public IP leftovers outside the captured load-balancer floating IP still depends on OVH/provider behavior
 - OVH custom root disk sizing and extra disks are not supported yet
-- Ansible integration is optional (k3s is fully deployed via cloud-init)
+- Azure `required_version = "= 1.6.2"` in `providers.tf` needs loosening (Libvirt and OVH are already unconstrained)
+- Ansible integration is wired for OVH; Azure and Libvirt still need the `ansible.tf` pattern ported to them
 - IPv6 support requires additional configuration

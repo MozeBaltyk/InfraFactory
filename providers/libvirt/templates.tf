@@ -29,10 +29,6 @@ resource "libvirt_cloudinit_disk" "commoninit" {
 
       node_role = each.value.role
 
-      kube_api_tls_san_reconcile_script = join("\n", [
-        for line in split("\n", file("${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/reconcile-kube-api-tls-san.sh")) : "      ${line}"
-      ])
-
       # Optional K3s config
       k3s_token                  = local.cluster_token
       k3s_version                = var.k3s.version

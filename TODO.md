@@ -14,13 +14,9 @@ OVH now includes:
 - multi-master clusters when `network.private_cidr` is set
 - kube-api load-balancer exposure
 - an optional exact-match floating-IP cleanup helper for destroy leftovers
-
-Current OVH caveats:
-- inventory remains public-IP based even when private networking exists
-- kube-api load-balancer creation is controlled by `network.kube_api_lb_enabled`
-- some multi-node readiness scenarios can still be inconsistent
-- custom root disk sizing and extra disks are not supported yet
-- cleanup of other implicit public IP leftovers still depends on OVH/provider behavior
+- Ansible-based cloud-init readiness check
+- Ansible-based TLS SAN reconciliation (adds public IP to kube-apiserver cert)
+- Ansible-based kubeconfig fetch with public IP endpoint
 
 ---
 
@@ -63,9 +59,12 @@ Current OVH caveats:
 - [X] Implement templates.tf for ovh
 - [X] Implement outputs.tf for ovh
 - [X] Test ovh provider end-to-end
-- [X] Add optional exact-match orphaned floating-IP cleanup helper for OVH destroy flows
-- [ ] Investigate cleanup of OVH gateway or other implicit public IP leftovers not covered by the exact-match floating-IP helper
 
 ### Phase 5: Ansible Integration
-- [ ] Create ansible playbooks for cluster setup
-- [ ] Test ansible integration with all providers
+- [X] Create shared ansible playbook: `check_cloudinit.yml` — wait for cloud-init to finish on all nodes
+- [X] Create shared ansible playbook: `fetch_kubeconfig.yml` — fetch kubeconfig from first master, rewrite server endpoint
+- [X] Create shared ansible playbook: `reconciliate_tls.yml` — add public IP to kube-apiserver TLS SAN, restart service
+- [X] Wire ansible integration into OVH provider (`ansible.tf`) — full deploy flow with check → reconcile → fetch
+- [ ] Wire ansible integration into Azure provider
+- [ ] Wire ansible integration into Libvirt provider
+- [ ] Create ansible playbooks for additional cluster setup / post-provisioning

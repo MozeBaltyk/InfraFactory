@@ -260,6 +260,11 @@ locals {
   first_master_name = try(local.master_details[0].name, null)
   first_master_fqdn = local.first_master_name != null ? "${local.first_master_name}.${local.subdomain}" : null
 
+  ## Kubernetes API bootstrap endpoint (first master private IP); overridden by LB when present
+  kube_api_bootstrap_endpoint = local.master_details[0].private_ip
+  ## Public-facing API endpoint for kubeconfig — uses public IP for external access
+  public_kube_api_endpoint    = try(local.vm_public_ipv4_addresses[local.first_master_name], local.kube_api_bootstrap_endpoint)
+
   ## Disks Topology
   vm_disks = {
     for vm in concat(local.master_details, local.worker_details) :

@@ -148,13 +148,6 @@ write_files:
       curl -sfL $K3S_INSTALL_URL | INSTALL_K3S_EXEC="agent" sh -s - 
 %{ endif }
 
-%{ if kube_api_tls_san_reconcile_script != "" ~}
-  - path: /usr/local/bin/reconcile-k3s-kube-api-tls-san.sh
-    permissions: "0755"
-    content: |
-${kube_api_tls_san_reconcile_script}
-%{ endif ~}
-
 # --- Ansible Pull setup ---
 %{ if ansible_pull_repo != null && ansible_pull_repo != "" ~}
   - path: /usr/local/bin/run-ansible-pull.sh

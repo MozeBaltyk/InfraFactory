@@ -1,5 +1,23 @@
 # Functionalities 
-Reflects expected functionalities necessary for each modules.  
+Reflects expected functionalities necessary for each modules.
+
+## Provider-specific implementation notes
+
+### OVH: `addresses` attribute on `ovh_cloud_project_instance`
+
+The `ovh_cloud_project_instance` resource exposes a computed attribute named
+**`addresses`** (NOT `ip_addresses`). Each entry in the `addresses` list has
+`ip` and `version` keys but **no `type` key** — there is no
+`type = "public"` / `type = "private"` discriminator.
+
+Public vs. private IP classification is done by checking
+`cidrcontains(local.private_cidr, addr.ip)`.  Any IPv4 address that does
+**not** fall inside the private CIDR is treated as a public address.
+
+If a provider migration or update ever adds a `type` key to the address
+objects, the filtering logic in `main.tf` (both `vm_public_ipv4_addresses`
+and `vm_private_ipv4_addresses`) should be updated to prefer the explicit
+type over the CIDR-based heuristic. 
 
 ## Common capabilties to all providers
 - Generate SSH keys

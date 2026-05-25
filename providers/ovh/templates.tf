@@ -27,22 +27,14 @@ locals {
           vm.name == local.first_master_name
         )
 
-        first_master_ip   = local.kube_api_bootstrap_endpoint
+        first_master_ip   = local.master_details[0].private_ip
         first_master_fqdn = local.first_master_fqdn
 
         ## Join endpoint
-        cluster_join_endpoint = local.kube_api_bootstrap_endpoint
+        cluster_join_endpoint = local.master_details[0].private_ip
 
         ## Disks
         extra_disks = try(local.vm_disks[vm.name], [])
-
-        ## TLS SAN reconcile script
-        kube_api_tls_san_reconcile_script = join("\n", [
-          for line in split(
-            "\n",
-            file("${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/reconcile-kube-api-tls-san.sh")
-          ) : "      ${line}"
-        ])
 
         # Extra packages
         extra_packages = var.extra_packages
@@ -56,7 +48,7 @@ locals {
 
         k3s_tls_sans = distinct(compact(concat(
           var.k3s.tls_sans,
-          [local.kube_api_bootstrap_endpoint],
+          [local.master_details[0].private_ip],
           [local.first_master_fqdn],
           [for master in local.master_details : "${master.name}.${local.subdomain}"]
         )))
@@ -77,7 +69,7 @@ locals {
 
         rke2_tls_sans = distinct(compact(concat(
           var.rke2.tls_sans,
-          [local.kube_api_bootstrap_endpoint],
+          [local.master_details[0].private_ip],
           [local.first_master_fqdn],
           [for master in local.master_details : "${master.name}.${local.subdomain}"]
         )))

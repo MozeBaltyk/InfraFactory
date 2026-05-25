@@ -12,6 +12,58 @@ data "ovh_cloud_project_flavors" "all" {
   region       = var.cluster.region
 }
 
+###
+### SSH key — push the generated public key to OVH so it can be injected into VMs
+###
+
+resource "random_id" "ssh_key_suffix" {
+  byte_length = 4
+}
+
+resource "ovh_cloud_project_ssh_key" "cluster" {
+  service_name = var.ovh_project_service_name
+  name         = "${terraform.workspace}-${random_id.ssh_key_suffix.hex}"
+  public_key   = trimspace(tls_private_key.global_key.public_key_openssh)
+}
+
+###
+### Private Network and Subnet
+###
+
+resource "ovh_cloud_project_network_private" "cluster" {
+  service_name = var.ovh_project_service_name
+  name         = format("%s-private", var.cluster.id)
+  regions      = [var.cluster.region]
+}
+
+resource "ovh_cloud_project_network_private_subnet_v2" "cluster" {
+  service_name                    = var.ovh_project_service_name
+  network_id                      = ovh_cloud_project_network_private.cluster.regions_openstack_ids[var.cluster.region]
+  region                          = var.cluster.region
+  name                            = format("%s-subnet", var.cluster.id)
+  cidr                            = local.private_cidr
+  dhcp                            = true
+  enable_gateway_ip               = true
+  use_default_public_dns_resolver = true
+}
+
+resource "null_resource" "private_network_destroy_grace" {
+  triggers = {
+    network_id   = local.private_network_id
+    subnet_id    = local.private_subnet_id
+    wait_seconds = "20"
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "sleep ${self.triggers.wait_seconds}"
+  }
+
+  depends_on = [
+    ovh_cloud_project_network_private_subnet_v2.cluster,
+  ]
+}
+
 locals {
   requested_flavors = toset(compact([
     var.infra.masters.instance_size,
@@ -149,61 +201,19 @@ data "ovh_cloud_project_instance" "vms" {
 }
 
 locals {
+  # Public IPv4: any IPv4 that is NOT the known private IP of that VM.
   vm_public_ipv4_addresses = {
-    for name, vm in data.ovh_cloud_project_instance.vms :
-    name => try(
-      one([
-        for ip in vm.ip_addresses :
-        ip.ip
-        if ip.type == "public"
-      ]),
-      null
-    )
+    for name, instance in data.ovh_cloud_project_instance.vms :
+    name => try(one([
+      for addr in instance.addresses : addr.ip
+      if addr.version == 4 && addr.ip != local.all_vms_map[name].private_ip
+    ]), null)
   }
 
+  # Private IPv4: already known from the deterministic cidrhost assignment.
   vm_private_ipv4_addresses = {
-    for name, vm in data.ovh_cloud_project_instance.vms :
-    name => try(
-      one([
-        for ip in vm.ip_addresses :
-        ip.ip
-        if (
-          ip.type == "private"
-          &&
-          cidrcontains(local.private_cidr, ip.ip)
-        )
-      ]),
-      null
-    )
+    for name, vm in local.all_vms_map :
+    name => vm.private_ip
   }
 }
 
-###
-### remote-exec outside of vms
-###
-
-resource "null_resource" "bootstrap_nodes" {
-  for_each = {
-    for name, ip in local.vm_public_ipv4_addresses :
-    name => ip
-    if ip != null
-  }
-
-  triggers = {
-    ip = each.value
-  }
-
-  provisioner "local-exec" {
-    command = <<EOT
-ssh -o StrictHostKeyChecking=no \
-    -o UserKnownHostsFile=/dev/null \
-    -i ${local.env_path}/.key.private \
-    ${var.cluster.username}@${self.triggers.ip} \
-    "cloud-init status --wait"
-EOT
-  }
-
-  depends_on = [
-    data.ovh_cloud_project_instance.vms
-  ]
-}
