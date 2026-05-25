@@ -37,6 +37,11 @@ type over the CIDR-based heuristic.
       - Generating a Token
       - Pulling Kubeconfig
   - ansible-pull
+- Ansible post-deployment steps (shared playbooks):
+    - Cloud-init readiness check
+    - TLS SAN reconciliation (k3s/rke2)
+    - Kubeconfig fetch with endpoint rewrite (k3s/rke2)
+- `kube_api_endpoint` abstraction for public-facing API address
 
 ## Specific Azure model
 - NSG rules 

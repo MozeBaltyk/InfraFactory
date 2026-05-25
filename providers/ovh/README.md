@@ -7,9 +7,9 @@ This document explains the current OVH implementation in this repository, the ar
 This README describes the current behavior implemented in:
 
 - `providers/ovh/main.tf`
-- `providers/ovh/networks.tf`
 - `providers/ovh/templates.tf`
 - `providers/ovh/output.tf`
+- `providers/ovh/ansible.tf`
 - `providers/ovh/justfile`
 - `providers/ovh/floating_ip_cleanup.py`
 
@@ -73,10 +73,10 @@ Important current behavior:
 
 - inject shared cloud-init into each node
 - wait for SSH readiness on public IPs
-- wait for `cloud-init status --wait`
-- fetch kubeconfig from the first master over SSH
+- wait for `cloud-init status --wait` (via Ansible shared playbook)
+- reconcile kube-apiserver TLS SAN on first master (via Ansible shared playbook)
+- fetch kubeconfig from the first master (via Ansible shared playbook)
 - rewrite kubeconfig so it points to the public Kubernetes API endpoint
-- when using a private-network load balancer in `lb_ip` mode, reconcile TLS SANs on masters after the load balancer endpoint exists
 
 ---
 
@@ -278,15 +278,15 @@ When `network.kube_api_lb_enabled` is true, OVH creates a dedicated load balance
 - listener on TCP `6443`
 - backend pool members are the master private IPs
 - a floating IP is created on the load balancer
-- the public kube API endpoint prefers:
-  1. DNS name when `kube_api_endpoint_mode = "dns"`
-  2. load balancer floating IP
-  3. load balancer VIP
-  4. first master public IP as fallback
+- the public kube API endpoint resolves from `network.kube_api.endpoint`:
+   1. **literal value** — when `endpoint` is neither `"lb_ip"` nor `"dns"`, use it directly (e.g. a LB floating IP)
+   2. **DNS name** — when `endpoint = "dns"` and `dns.name` is set
+   3. **first master public IP** — fallback
+   4. **first master private IP** — last resort
 
 Important clarification:
 
-- `kube_api_endpoint_mode = "dns"` does not disable load balancer creation
+- `endpoint = "dns"` does not disable load balancer creation
 - it only changes which endpoint is preferred and advertised in templates and kubeconfig
 - the DNS record itself is not created or managed by this Terraform and must exist outside this provider
 
