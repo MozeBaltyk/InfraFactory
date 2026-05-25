@@ -262,8 +262,19 @@ locals {
 
   ## Kubernetes API bootstrap endpoint (first master private IP); overridden by LB when present
   kube_api_bootstrap_endpoint = local.master_details[0].private_ip
-  ## Public-facing API endpoint for kubeconfig — uses public IP for external access
-  public_kube_api_endpoint    = try(local.vm_public_ipv4_addresses[local.first_master_name], local.kube_api_bootstrap_endpoint)
+  ## Public-facing API endpoint for kubeconfig
+  ## Resolution order:
+  ##   1. Literal value when network.kube_api.endpoint is neither "lb_ip" nor "dns"
+  ##   2. DNS name when network.kube_api.endpoint == "dns" and dns.name is set
+  ##   3. First master's public IP (fallback)
+  ##   4. First master's private IP (last resort)
+  public_kube_api_endpoint = (
+    !contains(["lb_ip", "dns"], var.network.kube_api.endpoint)
+  ) ? var.network.kube_api.endpoint : (
+    var.network.kube_api.endpoint == "dns" && try(var.network.kube_api.dns.name, "") != ""
+    ? var.network.kube_api.dns.name
+    : try(local.vm_public_ipv4_addresses[local.first_master_name], local.kube_api_bootstrap_endpoint)
+  )
 
   ## Disks Topology
   vm_disks = {
