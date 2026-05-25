@@ -68,47 +68,6 @@ locals {
 }
 
 
-resource "null_resource" "kubeconfig" {
-  count = local.write_local_artifacts && contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ? 1 : 0
-
-  depends_on = [
-    null_resource.env_directory,
-    libvirt_domain.vms
-  ]
-
-  triggers = {
-    path                     = local.env_path
-    ssh_endpoint             = local.vm_operator_endpoints[local.first_master_name]
-    public_kube_api_endpoint = local.vm_operator_endpoints[local.first_master_name]
-  }
-
-  # Create/fetch kubeconfig
-  provisioner "local-exec" {
-    command = <<EOT
-if [ "${var.cluster.cloud_init_selected}" = "rke2" ]; then
-  KUBE_CONF_PATH="/etc/rancher/rke2/rke2.yaml"
-elif [ "${var.cluster.cloud_init_selected}" = "k3s" ]; then
-  KUBE_CONF_PATH="/etc/rancher/k3s/k3s.yaml"
-else
-  echo "No kubeconfig path defined for cloud_init_selected=${var.cluster.cloud_init_selected}"
-  exit 0
-fi
-
-echo "Fetching kubeconfig into ${self.triggers.path}/kubeconfig"
-ssh -o StrictHostKeyChecking=no -i ${self.triggers.path}/.key.private \
-${var.cluster.username}@${self.triggers.ssh_endpoint} \
-"sudo cat $KUBE_CONF_PATH" | sed "s/127.0.0.1/${self.triggers.public_kube_api_endpoint}/" \
-> ${self.triggers.path}/kubeconfig
-EOT
-  }
-
-  # Cleanup on destroy
-  provisioner "local-exec" {
-    when    = destroy
-    command = "rm -f ${self.triggers.path}/kubeconfig"
-  }
-}
-
 # Output kubeconfig retrieval details in gitops mode, otherwise null
 output "gitops_kubeconfig_host" {
   description = "GitOps-mode preferred endpoint for kubeconfig retrieval."
