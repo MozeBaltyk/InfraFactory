@@ -52,6 +52,6 @@ check:
 ping:
     @ANSIBLE_CONFIG=./env/{{ PROVIDER }}/{{ ENV }}/ansible.cfg ansible K8S_CLUSTER -i ./env/{{ PROVIDER }}/{{ ENV }}/hosts.ini -m ping
 
-# Run ansible playbook for specified environment
+# Run ansible playbook for specified environment (ex: just play providers/shared/ansible/check_cloudinit.yml)
 play playbook *ARGS:
     @ANSIBLE_CONFIG=./env/{{ PROVIDER }}/{{ ENV }}/ansible.cfg ansible-playbook -i ./env/{{ PROVIDER }}/{{ ENV }}/hosts.ini {{ playbook }} {{ ARGS }}
