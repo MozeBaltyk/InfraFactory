@@ -146,7 +146,7 @@ variable "infra" {
 # Network Config
 ###################################
 variable "network" {
-  description = "Libvirt network configuration"
+  description = "Azure network configuration"
 
   type = object({
     cidr         = string

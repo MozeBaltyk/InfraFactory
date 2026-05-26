@@ -26,8 +26,7 @@ type over the CIDR-based heuristic.
 - Separate masters/workers objects
 - Per-role:
     - CPU / RAM / disk
-    - optional IP/MAC
-    - extra disks (structured)
+    - extra disks (structured) — **OVH**: blocked by validation (not yet supported)
 - Cloud-init choice:
     - Set username for a root priviled user with its ssh pub key
 - Optional vars pass to cloud-init:
@@ -49,24 +48,27 @@ type over the CIDR-based heuristic.
 ## Specific Libvirt model
 - local connexion by default or ssh connexion to QEMU
 - Per-role:
-    - optional IP/MAC
+    - optional IP/MAC (unique to Libvirt among all providers)
 - Network config
-    - NAT or Bridge
+    - NAT, Route, or Bridge
     - DHCP or Static
+- `network.extra_dns` for custom DNS server list
+- `cluster.node_name_format`: `"serial"` (shared sequence) or `"role"` (per-role sequence)
 
 ## Specific OVH model
 - Public-IP-based operator access for SSH, inventory, and kubeconfig retrieval
 - Optional private networking for cluster internal traffic via `network.private_cidr`
 - Deterministic private IP assignment from `network.private_cidr`
 - Separate masters and workers, with multi-master supported when `network.private_cidr` is set
-- Kubernetes API exposed through an OVH load balancer when `network.kube_api_lb_enabled` is enabled
-- Load balancer endpoint can be advertised by floating IP or externally managed DNS name
-- Optional exact-match floating-IP cleanup helper for load-balancer destroy leftovers
+- Dual provider model: `ovh` (API-level resources: SSH keys, instances) + `openstack` (compute instances)
+- Load balancer variable schema defined (`network.kube_api.load_balancer`) but **not yet implemented** in .tf resources
+- `checks.tf` for post-condition validation (unique to OVH)
 - Current limitations:
     - inventory remains public-IP based even when a private network exists
     - multi-master requires private networking
-    - custom root disk sizing not supported yet
-    - extra disks not supported yet
+    - custom root disk sizing not supported yet (forced to 40 GB)
+    - extra disks not supported yet (blocked by validation)
+    - OVH load balancer not yet implemented (schema only)
     - some multi-node readiness scenarios can still be inconsistent
 
 
@@ -89,4 +91,4 @@ type over the CIDR-based heuristic.
 | OVH      | 1 masters / 2 workers | rke2      | default |
 | OVH      | 3 masters             | rke2      | default |
 
-OVH scenarios currently also use `network.private_cidr`, deterministic private IP assignment, and the optional kube-api load-balancer flow.
+OVH scenarios currently also use `network.private_cidr` with deterministic private IP assignment.

@@ -10,6 +10,7 @@ cluster = {
   timezone            = "Europe/Paris"
   region              = "GRA9"
   username            = "localadmin"
+  node_name_format    = "serial" # serial => factory-node01, role => factory-m01/factory-w01
   cloud_init_selected = "k3s"
 }
 
@@ -86,6 +87,12 @@ os = {
 ###
 ### Extra vars
 ###
+
+# if extra_packages needed
+# extra_packages = [
+#   "nfs-common",
+#   "open-iscsi"
+# ]
 
 # if cloud_init_selected=k3s
 # k3s = {

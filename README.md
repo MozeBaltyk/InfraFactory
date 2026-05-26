@@ -38,8 +38,8 @@ OpenTofu (provision VMs)
 
 ## Prerequisites
 
-- **OpenTofu** (>= 1.6.0)
-  - Install with `arkade get tofu` stuck to version 1.6.0
+- **OpenTofu** (>= 1.6.2)
+  - Install with `arkade get tofu` pinned to version 1.6.2
   - For Debian/Ubuntu:
       `curl --proto '=https' --tlsv1.2 -fsSL https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh`
       `chmod +x install-opentofu.sh && ./install-opentofu.sh --install-method deb`
@@ -145,6 +145,7 @@ Available commands:
 | `just destroy` | Tear down infrastructure |
 | `just ping` | Ping VMs with ansible |
 | `just check` | Check k8s access |
+| `just play` | Run an Ansible playbook against the cluster |
 
 
 
@@ -256,6 +257,7 @@ InfraFactory/
 │       ├── ansible/              # Shared Ansible playbooks (post-deployment steps)
 │       │   ├── check_cloudinit.yml
 │       │   ├── fetch_kubeconfig.yml
+│       │   ├── local.yml
 │       │   └── reconciliate_tls.yml
 │       ├── cloud-init/           # Cloud-init templates (default, k3s, rke2)
 │       │   ├── default/
