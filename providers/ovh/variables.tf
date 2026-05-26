@@ -34,6 +34,25 @@ variable "ovh_project_service_name" {
   type        = string
 }
 
+##
+## OpenStack credentials (for floating IP and gateway resources)
+##
+variable "openstack_user_name" {
+  description = "OpenStack user name for OVH Public Cloud"
+  type        = string
+}
+
+variable "openstack_password" {
+  description = "OpenStack password for OVH Public Cloud"
+  type        = string
+  sensitive   = true
+}
+
+variable "openstack_tenant_name" {
+  description = "OpenStack tenant name (OVH project ID, same as ovh_project_service_name)"
+  type        = string
+}
+
 # Version Mapping
 variable "os_catalog" {
   description = "OS image catalog"
