@@ -4,6 +4,11 @@ ovh_application_secret = "xxxxxxxxxxxxxxxx"
 ovh_consumer_key       = "xxxxxxxxxxxxxxxx"
 ovh_project_service_name = "xxxxxxxxxxxxxxxx"
 
+# OpenStack credentials (for floating IP and gateway resources)
+openstack_user_name     = "xxxxxxxxxxxxxxxx"
+openstack_password      = "xxxxxxxxxxxxxxxx"
+openstack_tenant_name   = "xxxxxxxxxxxxxxxx"  # Same as ovh_project_service_name
+
 cluster = {
   id                  = "factory"
   domain              = "lab"
@@ -50,20 +55,30 @@ os = {
 #   }
 # }
 
-# LB enabled
+# With private network only (default endpoint = first master public IP)
+# network = {
+#   private = {
+#     cidr = "10.0.0.0/24"
+#   }
+# }
+
+# With Load Balancer for the Kubernetes API (endpoint = LB floating IP)
 # network = {
 #   private = {
 #     cidr = "10.0.0.0/24"
 #   }
 # 
 #   kube_api = {
+#     endpoint = "lb_ip"
+# 
 #     load_balancer = {
 #       enabled = true
+#       flavor  = "s"
 #     }
 #   }
 # }
 
-# DNS mode activate
+# DNS mode (LB is still created but endpoint is set to an external DNS name)
 # network = {
 #   private = {
 #     cidr = "10.0.0.0/24"
@@ -78,7 +93,7 @@ os = {
 # 
 #     load_balancer = {
 #       enabled = true
-#       flavor  = "small"
+#       flavor  = "s"
 #     }
 #   }
 # }
