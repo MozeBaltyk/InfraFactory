@@ -235,6 +235,14 @@ locals {
   private_network_id = ovh_cloud_project_network_private.cluster.regions_openstack_ids[var.cluster.region]
   private_subnet_id = ovh_cloud_project_network_private_subnet_v2.cluster.id
 
+  ## Load Balancer
+  lb_enabled             = try(var.network.kube_api.load_balancer.enabled, false)
+  lb_floating_ip_address = try(openstack_networking_floatingip_v2.kube_api[0].address, null)
+  lb_flavor_id           = local.lb_enabled ? one([
+    for f in data.ovh_cloud_project_loadbalancer_flavors.lb[0].flavors :
+    f.id if f.name == try(var.network.kube_api.load_balancer.flavor, "s")
+  ]) : null
+
   ## VM Topology Static
   master_details = [
     for i in range(var.infra.masters.count) : {
@@ -283,11 +291,14 @@ locals {
   kube_api_bootstrap_endpoint = local.master_details[0].private_ip
   ## Public-facing API endpoint for kubeconfig
   ## Resolution order:
-  ##   1. Literal value when network.kube_api.endpoint is neither "lb_ip" nor "dns"
-  ##   2. DNS name when network.kube_api.endpoint == "dns" and dns.name is set
-  ##   3. First master's public IP (fallback)
-  ##   4. First master's private IP (last resort)
+  ##   1. Load Balancer floating IP when network.kube_api.endpoint == "lb_ip" and LB exists
+  ##   2. Literal value when network.kube_api.endpoint is neither "lb_ip" nor "dns"
+  ##   3. DNS name when network.kube_api.endpoint == "dns" and dns.name is set
+  ##   4. First master's public IP (fallback)
+  ##   5. First master's private IP (last resort)
   public_kube_api_endpoint = (
+    var.network.kube_api.endpoint == "lb_ip" && local.lb_floating_ip_address != null
+  ) ? local.lb_floating_ip_address : (
     !contains(["lb_ip", "dns"], var.network.kube_api.endpoint)
   ) ? var.network.kube_api.endpoint : (
     var.network.kube_api.endpoint == "dns" && try(var.network.kube_api.dns.name, "") != ""
