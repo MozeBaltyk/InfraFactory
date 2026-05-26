@@ -50,7 +50,8 @@ locals {
           var.k3s.tls_sans,
           [local.master_details[0].private_ip],
           [local.first_master_fqdn],
-          [for master in local.master_details : "${master.name}.${local.subdomain}"]
+          [for master in local.master_details : "${master.name}.${local.subdomain}"],
+          local.lb_floating_ip_address != null ? [local.lb_floating_ip_address] : []
         )))
 
         k3s_etcd_enabled           = var.k3s.etcd_enabled
@@ -71,7 +72,8 @@ locals {
           var.rke2.tls_sans,
           [local.master_details[0].private_ip],
           [local.first_master_fqdn],
-          [for master in local.master_details : "${master.name}.${local.subdomain}"]
+          [for master in local.master_details : "${master.name}.${local.subdomain}"],
+          local.lb_floating_ip_address != null ? [local.lb_floating_ip_address] : []
         )))
 
         rke2_etcd_enabled           = var.rke2.etcd_enabled
