@@ -226,47 +226,49 @@ resource "ovh_cloud_project_loadbalancer" "kube_api" {
   name         = "${var.cluster.id}-kube-api"
   flavor_id    = local.lb_flavor_id
 
-  network {
-    private {
-      network {
+  network = {
+    private = {
+      network = {
         id        = local.private_network_id
         subnet_id = local.private_subnet_id
       }
-      gateway {
+      gateway = {
         id = ovh_cloud_project_gateway.cluster[0].id
       }
-      floating_ip {
+      floating_ip = {
         id = openstack_networking_floatingip_v2.kube_api[0].id
       }
     }
   }
 
-  listeners {
-    port     = 6443
-    protocol = "tcp"
-    name     = "kube-api"
+  listeners = [
+    {
+      port     = 6443
+      protocol = "tcp"
+      name     = "kube-api"
 
-    pool {
-      algorithm = "ROUND_ROBIN"
-      protocol  = "tcp"
-      name      = "kube-api-pool"
+      pool = {
+        algorithm = "roundRobin"
+        protocol  = "tcp"
+        name      = "kube-api-pool"
 
-      health_monitor {
-        delay        = 5
-        max_retries  = 3
-        timeout      = 3
-        monitor_type = "TCP"
-      }
-
-      members = [
-        for m in local.master_details : {
-          address        = m.private_ip
-          protocol_port  = 6443
-          weight         = 1
+        health_monitor = {
+          delay        = 5
+          max_retries  = 3
+          timeout      = 3
+          monitor_type = "tcp"
         }
-      ]
+
+        members = [
+          for m in local.master_details : {
+            address        = m.private_ip
+            protocol_port  = 6443
+            weight         = 1
+          }
+        ]
+      }
     }
-  }
+  ]
 
   depends_on = [
     ovh_cloud_project_network_private_subnet_v2.cluster
