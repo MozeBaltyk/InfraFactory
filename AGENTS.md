@@ -195,7 +195,7 @@ https://search.opentofu.org/provider/ovh/ovh/latest
 2. **Justfile as CLI orchestrator**
 3. **cloud-init for VM bootstrap**
 4. **Ansible for post-provision configuration**
-5. **Inventory generated automatically from OpenTofu outputs**
+5. **Inventory, ansible.cfg, and ssh keys generated automatically from OpenTofu outputs**
 
 ---
 
