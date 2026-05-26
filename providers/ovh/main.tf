@@ -178,3 +178,97 @@ locals {
     name => vm.private_ip
   }
 }
+
+###
+### Gateway (required for floating IP routing on OVH)
+###
+
+resource "ovh_cloud_project_gateway" "cluster" {
+  count = local.lb_enabled ? 1 : 0
+
+  service_name = var.ovh_project_service_name
+  name         = "${var.cluster.id}-gateway"
+  model        = "s"
+  region       = var.cluster.region
+  network_id   = local.private_network_id
+  subnet_id    = local.private_subnet_id
+}
+
+###
+### Load Balancer for the Kubernetes API
+###
+
+data "openstack_networking_network_v2" "ext_net" {
+  count    = local.lb_enabled ? 1 : 0
+  name     = "Ext-Net"
+  provider = openstack.ovh
+  region   = var.cluster.region
+}
+
+resource "openstack_networking_floatingip_v2" "kube_api" {
+  count    = local.lb_enabled ? 1 : 0
+  pool     = data.openstack_networking_network_v2.ext_net[0].name
+  provider = openstack.ovh
+  region   = var.cluster.region
+}
+
+data "ovh_cloud_project_loadbalancer_flavors" "lb" {
+  count        = local.lb_enabled ? 1 : 0
+  service_name = var.ovh_project_service_name
+  region_name  = var.cluster.region
+}
+
+resource "ovh_cloud_project_loadbalancer" "kube_api" {
+  count = local.lb_enabled ? 1 : 0
+
+  service_name = var.ovh_project_service_name
+  region_name  = var.cluster.region
+  name         = "${var.cluster.id}-kube-api"
+  flavor_id    = local.lb_flavor_id
+
+  network {
+    private {
+      network {
+        id        = local.private_network_id
+        subnet_id = local.private_subnet_id
+      }
+      gateway {
+        id = ovh_cloud_project_gateway.cluster[0].id
+      }
+      floating_ip {
+        id = openstack_networking_floatingip_v2.kube_api[0].id
+      }
+    }
+  }
+
+  listeners {
+    port     = 6443
+    protocol = "tcp"
+    name     = "kube-api"
+
+    pool {
+      algorithm = "ROUND_ROBIN"
+      protocol  = "tcp"
+      name      = "kube-api-pool"
+
+      health_monitor {
+        delay        = 5
+        max_retries  = 3
+        timeout      = 3
+        monitor_type = "TCP"
+      }
+
+      members = [
+        for m in local.master_details : {
+          address        = m.private_ip
+          protocol_port  = 6443
+          weight         = 1
+        }
+      ]
+    }
+  }
+
+  depends_on = [
+    ovh_cloud_project_network_private_subnet_v2.cluster
+  ]
+}
