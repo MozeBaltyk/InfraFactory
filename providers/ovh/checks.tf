@@ -9,6 +9,26 @@ check "ovh_multi_master_requires_private_network" {
   }
 }
 
+check "ovh_lb_requires_private_network" {
+  assert {
+    condition = (
+      !local.lb_enabled ||
+      try(trimspace(var.network.private.cidr), "") != ""
+    )
+    error_message = "network.private.cidr must be set when network.kube_api.load_balancer.enabled is true so the load balancer can attach to the private subnet."
+  }
+}
+
+check "ovh_lb_flavor_exists" {
+  assert {
+    condition = (
+      !local.lb_enabled ||
+      local.lb_flavor_id != null
+    )
+    error_message = "Load balancer flavor '${try(var.network.kube_api.load_balancer.flavor, "s")}' was not found in region '${var.cluster.region}'."
+  }
+}
+
 check "ovh_private_network_cidr_has_enough_addresses" {
   assert {
     condition = (
