@@ -357,11 +357,5 @@ See [AGENTS.md](AGENTS.md) for AI assistant context and [constitution.md](.speci
 ## Known Limitations
 
 - OVH uses public-IP-based operator access even when a private network exists
-- OVH multi-master requires `network.private_cidr`
-- OVH kube-api load balancer creation is controlled by `network.kube_api_lb_enabled`
-- OVH multi-node readiness can still be inconsistent in some scenarios
-- OVH cleanup of gateway or other implicit public IP leftovers outside the captured load-balancer floating IP still depends on OVH/provider behavior
 - OVH custom root disk sizing and extra disks are not supported yet
-- Azure `required_version = "= 1.6.2"` in `providers.tf` needs loosening (Libvirt and OVH are already unconstrained)
-- Ansible integration is wired for OVH; Azure and Libvirt still need the `ansible.tf` pattern ported to them
 - IPv6 support requires additional configuration
