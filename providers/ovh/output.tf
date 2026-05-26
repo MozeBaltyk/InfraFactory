@@ -48,6 +48,18 @@ output "cluster_nodes" {
   depends_on = [ovh_cloud_project_instance.vms]
 }
 
+output "kube_api_load_balancer" {
+  description = "Kubernetes API load balancer details (only when enabled)"
+
+  value = local.lb_enabled ? {
+    floating_ip = local.lb_floating_ip_address
+    flavor      = try(var.network.kube_api.load_balancer.flavor, "s")
+    pool_members = [
+      for m in local.master_details : "${m.name} (${m.private_ip}:6443)"
+    ]
+  } : null
+}
+
 output "kubeconfig_command" {
   value = contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ? (<<-EOT
 kubecm add -cf env/${var.infra_provider}/${terraform.workspace}/kubeconfig --context-name ${var.cluster.cloud_init_selected}-${var.infra_provider}-${terraform.workspace} --create
