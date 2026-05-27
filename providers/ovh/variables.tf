@@ -277,8 +277,8 @@ locals {
   ##   1. Load Balancer floating IP when network.kube_api.endpoint == "lb_ip" and LB exists
   ##   2. Literal value when network.kube_api.endpoint is neither "lb_ip" nor "dns"
   ##   3. DNS name when network.kube_api.endpoint == "dns" and dns.name is set
-  ##   4. First master\'s public IP (fallback)
-  ##   5. First master\'s private IP (last resort)
+  ##   4. First master's public IP (fallback)
+  ##   5. First master's private IP (last resort)
   public_kube_api_endpoint = (
     var.network.kube_api.endpoint == "lb_ip" && local.lb_floating_ip_address != null
   ) ? local.lb_floating_ip_address : (
