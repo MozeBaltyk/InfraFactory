@@ -93,6 +93,69 @@ locals {
       }
     )
   }
+
+  ##
+  ## Private NIC netplan
+  ##
+  ## OVH instances have two NICs: a public one (ens3) and a private one
+  ## (ens4) on the OpenStack subnet. The private subnet has DHCP enabled
+  ## and, once an OVH gateway resource exists on it (created implicitly
+  ## by the load balancer via gateway_create), the DHCP server starts
+  ## advertising a default route on the private NIC. Without override,
+  ## that route competes with the public NIC's default route and breaks
+  ## inbound SSH to the public IP (asymmetric return path).
+  ##
+  ## We tell netplan to keep using DHCP on the private NIC (so it still
+  ## receives the IP reserved by Terraform on the OpenStack port) but to
+  ## ignore the DHCP-supplied default route and DNS.
+  ovh_private_netplan = {
+    for vm in local.all_vms_map :
+    vm.name => templatefile(
+      "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
+      {
+        interface_id         = "privatenic"
+        interface_match_name = "ens4"
+
+        use_dhcp           = true
+        accept_dhcp_routes = false
+        accept_dhcp_dns    = false
+
+        ip_address  = ""
+        cidr_prefix = ""
+
+        network_gateway = null
+        dns_servers     = null
+        domain          = ""
+      }
+    )
+  }
+
+  ##
+  ## Merge the private-NIC netplan into the rendered cloud-init via
+  ## write_files + runcmd. The shared cloud-init already declares
+  ## write_files and runcmd, so we concat instead of overwrite.
+  ##
+  cloudinit_user_data = {
+    for name, body in local.common_cloudinit :
+    name => "#cloud-config\n${yamlencode(merge(
+      yamldecode(body),
+      {
+        write_files = concat(
+          try(yamldecode(body).write_files, []),
+          [{
+            path        = "/etc/netplan/99-infrafactory-private.yaml"
+            permissions = "0600"
+            owner       = "root:root"
+            content     = local.ovh_private_netplan[name]
+          }]
+        )
+        runcmd = concat(
+          [["netplan", "apply"]],
+          try(yamldecode(body).runcmd, [])
+        )
+      }
+    ))}"
+  }
 }
 
 resource "local_file" "ansible_config" {
