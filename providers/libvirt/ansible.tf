@@ -42,7 +42,7 @@ resource "null_resource" "reconcile_tls_san" {
 ANSIBLE_CONFIG=${self.triggers.abs_env_path}/ansible.cfg \
 ansible-playbook \
   ${path.module}/../shared/ansible/reconciliate_tls.yml \
-  --limit controller1 \
+  --limit CONTROLLERS \
   -e cloud_init_selected=${self.triggers.cloud_init_selected} \
   -e kube_api_endpoint=${self.triggers.kube_api_endpoint}
 EOT

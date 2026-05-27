@@ -1,8 +1,14 @@
 ---
-- name: Reconcile TLS SAN on first master
+- name: Reconcile TLS SAN on every controller (rolling)
   hosts: CONTROLLERS
   gather_facts: false
   become: true
+  # Roll through controllers one at a time so HA clusters keep a quorum
+  # while each kube-apiserver is briefly restarted with the new SAN.
+  serial: 1
+  # The play stops one host early via end_play when the endpoint is
+  # already present; that is per-host, not cluster-wide.
+  any_errors_fatal: true
 
   vars:
     endpoint: "{{ kube_api_endpoint | default('') }}"
