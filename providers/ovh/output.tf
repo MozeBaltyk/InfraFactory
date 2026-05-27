@@ -5,21 +5,22 @@ resource "local_file" "ansible_inventory" {
 
   content = templatefile("../shared/inventory/hosts.tpl", {
 
-    controller_ips = compact([
+    controller_ips = [
       for vm in local.master_details :
       local.vm_public_ipv4_addresses[vm.name]
-    ])
+    ]
 
-    worker_ips = compact([
+    worker_ips = [
       for vm in local.worker_details :
       local.vm_public_ipv4_addresses[vm.name]
-    ])
+    ]
   })
 
   filename = "${local.env_path}/hosts.ini"
 
   depends_on = [
-    ovh_cloud_project_instance.vms
+    ovh_cloud_project_instance.vms,
+    terraform_data.validate_public_ips,
   ]
 }
 

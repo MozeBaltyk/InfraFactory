@@ -149,7 +149,7 @@ resource "time_sleep" "wait_instance_networks" {
     ovh_cloud_project_instance.vms
   ]
 
-  create_duration = "15s"
+  create_duration = "30s"
 }
 
 data "ovh_cloud_project_instance" "vms" {
@@ -179,4 +179,37 @@ locals {
     for name, vm in local.all_vms_map :
     name => vm.private_ip
   }
+
+  # Names of VMs whose public IPv4 the OVH API has not (yet) returned.
+  # Used by the precondition below to fail with a clear message instead
+  # of letting compact() silently drop nodes from the Ansible inventory.
+  vms_missing_public_ip = [
+    for name, ip in local.vm_public_ipv4_addresses :
+    name if ip == null
+  ]
+}
+
+# Fail fast if any VM is missing a public IPv4 after the wait_instance_networks
+# delay. Without this, compact() in output.tf would silently exclude the VM
+# from the generated Ansible inventory and apply would "succeed" with a
+# broken hosts.ini.
+resource "terraform_data" "validate_public_ips" {
+  triggers_replace = {
+    public_ips = jsonencode(local.vm_public_ipv4_addresses)
+  }
+
+  lifecycle {
+    precondition {
+      condition     = length(local.vms_missing_public_ip) == 0
+      error_message = format(
+        "OVH did not publish a public IPv4 for the following VMs within %s: [%s]. Re-run apply (the OVH API is sometimes slow) or increase time_sleep.wait_instance_networks.create_duration.",
+        time_sleep.wait_instance_networks.create_duration,
+        join(", ", local.vms_missing_public_ip),
+      )
+    }
+  }
+
+  depends_on = [
+    data.ovh_cloud_project_instance.vms,
+  ]
 }
