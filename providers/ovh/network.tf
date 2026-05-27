@@ -32,6 +32,7 @@ resource "null_resource" "private_network_destroy_grace" {
     network_id              = local.private_network_id
     subnet_id               = local.private_subnet_id
     gateway_name            = local.lb_enabled ? "${var.cluster.id}-gateway" : ""
+    floating_ip_description = local.lb_enabled ? "${var.cluster.id}-kube-api-fip" : ""
     service_name            = var.ovh_project_service_name
     region                  = var.cluster.region
     ovh_endpoint            = var.ovh_endpoint
@@ -44,7 +45,8 @@ resource "null_resource" "private_network_destroy_grace" {
     when    = destroy
     command = <<-EOT
       GATEWAY_NAME="${self.triggers.gateway_name}"
-      if [ -z "$GATEWAY_NAME" ]; then
+      FIP_DESCRIPTION="${self.triggers.floating_ip_description}"
+      if [ -z "$GATEWAY_NAME" ] && [ -z "$FIP_DESCRIPTION" ]; then
         exit 0
       fi
       export OVH_ENDPOINT="${self.triggers.ovh_endpoint}"
@@ -54,6 +56,7 @@ resource "null_resource" "private_network_destroy_grace" {
       export OVH_SERVICE_NAME="${self.triggers.service_name}"
       export OVH_REGION="${self.triggers.region}"
       export OVH_GATEWAY_NAME="$GATEWAY_NAME"
+      export OVH_FLOATING_IP_DESCRIPTION="$FIP_DESCRIPTION"
       if ! command -v python3 >/dev/null 2>&1; then
         echo "ERROR: python3 is required for OVH destroy cleanup but was not found." >&2
         echo "       Install Python 3 (e.g. apt install python3) and retry destroy." >&2
