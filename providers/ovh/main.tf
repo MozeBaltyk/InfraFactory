@@ -41,7 +41,7 @@ locals {
   selected_images = [
     for image in data.ovh_cloud_project_images.all.images :
     image
-    if (
+    if(
       alltrue([
         for pattern in local.os.image.search_patterns :
         strcontains(lower(image.name), lower(pattern))
@@ -67,7 +67,7 @@ locals {
 resource "terraform_data" "validate_image" {
   lifecycle {
     precondition {
-      condition     = local.selected_image != null
+      condition = local.selected_image != null
       error_message = format(
         "No OVH image matching patterns [%s] found in region '%s'.",
         join(", ", local.os.image.search_patterns),
@@ -123,8 +123,8 @@ resource "ovh_cloud_project_instance" "vms" {
       ip = each.value.private_ip
 
       network {
-          id        = local.private_network_id
-          subnet_id = local.private_subnet_id
+        id        = local.private_network_id
+        subnet_id = local.private_subnet_id
       }
     }
   }
@@ -156,8 +156,8 @@ data "ovh_cloud_project_instance" "vms" {
   for_each = ovh_cloud_project_instance.vms
 
   service_name = var.ovh_project_service_name
-  region        = var.cluster.region
-  instance_id   = each.value.id
+  region       = var.cluster.region
+  instance_id  = each.value.id
 
   depends_on = [
     time_sleep.wait_instance_networks
@@ -200,7 +200,7 @@ resource "terraform_data" "validate_public_ips" {
 
   lifecycle {
     precondition {
-      condition     = length(local.vms_missing_public_ip) == 0
+      condition = length(local.vms_missing_public_ip) == 0
       error_message = format(
         "OVH did not publish a public IPv4 for the following VMs within %s: [%s]. Re-run apply (the OVH API is sometimes slow) or increase time_sleep.wait_instance_networks.create_duration.",
         time_sleep.wait_instance_networks.create_duration,

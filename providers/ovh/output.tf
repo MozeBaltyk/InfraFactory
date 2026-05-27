@@ -31,8 +31,8 @@ output "cluster_nodes" {
   description = "Cluster node connection data"
 
   value = {
-    controller_ips = compact([ for vm in local.master_details : local.vm_public_ipv4_addresses[vm.name] ])
-    worker_ips = compact([ for vm in local.worker_details : local.vm_public_ipv4_addresses[vm.name] ])
+    controller_ips = compact([for vm in local.master_details : local.vm_public_ipv4_addresses[vm.name]])
+    worker_ips     = compact([for vm in local.worker_details : local.vm_public_ipv4_addresses[vm.name]])
 
     ssh_first_master = try(
       format(
@@ -45,7 +45,7 @@ output "cluster_nodes" {
       "waiting for IP assignment..."
     )
   }
-  
+
   depends_on = [ovh_cloud_project_instance.vms]
 }
 

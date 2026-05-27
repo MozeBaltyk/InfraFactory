@@ -182,7 +182,7 @@ variable "network" {
   description = "Cluster networking"
 
   type = object({
-    private = object({cidr = string})
+    private = object({ cidr = string })
     kube_api = optional(object({
       endpoint = optional(string, "lb_ip")
 
@@ -210,18 +210,18 @@ locals {
 
   os = var.os_catalog[var.os.selected]
 
-  subdomain            = "${var.cluster.id}.${var.cluster.domain}"
+  subdomain = "${var.cluster.id}.${var.cluster.domain}"
 
   ## Private handling
-  private_cidr        = var.network.private.cidr
-  private_ip_host_offset_base = ( tonumber(split("/", local.private_cidr)[1]) <= 28 ? 10 : 2 )
-  private_network_id = ovh_cloud_project_network_private.cluster.regions_openstack_ids[var.cluster.region]
-  private_subnet_id = ovh_cloud_project_network_private_subnet_v2.cluster.id
+  private_cidr                = var.network.private.cidr
+  private_ip_host_offset_base = (tonumber(split("/", local.private_cidr)[1]) <= 28 ? 10 : 2)
+  private_network_id          = ovh_cloud_project_network_private.cluster.regions_openstack_ids[var.cluster.region]
+  private_subnet_id           = ovh_cloud_project_network_private_subnet_v2.cluster.id
 
   ## Load Balancer
   lb_enabled             = try(var.network.kube_api.load_balancer.enabled, false)
   lb_floating_ip_address = try(ovh_cloud_project_loadbalancer.kube_api[0].floating_ip.ip, null)
-  lb_flavor_id           = local.lb_enabled ? one([
+  lb_flavor_id = local.lb_enabled ? one([
     for f in data.ovh_cloud_project_loadbalancer_flavors.lb[0].flavors :
     f.id if f.name == var.network.kube_api.load_balancer.flavor
   ]) : null
@@ -238,7 +238,7 @@ locals {
       instance_size = var.infra.masters.instance_size
       disk_size     = var.infra.masters.disk_size
       extra_disks   = try(var.infra.masters.extra_disks, [])
-      private_ip = (cidrhost(local.private_cidr, local.private_ip_host_offset_base + i))
+      private_ip    = (cidrhost(local.private_cidr, local.private_ip_host_offset_base + i))
     }
   ]
 
@@ -253,7 +253,7 @@ locals {
       instance_size = var.infra.workers.instance_size
       disk_size     = var.infra.workers.disk_size
       extra_disks   = try(var.infra.workers.extra_disks, [])
-      private_ip = (cidrhost(local.private_cidr, local.private_ip_host_offset_base + i + var.infra.masters.count))
+      private_ip    = (cidrhost(local.private_cidr, local.private_ip_host_offset_base + i + var.infra.masters.count))
     }
   ]
 
@@ -281,9 +281,9 @@ locals {
   ##   5. First master's private IP (last resort)
   public_kube_api_endpoint = (
     var.network.kube_api.endpoint == "lb_ip" && local.lb_floating_ip_address != null
-  ) ? local.lb_floating_ip_address : (
+    ) ? local.lb_floating_ip_address : (
     !contains(["lb_ip", "dns"], var.network.kube_api.endpoint)
-  ) ? var.network.kube_api.endpoint : (
+    ) ? var.network.kube_api.endpoint : (
     var.network.kube_api.endpoint == "dns" && try(var.network.kube_api.dns.name, "") != ""
     ? var.network.kube_api.dns.name
     : try(local.vm_public_ipv4_addresses[local.first_master_name], local.kube_api_bootstrap_endpoint)

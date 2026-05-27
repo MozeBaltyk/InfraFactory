@@ -10,8 +10,10 @@ IP stays allocated on the project (still billable).
 
 This script is called by Terraform's local-exec destroy provisioner on
 `null_resource.private_network_destroy_grace` after the LB has been destroyed
-and before the subnet destroy runs. It deletes by name / description so it
-never touches unrelated resources in the same OVH project.
+and before the subnet destroy runs. It deletes gateway by name (targeted, so
+it never touches unrelated resources) and cleans up all orphan floating IPs
+(status=down, no associated entity) that may have been left behind by the LB
+destroy.
 
 Configuration is passed via environment variables (set by the provisioner):
 
@@ -22,7 +24,6 @@ Configuration is passed via environment variables (set by the provisioner):
   OVH_SERVICE_NAME              OVH Public Cloud project service name
   OVH_REGION                    OVH region (e.g. GRA9)
   OVH_GATEWAY_NAME              Gateway name to delete (skip if empty)
-  OVH_FLOATING_IP_DESCRIPTION   Floating IP description to delete (skip if empty)
 """
 import os
 import sys
@@ -95,40 +96,53 @@ def cleanup_gateway(client, service_name, region, gateway_name):
     )
 
 
-def cleanup_floating_ip(client, service_name, region, description):
-    """Find a floating IP by description and delete it. Returns True if absent or deleted."""
+def cleanup_orphan_floating_ips(client, service_name, region):
+    """
+    Find and delete all orphan floating IPs (status=down, no entity attached).
+
+    The OVH API does not expose the 'description' field on floating IP
+    resources, so we cannot match by the LB's floating_ip_create.description.
+    Instead, we clean all orphaned FIPs, which is safe because they are no
+    longer connected to any gateway or instance.
+    """
     floating_ips = client.get(
         f'/cloud/project/{service_name}/region/{region}/floatingip'
     )
-    matches = [fip for fip in floating_ips if fip.get('description') == description]
-    if not matches:
-        print(f"Floating IP with description '{description}' not found, nothing to clean up.")
+    orphans = [
+        fip for fip in floating_ips
+        if fip.get('associatedEntity') is None and fip.get('status') == 'down'
+    ]
+    if not orphans:
+        print("No orphan floating IPs found, nothing to clean up.")
         return True
-    if len(matches) > 1:
-        print(
-            f"WARNING: multiple floating IPs match description '{description}' "
-            f"({len(matches)} found). Refusing to delete to avoid removing "
-            "unrelated resources. Clean up manually via the OVH console."
-        )
-        return False
 
-    fip = matches[0]
-    fip_id = fip['id']
-    print(f"Found floating IP '{fip.get('ip')}' (ID: {fip_id}, description: {description})")
-    print(f"Deleting floating IP {fip_id}...")
-    operation = client.delete(
-        f'/cloud/project/{service_name}/region/{region}/floatingip/{fip_id}'
-    )
-    return wait_for_operation(
-        client, service_name, operation.get('id'), 'floating IP'
-    )
+    all_ok = True
+    for fip in orphans:
+        fip_id = fip['id']
+        fip_ip = fip.get('ip', 'unknown')
+        print(f"Found orphan floating IP '{fip_ip}' (ID: {fip_id})")
+        print(f"Deleting floating IP {fip_id}...")
+        try:
+            result = client.delete(
+                f'/cloud/project/{service_name}/region/{region}/floatingip/{fip_id}'
+            )
+            if result is None:
+                print(f"Floating IP {fip_ip} deleted (synchronous).")
+            elif not wait_for_operation(
+                client, service_name, result.get('id'), f'floating IP {fip_ip}'
+            ):
+                all_ok = False
+        except Exception as e:
+            print(f"Floating IP {fip_id} deletion failed: {e}")
+            all_ok = False
+
+    return all_ok
 
 
 def main():
     service_name = get_env_or_fail('OVH_SERVICE_NAME', 'Service name')
     region = get_env_or_fail('OVH_REGION', 'Region')
     gateway_name = os.environ.get('OVH_GATEWAY_NAME', '')
-    fip_description = os.environ.get('OVH_FLOATING_IP_DESCRIPTION', '')
 
     client = ovh.Client(
         endpoint=os.environ.get('OVH_ENDPOINT', 'ovh-eu'),
@@ -149,15 +163,12 @@ def main():
     else:
         print("OVH_GATEWAY_NAME empty, skipping gateway cleanup.")
 
-    if fip_description:
-        if not cleanup_floating_ip(client, service_name, region, fip_description):
-            print(
-                "WARNING: floating IP cleanup failed. The floating IP may "
-                "remain allocated (and billable). Check the OVH console."
-            )
-            exit_code = 1
-    else:
-        print("OVH_FLOATING_IP_DESCRIPTION empty, skipping floating IP cleanup.")
+    if not cleanup_orphan_floating_ips(client, service_name, region):
+        print(
+            "WARNING: floating IP cleanup failed. Some floating IPs may "
+            "remain allocated (and billable). Check the OVH console."
+        )
+        exit_code = 1
 
     if exit_code == 0:
         print("OVH destroy-time cleanup completed successfully.")

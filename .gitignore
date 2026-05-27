@@ -10,3 +10,4 @@ ansible.cfg
 kubeconfig
 .token
 .local
+__pycache__/
