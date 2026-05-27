@@ -99,29 +99,21 @@ locals {
   ##
   ## OVH instances have two NICs: a public one (ens3) and a private one
   ## (ens4) on the OpenStack subnet. The private subnet has DHCP enabled
-  ## and, once an OVH gateway resource exists on it (created implicitly
-  ## by the load balancer via gateway_create), the DHCP server starts
-  ## advertising a default route on the private NIC. Without override,
-  ## that route competes with the public NIC's default route and breaks
-  ## inbound SSH to the public IP (asymmetric return path).
+  ## and once a gateway exists on it the DHCP server advertises a default
+  ## route on the private NIC. Without override, that route competes with
+  ## the public NIC's default route and breaks inbound SSH via asymmetric
+  ## routing.
   ##
   ## We write a netplan that keeps DHCP on the private NIC (so it still
   ## receives the IP reserved by Terraform on the OpenStack port) but
-  ## ignores the DHCP-supplied default route and DNS. Rather than
-  ## calling netplan apply (which restarts all networking and kills
-  ## SSH), we use a non-disruptive bootcmd to remove any default route
-  ## that the private NIC's DHCP may have installed — this handles the
-  ## initial route and any future DHCP renewal that adds it back.
-  ##
-  ## The netplan config itself is persisted via write_files so that it
-  ## survives reboot and prevents the route from reappearing after the
-  ## first boot.
-  ##
-  ## Note: during initial VM boot the private subnet gateway does not
-  ## yet exist (the LB creates it asynchronously), so no competing
-  ## route is present. The route appears later when the VM renews its
-  ## DHCP lease after the gateway is online. The bootcmd below handles
-  ## that case without restarting networking.
+  ## ignores the DHCP-supplied default route and DNS. On first boot this
+  ## netplan file is not yet present when the network stage runs, so the
+  ## route briefly appears. A systemd oneshot service (remove-ens4-route)
+  ## runs after network-online.target but before ssh.service, deleting
+  ## the competing route before SSH ever starts — no race, no netplan
+  ## apply, no network restart. On subsequent boots the netplan file
+  ## already exists so the route is never installed and the service is a
+  ## no-op.
   ##
 
   ovh_private_netplan_yaml = templatefile(
@@ -150,19 +142,49 @@ locals {
       {
         write_files = concat(
           try(yamldecode(body).write_files, []),
-          [{
-            path        = "/etc/netplan/99-infrafactory-private.yaml"
-            permissions = "0600"
-            owner       = "root:root"
-            content     = local.ovh_private_netplan_yaml
-          }]
+          [
+            {
+              path        = "/etc/netplan/99-infrafactory-private.yaml"
+              permissions = "0600"
+              owner       = "root:root"
+              content     = local.ovh_private_netplan_yaml
+            },
+            {
+              path        = "/etc/systemd/system/remove-ens4-route.service"
+              permissions = "0644"
+              owner       = "root:root"
+              content     = <<-EOF
+                [Unit]
+                Description=Remove default route on ens4 (private NIC)
+                After=network-online.target
+                Before=ssh.service
+
+                [Service]
+                Type=oneshot
+                ExecStart=/usr/bin/ip route del default dev ens4
+                # Exit code 2 means "no such route" — fine on subsequent
+                # boots where the netplan already prevents the route.
+                SuccessExitStatus=2
+                RemainAfterExit=yes
+
+                [Install]
+                WantedBy=multi-user.target
+                EOF
+            },
+          ]
         )
 
-        ## Non-disruptive: delete any default route on the private NIC
-        ## instead of calling netplan apply (which restarts all networking).
-        bootcmd = concat(
-          [[ "ip", "route", "del", "default", "dev", "ens4" ]],
-          try(yamldecode(body).bootcmd, [])
+        runcmd = concat(
+          # Enable the oneshot service — on first boot it runs before SSH
+          # and deletes any competing default route on the private NIC.
+          # On subsequent boots the netplan is already in place so the
+          # route never appears and this is a no-op.
+          [
+            ["systemctl", "daemon-reload"],
+            ["systemctl", "enable", "remove-ens4-route.service"],
+            ["systemctl", "start", "--no-block", "remove-ens4-route.service"],
+          ],
+          try(yamldecode(body).runcmd, [])
         )
       }
     ))}"
