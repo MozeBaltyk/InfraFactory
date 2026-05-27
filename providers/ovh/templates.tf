@@ -16,6 +16,9 @@ locals {
         timezone      = var.cluster.timezone
         clusterid     = var.cluster.id
 
+        ## Base OS upgrade
+        package_upgrade_enabled = var.cluster.package_upgrade_enabled
+
         ## SSH
         public_key = tls_private_key.global_key.public_key_openssh
 
@@ -50,8 +53,7 @@ locals {
           var.k3s.tls_sans,
           [local.master_details[0].private_ip],
           [local.first_master_fqdn],
-          [for master in local.master_details : "${master.name}.${local.subdomain}"],
-          local.lb_floating_ip_address != null ? [local.lb_floating_ip_address] : []
+          [for master in local.master_details : "${master.name}.${local.subdomain}"]
         )))
 
         k3s_etcd_enabled           = var.k3s.etcd_enabled
@@ -72,8 +74,7 @@ locals {
           var.rke2.tls_sans,
           [local.master_details[0].private_ip],
           [local.first_master_fqdn],
-          [for master in local.master_details : "${master.name}.${local.subdomain}"],
-          local.lb_floating_ip_address != null ? [local.lb_floating_ip_address] : []
+          [for master in local.master_details : "${master.name}.${local.subdomain}"]
         )))
 
         rke2_etcd_enabled           = var.rke2.etcd_enabled

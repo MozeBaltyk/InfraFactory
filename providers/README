@@ -60,15 +60,14 @@ type over the CIDR-based heuristic.
 - Optional private networking for cluster internal traffic via `network.private_cidr`
 - Deterministic private IP assignment from `network.private_cidr`
 - Separate masters and workers, with multi-master supported when `network.private_cidr` is set
-- Dual provider model: `ovh` (API-level resources: SSH keys, instances) + `openstack` (compute instances)
-- Load balancer variable schema defined (`network.kube_api.load_balancer`) but **not yet implemented** in .tf resources
+- Single provider model: `ovh` provider only (all resources including floating IPs and load balancers use native OVH resources)
+- OVH load balancer for Kubernetes API with native floating IP creation via `floating_ip_create`
 - `checks.tf` for post-condition validation (unique to OVH)
 - Current limitations:
     - inventory remains public-IP based even when a private network exists
     - multi-master requires private networking
     - custom root disk sizing not supported yet (forced to 40 GB)
     - extra disks not supported yet (blocked by validation)
-    - OVH load balancer not yet implemented (schema only)
     - some multi-node readiness scenarios can still be inconsistent
 
 

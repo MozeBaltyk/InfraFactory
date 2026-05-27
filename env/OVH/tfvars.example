@@ -4,19 +4,14 @@ ovh_application_secret = "xxxxxxxxxxxxxxxx"
 ovh_consumer_key       = "xxxxxxxxxxxxxxxx"
 ovh_project_service_name = "xxxxxxxxxxxxxxxx"
 
-# OpenStack credentials (for floating IP and gateway resources)
-openstack_user_name     = "xxxxxxxxxxxxxxxx"
-openstack_password      = "xxxxxxxxxxxxxxxx"
-openstack_tenant_name   = "xxxxxxxxxxxxxxxx"  # Same as ovh_project_service_name
-
 cluster = {
-  id                  = "factory"
-  domain              = "lab"
-  timezone            = "Europe/Paris"
-  region              = "GRA9"
-  username            = "localadmin"
-  node_name_format    = "serial" # serial => factory-node01, role => factory-m01/factory-w01
-  cloud_init_selected = "k3s"
+  id                      = "factory"
+  domain                  = "lab"
+  timezone                = "Europe/Paris"
+  region                  = "GRA9"
+  username                = "localadmin"
+  node_name_format        = "serial" # serial => factory-node01, role => factory-m01/factory-w01
+  cloud_init_selected     = "k3s"
 }
 
 infra = {
@@ -63,6 +58,7 @@ os = {
 # }
 
 # With Load Balancer for the Kubernetes API (endpoint = LB floating IP)
+# Flavors: small, medium, large, xl
 # network = {
 #   private = {
 #     cidr = "10.0.0.0/24"
@@ -73,7 +69,7 @@ os = {
 # 
 #     load_balancer = {
 #       enabled = true
-#       flavor  = "s"
+#       flavor  = "small"
 #     }
 #   }
 # }
@@ -93,7 +89,7 @@ os = {
 # 
 #     load_balancer = {
 #       enabled = true
-#       flavor  = "s"
+#       flavor  = "small"
 #     }
 #   }
 # }

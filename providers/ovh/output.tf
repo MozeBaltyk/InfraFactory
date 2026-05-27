@@ -53,7 +53,7 @@ output "kube_api_load_balancer" {
 
   value = local.lb_enabled ? {
     floating_ip = local.lb_floating_ip_address
-    flavor      = try(var.network.kube_api.load_balancer.flavor, "s")
+    flavor      = var.network.kube_api.load_balancer.flavor
     pool_members = [
       for m in local.master_details : "${m.name} (${m.private_ip}:6443)"
     ]

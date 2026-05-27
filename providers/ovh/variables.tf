@@ -34,25 +34,6 @@ variable "ovh_project_service_name" {
   type        = string
 }
 
-##
-## OpenStack credentials (for floating IP and gateway resources)
-##
-variable "openstack_user_name" {
-  description = "OpenStack user name for OVH Public Cloud"
-  type        = string
-}
-
-variable "openstack_password" {
-  description = "OpenStack password for OVH Public Cloud"
-  type        = string
-  sensitive   = true
-}
-
-variable "openstack_tenant_name" {
-  description = "OpenStack tenant name (OVH project ID, same as ovh_project_service_name)"
-  type        = string
-}
-
 # Version Mapping
 variable "os_catalog" {
   description = "OS image catalog"
@@ -115,23 +96,23 @@ variable "cluster" {
   description = "Cluster topology"
 
   type = object({
-    id                  = string
-    domain              = string
-    timezone            = string
-    region              = string
-    username            = string
-    node_name_format    = optional(string, "serial")
-    cloud_init_selected = string
+    id                      = string
+    domain                  = string
+    timezone                = string
+    region                  = string
+    username                = string
+    node_name_format        = optional(string, "serial")
+    cloud_init_selected     = string
   })
 
   default = {
-    id                  = "factory"
-    domain              = "lab"
-    timezone            = "Europe/Paris"
-    region              = "GRA9"
-    username            = "localadmin"
-    node_name_format    = "serial"
-    cloud_init_selected = "k3s"
+    id                      = "factory"
+    domain                  = "lab"
+    timezone                = "Europe/Paris"
+    region                  = "GRA9"
+    username                = "localadmin"
+    node_name_format        = "serial"
+    cloud_init_selected     = "k3s"
   }
 }
 
@@ -209,7 +190,7 @@ variable "network" {
 
       load_balancer = optional(object({
         enabled = optional(bool, false)
-        flavor  = optional(string)
+        flavor  = optional(string, "small")
       }), {})
     }), {})
   })
@@ -237,10 +218,10 @@ locals {
 
   ## Load Balancer
   lb_enabled             = try(var.network.kube_api.load_balancer.enabled, false)
-  lb_floating_ip_address = try(openstack_networking_floatingip_v2.kube_api[0].address, null)
+  lb_floating_ip_address = try(ovh_cloud_project_loadbalancer.kube_api[0].floating_ip.ip, null)
   lb_flavor_id           = local.lb_enabled ? one([
     for f in data.ovh_cloud_project_loadbalancer_flavors.lb[0].flavors :
-    f.id if f.name == try(var.network.kube_api.load_balancer.flavor, "s")
+    f.id if f.name == var.network.kube_api.load_balancer.flavor
   ]) : null
 
   ## VM Topology Static
@@ -294,8 +275,8 @@ locals {
   ##   1. Load Balancer floating IP when network.kube_api.endpoint == "lb_ip" and LB exists
   ##   2. Literal value when network.kube_api.endpoint is neither "lb_ip" nor "dns"
   ##   3. DNS name when network.kube_api.endpoint == "dns" and dns.name is set
-  ##   4. First master's public IP (fallback)
-  ##   5. First master's private IP (last resort)
+  ##   4. First master\'s public IP (fallback)
+  ##   5. First master\'s private IP (last resort)
   public_kube_api_endpoint = (
     var.network.kube_api.endpoint == "lb_ip" && local.lb_floating_ip_address != null
   ) ? local.lb_floating_ip_address : (

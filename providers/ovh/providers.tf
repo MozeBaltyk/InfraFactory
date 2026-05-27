@@ -2,10 +2,6 @@ terraform {
   #required_version = "= 1.6.2"
 
   required_providers {
-    openstack = {
-      source  = "terraform-provider-openstack/openstack"
-      version = "~> 1.53.0"
-    }
     ovh = {
       source = "ovh/ovh"
     }
@@ -23,16 +19,6 @@ terraform {
       source = "hashicorp/tls"
     }
   }
-}
-
-# Configure the OpenStack provider hosted by OVHcloud
-provider "openstack" {
-  auth_url    = "https://auth.cloud.ovh.net/v3/" # Authentication URL
-  domain_name = "default" # Domain name - Always at 'default' for OVHcloud
-  alias       = "ovh" # An alias
-  user_name   = var.openstack_user_name
-  password    = var.openstack_password
-  tenant_name = var.openstack_tenant_name
 }
 
 provider "ovh" {

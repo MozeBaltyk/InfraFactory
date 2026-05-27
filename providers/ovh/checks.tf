@@ -25,7 +25,7 @@ check "ovh_lb_flavor_exists" {
       !local.lb_enabled ||
       local.lb_flavor_id != null
     )
-    error_message = "Load balancer flavor '${try(var.network.kube_api.load_balancer.flavor, "s")}' was not found in region '${var.cluster.region}'."
+    error_message = "Load balancer flavor '${var.network.kube_api.load_balancer.flavor}' was not found in region '${var.cluster.region}'."
   }
 }
 
