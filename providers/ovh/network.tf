@@ -34,6 +34,7 @@ resource "null_resource" "private_network_destroy_grace" {
     gateway_name            = local.lb_enabled ? "${var.cluster.id}-gateway" : ""
     service_name            = var.ovh_project_service_name
     region                  = var.cluster.region
+    ovh_endpoint            = var.ovh_endpoint
     ovh_application_key     = var.ovh_application_key
     ovh_application_secret  = var.ovh_application_secret
     ovh_consumer_key        = var.ovh_consumer_key
@@ -44,6 +45,7 @@ resource "null_resource" "private_network_destroy_grace" {
     command = <<-EOT
       GATEWAY_NAME="${self.triggers.gateway_name}"
       if [ -n "$GATEWAY_NAME" ]; then
+        export OVH_ENDPOINT="${self.triggers.ovh_endpoint}"
         export OVH_APPLICATION_KEY="${self.triggers.ovh_application_key}"
         export OVH_APPLICATION_SECRET="${self.triggers.ovh_application_secret}"
         export OVH_CONSUMER_KEY="${self.triggers.ovh_consumer_key}"

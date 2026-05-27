@@ -79,7 +79,7 @@ def main():
     gateway_name = get_env_or_fail('OVH_GATEWAY_NAME', 'Gateway name')
 
     client = ovh.Client(
-        endpoint='ovh-eu',
+        endpoint=os.environ.get('OVH_ENDPOINT', 'ovh-eu'),
         application_key=get_env_or_fail('OVH_APPLICATION_KEY', 'Application key'),
         application_secret=get_env_or_fail('OVH_APPLICATION_SECRET', 'Application secret'),
         consumer_key=get_env_or_fail('OVH_CONSUMER_KEY', 'Consumer key'),
