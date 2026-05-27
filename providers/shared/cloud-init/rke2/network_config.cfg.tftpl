@@ -1,0 +1,32 @@
+network:
+  version: 2
+  ethernets:
+    ${interface_id}:
+      match:
+        name: "${interface_match_name}"
+%{ if use_dhcp ~}
+      dhcp4: true
+%{ if !accept_dhcp_routes || !accept_dhcp_dns ~}
+      dhcp4-overrides:
+%{ if !accept_dhcp_routes ~}
+        use-routes: false
+%{ endif ~}
+%{ if !accept_dhcp_dns ~}
+        use-dns: false
+%{ endif ~}
+%{ endif ~}
+%{ else ~}
+      dhcp4: false
+      addresses:
+        - ${ip_address}/${cidr_prefix}
+%{ endif ~}
+%{ if network_gateway != null && network_gateway != "" ~}
+      routes:
+        - to: default
+          via: ${network_gateway}
+%{ endif ~}
+%{ if dns_servers != null && dns_servers != "" ~}
+      nameservers:
+        addresses: [${dns_servers}]
+        search: [${domain}]
+%{ endif ~}

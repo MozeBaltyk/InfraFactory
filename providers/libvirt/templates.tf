@@ -60,12 +60,29 @@ resource "libvirt_cloudinit_disk" "commoninit" {
   )
 
   network_config = templatefile(
-    "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/network_config_${var.network.ip_type}.cfg",
+    "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
     {
-      network_gateway = local.network_gateway
-      domain          = local.subdomain
-      dns_servers     = local.dns_servers
-      ip_address      = each.value.ip
+      # Primary NIC on Libvirt cloud images
+      interface_id         = "primary"
+      interface_match_name = "ens3"
+
+      # Libvirt drives DHCP vs static via var.network.ip_type
+      use_dhcp    = var.network.ip_type == "dhcp"
+      ip_address  = each.value.ip
+      cidr_prefix = split("/", var.network.cidr)[1]
+
+      # In DHCP mode the server already supplies routes and DNS;
+      # nameservers are still injected explicitly below for parity with the
+      # previous behavior.
+      accept_dhcp_routes = true
+      accept_dhcp_dns    = true
+
+      # Static-only: explicit default route. Suppressed in DHCP mode so the
+      # rendered netplan matches the previous network_config_dhcp.cfg output.
+      network_gateway = var.network.ip_type == "static" ? local.network_gateway : null
+
+      dns_servers = local.dns_servers
+      domain      = local.subdomain
     }
   )
 
