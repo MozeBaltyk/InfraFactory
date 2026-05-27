@@ -37,36 +37,31 @@ os = {
 }
 
 ###
-### Optional network configuration
-### 
+### Network configuration
+###
+### network.private.cidr is mandatory: every OVH instance is attached to the
+### private subnet, and the cluster join endpoint, kube-api load balancer
+### members, and k3s/rke2 node IPs all use the deterministic private IPs
+### computed from this CIDR.
+###
 
-# Minimal
-# network = {}
-
-# With private network
+# Minimal (private network only, no load balancer; endpoint = first master public IP)
 # network = {
 #   private = {
 #     cidr = "10.0.0.0/24"
 #   }
 # }
 
-# With private network only (default endpoint = first master public IP)
-# network = {
-#   private = {
-#     cidr = "10.0.0.0/24"
-#   }
-# }
-
-# With Load Balancer for the Kubernetes API (endpoint = LB floating IP)
+# With load balancer for the Kubernetes API (endpoint = LB floating IP)
 # Flavors: small, medium, large, xl
 # network = {
 #   private = {
 #     cidr = "10.0.0.0/24"
 #   }
-# 
+#
 #   kube_api = {
 #     endpoint = "lb_ip"
-# 
+#
 #     load_balancer = {
 #       enabled = true
 #       flavor  = "small"
@@ -79,14 +74,14 @@ os = {
 #   private = {
 #     cidr = "10.0.0.0/24"
 #   }
-# 
+#
 #   kube_api = {
 #     endpoint = "dns"
-# 
+#
 #     dns = {
 #       name = "kube.example.com"
 #     }
-# 
+#
 #     load_balancer = {
 #       enabled = true
 #       flavor  = "small"
