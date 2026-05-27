@@ -59,14 +59,22 @@ resource "null_resource" "private_network_destroy_grace" {
       if [ -z "$OVH_GATEWAY_NAME" ] && [ -z "$OVH_FLOATING_IP_DESCRIPTION" ]; then
         exit 0
       fi
+      # Prefer 'uv' when available: it runs the script in an ephemeral,
+      # cached venv with the ovh package, requires no persistent install,
+      # and side-steps PEP 668-protected system Pythons.
+      if command -v uv >/dev/null 2>&1; then
+        exec uv run --no-project --with ovh python3 "${path.module}/cleanup_gateway.py"
+      fi
+      # Fallback: rely on a system python3 that already has the ovh package.
       if ! command -v python3 >/dev/null 2>&1; then
-        echo "ERROR: python3 is required for OVH destroy cleanup but was not found." >&2
-        echo "       Install Python 3 (e.g. apt install python3) and retry destroy." >&2
+        echo "ERROR: neither uv nor python3 is available for OVH destroy cleanup." >&2
+        echo "       Install uv (https://docs.astral.sh/uv/) or Python 3, then retry destroy." >&2
         exit 1
       fi
       if ! python3 -c "import ovh" >/dev/null 2>&1; then
         echo "ERROR: the 'ovh' Python package is required for OVH destroy cleanup." >&2
-        echo "       Install it once with 'pip install --user ovh' and retry destroy." >&2
+        echo "       Either install 'uv' (recommended) or run 'pip install --user ovh'," >&2
+        echo "       then retry destroy." >&2
         exit 1
       fi
       python3 "${path.module}/cleanup_gateway.py"

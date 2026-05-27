@@ -324,13 +324,12 @@ The script is conservative: it matches resources by the names and descriptions T
 
 ### Runtime requirement
 
-The script needs Python 3 and the `ovh` Python package. Install it once with:
+The script needs the `ovh` Python package. Two supported ways to satisfy it:
 
-```sh
-pip install --user ovh
-```
+- **Recommended**: install [`uv`](https://docs.astral.sh/uv/) once. The destroy provisioner will run the script via `uv run --with ovh python3 ...`, which uses an ephemeral, uv-cached venv and requires no further setup.
+- **Fallback**: install Python 3 and run `pip install --user ovh` (or `pip install ovh` inside a venv that the system `python3` resolves to).
 
-If the package is missing, destroy fails with a clear error message.
+If neither is available, destroy fails with a clear error message.
 
 ---
 
