@@ -7,11 +7,11 @@ This document explains the current OVH implementation in this repository, the ar
 This README describes the current behavior implemented in:
 
 - `providers/ovh/main.tf`
+- `providers/ovh/network.tf`
 - `providers/ovh/templates.tf`
 - `providers/ovh/output.tf`
 - `providers/ovh/ansible.tf`
-- `providers/ovh/justfile`
-- `providers/ovh/floating_ip_cleanup.py`
+- `providers/ovh/cleanup_gateway.py`
 
 It is intentionally focused on **how this repository currently works with OVH**, not on all OVH capabilities in general.
 
@@ -27,13 +27,7 @@ The OVH deploy flow does the following:
 2. select or create the OpenTofu workspace matching `ENV`
 3. apply `env/OVH/<ENV>.tfvars`
 
-The OVH provider also exposes extra helper flows:
-
-- `just ovh::capture-floating-ip`
-- `just ovh::cleanup-floating-ip`
-- `just ovh::destroy-with-cleanup`
-
-Those helpers exist because OVH load balancer floating IP cleanup is not always fully handled by destroy alone.
+Destroy uses the standard `just destroy` recipe. A destroy-time provisioner on `null_resource.private_network_destroy_grace` invokes `cleanup_gateway.py` to remove the OVH gateway that the load balancer creates implicitly via `gateway_create` and that the OVH provider does not cascade-delete with the LB. The same script also removes the orphan floating IP allocated via `floating_ip_create`.
 
 ---
 
@@ -51,23 +45,20 @@ Under `env/OVH/<workspace>/`:
 - `ansible.cfg`
 - `hosts.ini`
 - `kubeconfig` for `k3s` or `rke2`
-- optionally `.ovh-floating-ip.json` during destroy/cleanup workflows
 
 ### OVH cloud resources
 
 - one OVH SSH key resource
+- 1 private network
+- 1 private subnet on that private network
 - `N` master instances
 - `N` worker instances
-- optionally one private network
-- optionally one private subnet
-- optionally one gateway
-- optionally one OVH load balancer for the Kubernetes API
-- optionally one floating IP created by the load balancer
+- optionally one OVH load balancer for the Kubernetes API, which implicitly creates one gateway and one floating IP
 
 Important current behavior:
 
-- when `network.private_cidr` is set, the provider creates the private network and subnet
-- when `network.kube_api_lb_enabled` is true, the provider also creates the gateway and kube API load balancer
+- the private network and subnet are always created (the schema requires `network.private.cidr`)
+- when `network.kube_api.load_balancer.enabled` is true, the load balancer is created. It uses OVH's `gateway_create` and `floating_ip_create` to allocate its own gateway and floating IP. Those two resources are owned by the load balancer lifecycle on the OVH side but are not cascade-deleted by the OVH provider, so destroy invokes `cleanup_gateway.py` to remove them.
 
 ### Bootstrap and post-bootstrap actions
 
@@ -101,15 +92,14 @@ In other words, this implementation does **not** currently switch Ansible or SSH
 
 ### Private side
 
-When `network.private_cidr` is set, Terraform also creates:
+When `network.private.cidr` is set, Terraform also creates:
 
 - an OVH private network
 - a subnet on that private network
 
-When `network.kube_api_lb_enabled` is true, Terraform also creates:
+When `network.kube_api.load_balancer.enabled` is true, Terraform also creates:
 
-- a gateway
-- a Kubernetes API load balancer attached to that private network
+- a Kubernetes API load balancer attached to that private network, which transparently allocates a gateway and a floating IP through OVH's `gateway_create` and `floating_ip_create`
 
 That private network is used for:
 
@@ -263,7 +253,7 @@ This is the key reason the private IP mapping must be known in advance.
 
 Important caveat for multi-master:
 
-- the current implementation explicitly requires `network.private_cidr` when `infra.masters.count > 1`
+- the current implementation explicitly requires `network.private.cidr` when `infra.masters.count > 1`
 - secondary masters rely on the private join path
 - a public-IP fallback is implemented for workers, but not as the normal multi-master path
 
@@ -271,18 +261,19 @@ Important caveat for multi-master:
 
 ## Kubernetes API exposure on OVH
 
-When `network.kube_api_lb_enabled` is true, OVH creates a dedicated load balancer for the Kubernetes API.
+When `network.kube_api.load_balancer.enabled` is true, OVH creates a dedicated load balancer for the Kubernetes API.
 
 ### Current behavior
 
 - listener on TCP `6443`
 - backend pool members are the master private IPs
-- a floating IP is created on the load balancer
+- a floating IP is created on the load balancer via `floating_ip_create`
 - the public kube API endpoint resolves from `network.kube_api.endpoint`:
-   1. **literal value** — when `endpoint` is neither `"lb_ip"` nor `"dns"`, use it directly (e.g. a LB floating IP)
-   2. **DNS name** — when `endpoint = "dns"` and `dns.name` is set
-   3. **first master public IP** — fallback
-   4. **first master private IP** — last resort
+   1. **load balancer floating IP** — when `endpoint = "lb_ip"` and the LB has been created
+   2. **literal value** — when `endpoint` is neither `"lb_ip"` nor `"dns"`, use it directly (e.g. an external IP or hostname)
+   3. **DNS name** — when `endpoint = "dns"` and `dns.name` is set
+   4. **first master public IP** — fallback when none of the above applies
+   5. **first master private IP** — last resort if public IPs are not yet available
 
 Important clarification:
 
@@ -305,51 +296,41 @@ This is OVH-specific glue to make the final public API endpoint usable with the 
 
 ---
 
-## Why `floating_ip_cleanup.py` exists
+## Why `cleanup_gateway.py` exists
 
-The script exists because **destroy may leave the OVH load balancer floating IP orphaned**.
+The script exists because **the OVH provider does not cascade-delete two resources that the load balancer creates implicitly**:
+
+- the gateway created by `gateway_create`
+- the floating IP created by `floating_ip_create`
 
 ### Problem being solved
 
-The load balancer requests a floating IP through:
+The load balancer requests both through:
 
+- `gateway_create`
 - `floating_ip_create`
 
-That floating IP is attached to the OVH load balancer lifecycle, but in practice it may survive after `tofu destroy` and remain billable or clutter the project.
+When the load balancer is destroyed, OVH leaves the gateway attached to the subnet (which blocks subnet deletion) and the floating IP remains allocated on the project (which keeps it billable).
 
 ### What the script does
 
-`providers/ovh/floating_ip_cleanup.py` has two commands:
+`providers/ovh/cleanup_gateway.py` is invoked from `null_resource.private_network_destroy_grace` on destroy. It receives credentials, region, project, gateway name, and floating IP description through environment variables and:
 
-#### `capture`
+- looks up the gateway by name and deletes it through the OVH API
+- looks up the floating IP by description and deletes it through the OVH API
+- waits for the OVH operations to reach a terminal state before returning
 
-- read Terraform state
-- locate `ovh_cloud_project_loadbalancer.kube_api`
-- extract the exact floating IP id and address
-- save them to `env/OVH/<workspace>/.ovh-floating-ip.json`
+The script is conservative: it matches resources by the names and descriptions Terraform assigned, so it does not touch unrelated gateways or floating IPs in the same project.
 
-#### `cleanup`
+### Runtime requirement
 
-- read OVH API credentials from the tfvars
-- verify the captured floating IP belongs to the same OVH project
-- call the OVH API directly to delete that exact floating IP
-- optionally try detach first if OVH reports it is still attached
+The script needs Python 3 and the `ovh` Python package. Install it once with:
 
-### Why not just delete "any floating IP"?
+```sh
+pip install --user ovh
+```
 
-The script is intentionally conservative.
-
-It captures the **exact** floating IP created for the Kubernetes API load balancer and cleans up only that one. This reduces the risk of deleting unrelated floating IPs that may exist in the same OVH project.
-
-### How it fits the workflow
-
-Recommended destroy flow when a load balancer floating IP exists:
-
-1. capture the floating IP from state
-2. run destroy
-3. call cleanup against the captured IP
-
-That is exactly what `just ovh::destroy-with-cleanup` automates.
+If the package is missing, destroy fails with a clear error message.
 
 ---
 
@@ -383,11 +364,20 @@ These templates are used for:
 - `k3s` or `rke2` bootstrap/join
 - optional `ansible-pull`
 
-Important OVH detail:
+### Private NIC netplan injection
 
-- OVH does **not** currently use the shared `network_config_*.cfg` templates
+OVH instances always have two NICs: `ens3` (public) and `ens4` (private subnet).
 
-Unlike libvirt, OVH networking is modeled directly in Terraform through instance network attachments and explicit private IP assignment.
+The OVH subnet is created with `dhcp = true` and, once a load balancer exists on it, OVH's DHCP starts advertising the gateway IP as a default route on the private NIC. Without intervention, that route competes with the public NIC's default route and breaks inbound SSH on the public IP (asymmetric return path).
+
+To prevent this, OVH renders the shared `providers/shared/cloud-init/<type>/network_config.cfg.tftpl` with DHCP enabled and `use-routes: false` / `use-dns: false`, then merges the result into the cloud-init `user_data` via:
+
+- a `write_files` entry at `/etc/netplan/99-infrafactory-private.yaml`
+- a `runcmd` entry `[netplan, apply]` that runs first, before any other cloud-init command
+
+The private NIC therefore receives its IP via DHCP from the OpenStack port reservation Terraform set up, but ignores the DHCP-supplied default route and DNS.
+
+The merge is performed in OVH's `templates.tf` using `yamldecode`/`yamlencode` so the shared `cloud_init.cfg.tftpl` itself is not modified and remains identical across providers.
 
 ---
 
@@ -428,11 +418,11 @@ Even when a private network exists, Ansible inventory remains on public IPs.
 
 ### 4. Private networking and the kube-api load balancer are separate
 
-When `network.private_cidr` is set, the current implementation creates the private network and subnet. Set `network.kube_api_lb_enabled` to also create the gateway and kube-api load balancer.
+The schema always requires `network.private.cidr`, so the private network and subnet are always created. Set `network.kube_api.load_balancer.enabled = true` to also create the kube-api load balancer (which transparently allocates a gateway and a floating IP on the OVH side).
 
-### 5. Floating IP cleanup is an explicit lifecycle concern
+### 5. Gateway and floating IP cleanup is an explicit lifecycle concern
 
-The cleanup helper exists because OVH load balancer destroy behavior may leave a floating IP behind.
+The cleanup helper exists because OVH load balancer destroy behavior leaves both a gateway and a floating IP behind. `cleanup_gateway.py` deletes both on every destroy.
 
 ### 6. Example tfvars comments must stay aligned with the implementation
 
