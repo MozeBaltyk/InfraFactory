@@ -95,65 +95,82 @@ locals {
   }
 
   ##
-  ## Private NIC netplan
+  ## Dual-NIC netplan via cloud-init's network config
   ##
-  ## OVH instances have two NICs: a public one (ens3) and a private one
-  ## (ens4) on the OpenStack subnet. The private subnet has DHCP enabled
-  ## and, once an OVH gateway resource exists on it (created implicitly
-  ## by the load balancer via gateway_create), the DHCP server starts
-  ## advertising a default route on the private NIC. Without override,
-  ## that route competes with the public NIC's default route and breaks
-  ## inbound SSH to the public IP (asymmetric return path).
+  ## OVH instances have two NICs: ens3 (public) and ens4 (private, on the
+  ## OpenStack subnet). We render the shared network_config.cfg.tftpl for
+  ## each NIC and merge them into a single `network:` key in the cloud-config
+  ## user_data. Cloud-init applies this during its early network stage,
+  ## before SSH is available — avoiding the race that would occur if the
+  ## private NIC's DHCP-supplied default route were only removed later (e.g.
+  ## via write_files + runcmd).
   ##
-  ## We tell netplan to keep using DHCP on the private NIC (so it still
-  ## receives the IP reserved by Terraform on the OpenStack port) but to
-  ## ignore the DHCP-supplied default route and DNS.
-  ovh_private_netplan = {
-    for vm in local.all_vms_map :
-    vm.name => templatefile(
-      "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
-      {
-        interface_id         = "privatenic"
-        interface_match_name = "ens4"
+  ## Public NIC (ens3): DHCP with routes and DNS — standard internet access.
+  ## Private NIC (ens4): DHCP to receive the IP reserved by Terraform on the
+  ##   OpenStack port, but with dhcp4-overrides to ignore the gateway/DNS that
+  ##   OVH's DHCP server advertises once a gateway resource exists on the
+  ##   subnet. Without this override, the private NIC would install a competing
+  ##   default route that breaks inbound SSH (asymmetric return path).
+  ##
 
-        use_dhcp           = true
-        accept_dhcp_routes = false
-        accept_dhcp_dns    = false
+  ovh_public_netplan_yaml = templatefile(
+    "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
+    {
+      interface_id         = "publicnic"
+      interface_match_name = "ens3"
 
-        ip_address  = ""
-        cidr_prefix = ""
+      use_dhcp           = true
+      accept_dhcp_routes = true
+      accept_dhcp_dns    = true
 
-        network_gateway = null
-        dns_servers     = null
-        domain          = ""
-      }
-    )
-  }
+      ip_address  = ""
+      cidr_prefix = ""
+
+      network_gateway = null
+      dns_servers     = null
+      domain          = ""
+    }
+  )
+
+  ovh_private_netplan_yaml = templatefile(
+    "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
+    {
+      interface_id         = "privatenic"
+      interface_match_name = "ens4"
+
+      use_dhcp           = true
+      accept_dhcp_routes = false
+      accept_dhcp_dns    = false
+
+      ip_address  = ""
+      cidr_prefix = ""
+
+      network_gateway = null
+      dns_servers     = null
+      domain          = ""
+    }
+  )
 
   ##
-  ## Merge the private-NIC netplan into the rendered cloud-init via
-  ## write_files + runcmd. The shared cloud-init already declares
-  ## write_files and runcmd, so we concat instead of overwrite.
+  ## Merge both NIC netplan sections into a single network config
+  ## and inject it as the `network:` key in cloud-config user_data.
   ##
+
+  ovh_combined_network = yamlencode({
+    network = {
+      version = 2
+      ethernets = merge(
+        yamldecode(local.ovh_public_netplan_yaml).network.ethernets,
+        yamldecode(local.ovh_private_netplan_yaml).network.ethernets
+      )
+    }
+  })
+
   cloudinit_user_data = {
     for name, body in local.common_cloudinit :
     name => "#cloud-config\n${yamlencode(merge(
       yamldecode(body),
-      {
-        write_files = concat(
-          try(yamldecode(body).write_files, []),
-          [{
-            path        = "/etc/netplan/99-infrafactory-private.yaml"
-            permissions = "0600"
-            owner       = "root:root"
-            content     = local.ovh_private_netplan[name]
-          }]
-        )
-        runcmd = concat(
-          [["netplan", "apply"]],
-          try(yamldecode(body).runcmd, [])
-        )
-      }
+      yamldecode(local.ovh_combined_network)
     ))}"
   }
 }
