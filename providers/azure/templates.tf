@@ -21,6 +21,8 @@ locals {
         timezone      = var.cluster.timezone
         node_username = var.cluster.username
 
+        package_upgrade_enabled = var.cluster.package_upgrade_enabled
+
         public_key = tls_private_key.global_key.public_key_openssh
 
         is_first_master        = vm.name == local.master_details[0].name

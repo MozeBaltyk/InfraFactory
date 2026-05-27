@@ -82,21 +82,23 @@ variable "cluster" {
   description = "Cluster topology"
 
   type = object({
-    id                  = string
-    domain              = string
-    timezone            = string
-    region              = string
-    username            = string
-    cloud_init_selected = string
+    id                      = string
+    domain                  = string
+    timezone                = string
+    region                  = string
+    username                = string
+    cloud_init_selected     = string
+    package_upgrade_enabled = optional(bool, false)
   })
 
   default = {
-    id                  = "factory"
-    domain              = "lab"
-    timezone            = "Europe/Paris"
-    region              = "westeurope"
-    username            = "localadmin"
-    cloud_init_selected = "k3s"
+    id                      = "factory"
+    domain                  = "lab"
+    timezone                = "Europe/Paris"
+    region                  = "westeurope"
+    username                = "localadmin"
+    cloud_init_selected     = "k3s"
+    package_upgrade_enabled = false
   }
 }
 

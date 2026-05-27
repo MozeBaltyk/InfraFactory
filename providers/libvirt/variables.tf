@@ -40,23 +40,25 @@ variable "cluster" {
   description = "Cluster topology"
 
   type = object({
-    id                  = string
-    domain              = string
-    timezone            = string
-    username            = string
-    node_name_format    = optional(string, "serial")
-    cloud_init_selected = string
-    factory_root_path   = string
+    id                      = string
+    domain                  = string
+    timezone                = string
+    username                = string
+    node_name_format        = optional(string, "serial")
+    cloud_init_selected     = string
+    factory_root_path       = string
+    package_upgrade_enabled = optional(bool, false)
   })
 
   default = {
-    id                  = "factory"
-    domain              = "lab"
-    timezone            = "Europe/Paris"
-    username            = "localadmin"
-    node_name_format    = "serial"
-    cloud_init_selected = "k3s"
-    factory_root_path   = "/srv"
+    id                      = "factory"
+    domain                  = "lab"
+    timezone                = "Europe/Paris"
+    username                = "localadmin"
+    node_name_format        = "serial"
+    cloud_init_selected     = "k3s"
+    factory_root_path       = "/srv"
+    package_upgrade_enabled = false
   }
 
   validation {
