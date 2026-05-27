@@ -42,21 +42,23 @@ resource "null_resource" "private_network_destroy_grace" {
   }
 
   provisioner "local-exec" {
-    when    = destroy
+    when = destroy
+
+    environment = {
+      OVH_ENDPOINT                = self.triggers.ovh_endpoint
+      OVH_APPLICATION_KEY         = self.triggers.ovh_application_key
+      OVH_APPLICATION_SECRET      = self.triggers.ovh_application_secret
+      OVH_CONSUMER_KEY            = self.triggers.ovh_consumer_key
+      OVH_SERVICE_NAME            = self.triggers.service_name
+      OVH_REGION                  = self.triggers.region
+      OVH_GATEWAY_NAME            = self.triggers.gateway_name
+      OVH_FLOATING_IP_DESCRIPTION = self.triggers.floating_ip_description
+    }
+
     command = <<-EOT
-      GATEWAY_NAME="${self.triggers.gateway_name}"
-      FIP_DESCRIPTION="${self.triggers.floating_ip_description}"
-      if [ -z "$GATEWAY_NAME" ] && [ -z "$FIP_DESCRIPTION" ]; then
+      if [ -z "$OVH_GATEWAY_NAME" ] && [ -z "$OVH_FLOATING_IP_DESCRIPTION" ]; then
         exit 0
       fi
-      export OVH_ENDPOINT="${self.triggers.ovh_endpoint}"
-      export OVH_APPLICATION_KEY="${self.triggers.ovh_application_key}"
-      export OVH_APPLICATION_SECRET="${self.triggers.ovh_application_secret}"
-      export OVH_CONSUMER_KEY="${self.triggers.ovh_consumer_key}"
-      export OVH_SERVICE_NAME="${self.triggers.service_name}"
-      export OVH_REGION="${self.triggers.region}"
-      export OVH_GATEWAY_NAME="$GATEWAY_NAME"
-      export OVH_FLOATING_IP_DESCRIPTION="$FIP_DESCRIPTION"
       if ! command -v python3 >/dev/null 2>&1; then
         echo "ERROR: python3 is required for OVH destroy cleanup but was not found." >&2
         echo "       Install Python 3 (e.g. apt install python3) and retry destroy." >&2
