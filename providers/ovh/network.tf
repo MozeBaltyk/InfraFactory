@@ -44,30 +44,27 @@ resource "null_resource" "private_network_destroy_grace" {
     when    = destroy
     command = <<-EOT
       GATEWAY_NAME="${self.triggers.gateway_name}"
-      if [ -n "$GATEWAY_NAME" ]; then
-        export OVH_ENDPOINT="${self.triggers.ovh_endpoint}"
-        export OVH_APPLICATION_KEY="${self.triggers.ovh_application_key}"
-        export OVH_APPLICATION_SECRET="${self.triggers.ovh_application_secret}"
-        export OVH_CONSUMER_KEY="${self.triggers.ovh_consumer_key}"
-        export OVH_SERVICE_NAME="${self.triggers.service_name}"
-        export OVH_REGION="${self.triggers.region}"
-        export OVH_GATEWAY_NAME="$GATEWAY_NAME"
-        PYTHON=""
-        for p in /tmp/ovh_venv/bin/python3 python3 python; do
-          if command -v "$p" >/dev/null 2>&1; then
-            if "$p" -c "import ovh" 2>/dev/null; then
-              PYTHON="$p"
-              break
-            fi
-          fi
-        done
-        if [ -z "$PYTHON" ]; then
-          python3 -m venv /tmp/ovh_venv
-          /tmp/ovh_venv/bin/pip install ovh -q
-          PYTHON=/tmp/ovh_venv/bin/python3
-        fi
-        "$PYTHON" "${path.module}/cleanup_gateway.py"
+      if [ -z "$GATEWAY_NAME" ]; then
+        exit 0
       fi
+      export OVH_ENDPOINT="${self.triggers.ovh_endpoint}"
+      export OVH_APPLICATION_KEY="${self.triggers.ovh_application_key}"
+      export OVH_APPLICATION_SECRET="${self.triggers.ovh_application_secret}"
+      export OVH_CONSUMER_KEY="${self.triggers.ovh_consumer_key}"
+      export OVH_SERVICE_NAME="${self.triggers.service_name}"
+      export OVH_REGION="${self.triggers.region}"
+      export OVH_GATEWAY_NAME="$GATEWAY_NAME"
+      if ! command -v python3 >/dev/null 2>&1; then
+        echo "ERROR: python3 is required for OVH destroy cleanup but was not found." >&2
+        echo "       Install Python 3 (e.g. apt install python3) and retry destroy." >&2
+        exit 1
+      fi
+      if ! python3 -c "import ovh" >/dev/null 2>&1; then
+        echo "ERROR: the 'ovh' Python package is required for OVH destroy cleanup." >&2
+        echo "       Install it once with 'pip install --user ovh' and retry destroy." >&2
+        exit 1
+      fi
+      python3 "${path.module}/cleanup_gateway.py"
     EOT
   }
 
