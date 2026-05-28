@@ -185,6 +185,15 @@ variable "network" {
     error_message = "Bridge mode with static IP requires network.gateway to be set."
   }
 
+  # static IP requires a CIDR (needed for the netplan prefix length)
+  validation {
+    condition = (
+      var.network.ip_type != "static" ||
+      var.network.cidr != null
+    )
+    error_message = "Static IP mode requires network.cidr to be set (needed for the netplan address prefix length, e.g. /24)."
+  }
+
 }
 
 # libvirt connection details

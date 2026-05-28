@@ -69,7 +69,10 @@ resource "libvirt_cloudinit_disk" "commoninit" {
       # Libvirt drives DHCP vs static via var.network.ip_type
       use_dhcp    = var.network.ip_type == "dhcp"
       ip_address  = each.value.ip
-      cidr_prefix = split("/", var.network.cidr)[1]
+      # cidr_prefix is only used by the template when use_dhcp = false (static mode).
+      # In DHCP mode the template skips it, but OpenTofu still evaluates the
+      # expression eagerly. Guard against null cidr (valid for bridge mode).
+      cidr_prefix = var.network.cidr != null ? split("/", var.network.cidr)[1] : null
 
       # In DHCP mode the server already supplies routes and DNS;
       # nameservers are still injected explicitly below for parity with the
