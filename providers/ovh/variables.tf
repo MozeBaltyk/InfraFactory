@@ -182,7 +182,10 @@ variable "network" {
   description = "Cluster networking"
 
   type = object({
-    private = object({ cidr = string })
+    private = object({
+      cidr    = string
+      vlan_id = optional(number, 0)
+    })
     kube_api = optional(object({
       endpoint = optional(string, "lb_ip")
 
@@ -191,8 +194,9 @@ variable "network" {
       }))
 
       load_balancer = optional(object({
-        enabled = optional(bool, false)
-        flavor  = optional(string, "small")
+        enabled       = optional(bool, false)
+        flavor        = optional(string, "small")
+        gateway_model = optional(string, "s")
       }), {})
     }), {})
   })

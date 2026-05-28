@@ -5,6 +5,7 @@
 resource "ovh_cloud_project_network_private" "cluster" {
   service_name = var.ovh_project_service_name
   name         = format("%s-private", var.cluster.id)
+  vlan_id      = var.network.private.vlan_id
   regions      = [var.cluster.region]
 }
 
@@ -14,9 +15,10 @@ resource "ovh_cloud_project_network_private_subnet_v2" "cluster" {
   region                          = var.cluster.region
   name                            = format("%s-subnet", var.cluster.id)
   cidr                            = local.private_cidr
-  dhcp                            = true
-  enable_gateway_ip               = true
-  use_default_public_dns_resolver = true
+  # Gateway is mandatory for lb with public floating IP (but not for private-only network).
+  # dhcp                            = true
+  enable_gateway_ip               = local.lb_enabled
+  # use_default_public_dns_resolver = true
 }
 
 # The OVH provider's LB Delete does NOT cascade delete the gateway created by
@@ -109,7 +111,7 @@ resource "ovh_cloud_project_loadbalancer" "kube_api" {
         subnet_id = local.private_subnet_id
       }
       gateway_create = {
-        model = "s"
+        model = var.network.kube_api.load_balancer.gateway_model
         name  = "${var.cluster.id}-gateway"
       }
       floating_ip_create = {

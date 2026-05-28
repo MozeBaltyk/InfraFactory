@@ -44,27 +44,37 @@ os = {
 ### members, and k3s/rke2 node IPs all use the deterministic private IPs
 ### computed from this CIDR.
 ###
+### network.private.vlan_id is optional (default 0). Use a different VLAN ID
+### per cluster to deploy multiple clusters in the same OVH region.
+### Valid range: 0-4000.
+###
+### Internet → Floating IP → Gateway → LB → masters:6443
+### 
 
 # Minimal (private network only, no load balancer; endpoint = first master public IP)
 # network = {
 #   private = {
-#     cidr = "10.0.0.0/24"
+#     cidr    = "10.0.0.0/24"
 #   }
 # }
 
 # With load balancer for the Kubernetes API (endpoint = LB floating IP)
-# Flavors: small, medium, large, xl
+# LB flavors: small, medium, large, xl
+# Gateway models: s (200 Mbps), m (500 Mbps), l (2 Gbps), xl (4 Gbps), 2xl (8 Gbps)
+#
 # network = {
 #   private = {
-#     cidr = "10.0.0.0/24"
+#     cidr    = "10.0.0.0/24"
+#     vlan_id = 0
 #   }
 #
 #   kube_api = {
 #     endpoint = "lb_ip"
 #
 #     load_balancer = {
-#       enabled = true
-#       flavor  = "small"
+#       enabled       = true
+#       flavor        = "small"
+#       gateway_model = "s"
 #     }
 #   }
 # }
@@ -72,7 +82,8 @@ os = {
 # DNS mode (LB is still created but endpoint is set to an external DNS name)
 # network = {
 #   private = {
-#     cidr = "10.0.0.0/24"
+#     cidr    = "10.0.0.0/24"
+#     vlan_id = 0
 #   }
 #
 #   kube_api = {
@@ -83,8 +94,9 @@ os = {
 #     }
 #
 #     load_balancer = {
-#       enabled = true
-#       flavor  = "small"
+#       enabled       = true
+#       flavor        = "small"
+#       gateway_model = "s"
 #     }
 #   }
 # }
