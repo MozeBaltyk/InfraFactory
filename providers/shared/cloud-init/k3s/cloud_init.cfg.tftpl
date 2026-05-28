@@ -19,7 +19,7 @@ users:
       - ${public_key}
 
 package_update: true
-package_upgrade: true
+package_upgrade: ${package_upgrade_enabled}
 package_reboot_if_required: true
 
 packages:

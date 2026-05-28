@@ -88,7 +88,7 @@ variable "cluster" {
     region                  = string
     username                = string
     cloud_init_selected     = string
-    package_upgrade_enabled = optional(bool, false)
+    package_upgrade_enabled = optional(bool, true)
   })
 
   default = {
@@ -98,7 +98,7 @@ variable "cluster" {
     region                  = "westeurope"
     username                = "localadmin"
     cloud_init_selected     = "k3s"
-    package_upgrade_enabled = false
+    package_upgrade_enabled = true
   }
 }
 

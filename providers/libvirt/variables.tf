@@ -47,7 +47,7 @@ variable "cluster" {
     node_name_format        = optional(string, "serial")
     cloud_init_selected     = string
     factory_root_path       = string
-    package_upgrade_enabled = optional(bool, false)
+    package_upgrade_enabled = optional(bool, true)
   })
 
   default = {
@@ -58,7 +58,7 @@ variable "cluster" {
     node_name_format        = "serial"
     cloud_init_selected     = "k3s"
     factory_root_path       = "/srv"
-    package_upgrade_enabled = false
+    package_upgrade_enabled = true
   }
 
   validation {

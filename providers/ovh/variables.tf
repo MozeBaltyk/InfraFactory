@@ -103,7 +103,7 @@ variable "cluster" {
     username                = string
     node_name_format        = optional(string, "serial")
     cloud_init_selected     = string
-    package_upgrade_enabled = optional(bool, false)
+    package_upgrade_enabled = optional(bool, true)
   })
 
   default = {
@@ -114,7 +114,7 @@ variable "cluster" {
     username                = "localadmin"
     node_name_format        = "serial"
     cloud_init_selected     = "k3s"
-    package_upgrade_enabled = false
+    package_upgrade_enabled = true
   }
 }
 
