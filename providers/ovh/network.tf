@@ -34,6 +34,8 @@ resource "null_resource" "private_network_destroy_grace" {
     network_id      = local.private_network_id
     subnet_id       = local.private_subnet_id
     gateway_name    = local.lb_enabled ? "${var.cluster.id}-gateway" : ""
+    cluster_id      = var.cluster.id
+    fip_file        = "${abspath(path.module)}/.fip_${var.cluster.id}"
     service_name    = var.ovh_project_service_name
     region          = var.cluster.region
     ovh_endpoint    = var.ovh_endpoint
@@ -48,6 +50,7 @@ resource "null_resource" "private_network_destroy_grace" {
       OVH_SERVICE_NAME = self.triggers.service_name
       OVH_REGION       = self.triggers.region
       OVH_GATEWAY_NAME = self.triggers.gateway_name
+      OVH_CLUSTER_ID   = self.triggers.cluster_id
       OVH_SUBNET_ID    = self.triggers.subnet_id
     }
 
@@ -56,6 +59,15 @@ resource "null_resource" "private_network_destroy_grace" {
         echo "ERROR: OVH destroy cleanup needs OVH_APPLICATION_KEY, OVH_APPLICATION_SECRET, and OVH_CONSUMER_KEY in the environment." >&2
         echo "       ${self.triggers.credential_hint}" >&2
         exit 1
+      fi
+      # Read floating IP from the file written at apply time by
+      # terraform_data.capture_lb_floating_ip.
+      FIP_FILE="${self.triggers.fip_file}"
+      if [ -f "$FIP_FILE" ]; then
+        export OVH_FLOATING_IP="$(cat "$FIP_FILE")"
+        echo "Read floating IP from $FIP_FILE: $OVH_FLOATING_IP"
+      else
+        echo "Floating IP file $FIP_FILE not found — floating IP cleanup will be skipped."
       fi
       # Prefer 'uv' when available: it runs the script in an ephemeral,
       # cached venv with the ovh package, requires no persistent install,
@@ -81,6 +93,39 @@ resource "null_resource" "private_network_destroy_grace" {
 
   depends_on = [
     ovh_cloud_project_network_private_subnet_v2.cluster,
+  ]
+}
+
+###
+### Capture LB floating IP for destroy-time cleanup
+###
+# The OVH LB resource does NOT cascade-delete the floating IP when the LB is
+# destroyed. This terraform_data is outside the destroy-ordering chain (no
+# resource depends on it), avoiding a cycle:
+#   null_resource → LB (explicit depends_on) → VMs → null_resource
+# Instead, during create it writes the floating IP to a file; at destroy time
+# the cleanup script reads that file.
+resource "terraform_data" "capture_lb_floating_ip" {
+  count = local.lb_enabled ? 1 : 0
+
+  input = {
+    ip          = local.lb_floating_ip_address
+    cluster_id  = var.cluster.id
+    module_path = abspath(path.module)
+  }
+
+  provisioner "local-exec" {
+    when    = create
+    command = "echo '${self.input.ip}' > '${self.input.module_path}/.fip_${self.input.cluster_id}'"
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "rm -f '${self.input.module_path}/.fip_${self.input.cluster_id}'"
+  }
+
+  depends_on = [
+    ovh_cloud_project_loadbalancer.kube_api,
   ]
 }
 
