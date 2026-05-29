@@ -35,7 +35,6 @@ resource "null_resource" "private_network_destroy_grace" {
     subnet_id       = local.private_subnet_id
     gateway_name    = local.lb_enabled ? "${var.cluster.id}-gateway" : ""
     cluster_id      = var.cluster.id
-    fip_file        = "${abspath(path.module)}/.fip_${var.cluster.id}"
     service_name    = var.ovh_project_service_name
     region          = var.cluster.region
     ovh_endpoint    = var.ovh_endpoint
@@ -59,15 +58,6 @@ resource "null_resource" "private_network_destroy_grace" {
         echo "ERROR: OVH destroy cleanup needs OVH_APPLICATION_KEY, OVH_APPLICATION_SECRET, and OVH_CONSUMER_KEY in the environment." >&2
         echo "       ${self.triggers.credential_hint}" >&2
         exit 1
-      fi
-      # Read floating IP from the file written at apply time by
-      # terraform_data.capture_lb_floating_ip.
-      FIP_FILE="${self.triggers.fip_file}"
-      if [ -f "$FIP_FILE" ]; then
-        export OVH_FLOATING_IP="$(cat "$FIP_FILE")"
-        echo "Read floating IP from $FIP_FILE: $OVH_FLOATING_IP"
-      else
-        echo "Floating IP file $FIP_FILE not found — floating IP cleanup will be skipped."
       fi
       # Prefer 'uv' when available: it runs the script in an ephemeral,
       # cached venv with the ovh package, requires no persistent install,
@@ -97,34 +87,65 @@ resource "null_resource" "private_network_destroy_grace" {
 }
 
 ###
-### Capture LB floating IP for destroy-time cleanup
+### Capture and clean up LB floating IP at destroy time
 ###
 # The OVH LB resource does NOT cascade-delete the floating IP when the LB is
-# destroyed. This terraform_data is outside the destroy-ordering chain (no
-# resource depends on it), avoiding a cycle:
-#   null_resource → LB (explicit depends_on) → VMs → null_resource
-# Instead, during create it writes the floating IP to a file; at destroy time
-# the cleanup script reads that file.
+# destroyed. This terraform_data holds the IP in self.input and runs a destroy
+# provisioner BEFORE the LB is destroyed (because this resource depends on the
+# LB, the destroy order is: capture → LB → ...). At that point self.input is
+# still live, so no file handoff is needed. The destroy provisioner calls the
+# cleanup script with OVH_FLOATING_IP set; OVH_GATEWAY_NAME and OVH_SUBNET_ID
+# are absent, so the script skips gateway and subnet operations — those are
+# handled by null_resource.private_network_destroy_grace later in the chain.
 resource "terraform_data" "capture_lb_floating_ip" {
   count = local.lb_enabled ? 1 : 0
 
   input = {
-    ip          = local.lb_floating_ip_address
-    cluster_id  = var.cluster.id
-    module_path = abspath(path.module)
+    ip            = local.lb_floating_ip_address
+    cluster_id    = var.cluster.id
+    module_path   = abspath(path.module)
+    ovh_endpoint  = var.ovh_endpoint
+    service_name  = var.ovh_project_service_name
+    region        = var.cluster.region
   }
 
   provisioner "local-exec" {
     when    = create
-    command = "echo '${self.input.ip}' > '${self.input.module_path}/.fip_${self.input.cluster_id}'"
+    command = "echo 'Floating IP ${self.input.ip} captured for cluster ${self.input.cluster_id}'"
   }
 
-  # Intentionally NO destroy provisioner — the file must persist on disk until
-  # null_resource.private_network_destroy_grace finishes reading it. That
-  # resource runs later in the destroy-ordering chain (after VMs, gateway, and
-  # LB are gone). Only remove the file once destroy cleanup is complete.
-  # The file is a small marker in the provider directory and is safely
-  # overwritten on the next apply for the same cluster ID.
+  provisioner "local-exec" {
+    when = destroy
+
+    environment = {
+      OVH_ENDPOINT     = self.input.ovh_endpoint
+      OVH_SERVICE_NAME = self.input.service_name
+      OVH_REGION       = self.input.region
+      OVH_FLOATING_IP  = self.input.ip
+    }
+
+    command = <<-EOT
+      if [ -z "$OVH_APPLICATION_KEY" ] || [ -z "$OVH_APPLICATION_SECRET" ] || [ -z "$OVH_CONSUMER_KEY" ]; then
+        echo "ERROR: OVH destroy floating-IP cleanup needs OVH_APPLICATION_KEY, OVH_APPLICATION_SECRET, and OVH_CONSUMER_KEY in the environment." >&2
+        exit 1
+      fi
+      if command -v uv >/dev/null 2>&1; then
+        exec uv run --no-project --with ovh python3 "${path.module}/cleanup_gateway.py"
+      fi
+      if ! command -v python3 >/dev/null 2>&1; then
+        echo "ERROR: neither uv nor python3 is available for OVH destroy cleanup." >&2
+        echo "       Install uv (https://docs.astral.sh/uv/) or Python 3, then retry destroy." >&2
+        exit 1
+      fi
+      if ! python3 -c "import ovh" >/dev/null 2>&1; then
+        echo "ERROR: the 'ovh' Python package is required for OVH destroy cleanup." >&2
+        echo "       Either install 'uv' (recommended) or run 'pip install --user ovh'," >&2
+        echo "       then retry destroy." >&2
+        exit 1
+      fi
+      python3 "${path.module}/cleanup_gateway.py"
+    EOT
+  }
 
   depends_on = [
     ovh_cloud_project_loadbalancer.kube_api,
