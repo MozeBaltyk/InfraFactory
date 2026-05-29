@@ -10,15 +10,15 @@ resource "ovh_cloud_project_network_private" "cluster" {
 }
 
 resource "ovh_cloud_project_network_private_subnet_v2" "cluster" {
-  service_name                    = var.ovh_project_service_name
-  network_id                      = ovh_cloud_project_network_private.cluster.regions_openstack_ids[var.cluster.region]
-  region                          = var.cluster.region
-  name                            = format("%s-subnet", var.cluster.id)
-  cidr                            = local.private_cidr
+  service_name = var.ovh_project_service_name
+  network_id   = ovh_cloud_project_network_private.cluster.regions_openstack_ids[var.cluster.region]
+  region       = var.cluster.region
+  name         = format("%s-subnet", var.cluster.id)
+  cidr         = local.private_cidr
   # Gateway is mandatory for lb with public floating IP (but not for private-only network).
-  # dhcp                            = true
-  enable_gateway_ip               = local.lb_enabled
+  enable_gateway_ip = local.lb_enabled
   # use_default_public_dns_resolver = true
+  # dhcp                            = true
 }
 
 # The OVH provider's LB Delete does NOT cascade delete the gateway created by
@@ -31,33 +31,31 @@ resource "ovh_cloud_project_network_private_subnet_v2" "cluster" {
 # VMs depend on this resource so OpenTofu destroys them BEFORE this one.
 resource "null_resource" "private_network_destroy_grace" {
   triggers = {
-    network_id             = local.private_network_id
-    subnet_id              = local.private_subnet_id
-    gateway_name           = local.lb_enabled ? "${var.cluster.id}-gateway" : ""
-    service_name            = var.ovh_project_service_name
-    region                 = var.cluster.region
-    ovh_endpoint           = var.ovh_endpoint
-    ovh_application_key    = var.ovh_application_key
-    ovh_application_secret = var.ovh_application_secret
-    ovh_consumer_key       = var.ovh_consumer_key
+    network_id      = local.private_network_id
+    subnet_id       = local.private_subnet_id
+    gateway_name    = local.lb_enabled ? "${var.cluster.id}-gateway" : ""
+    service_name    = var.ovh_project_service_name
+    region          = var.cluster.region
+    ovh_endpoint    = var.ovh_endpoint
+    credential_hint = "Set OVH_APPLICATION_KEY, OVH_APPLICATION_SECRET, and OVH_CONSUMER_KEY in the environment before destroy."
   }
 
   provisioner "local-exec" {
     when = destroy
 
     environment = {
-      OVH_ENDPOINT            = self.triggers.ovh_endpoint
-      OVH_APPLICATION_KEY     = self.triggers.ovh_application_key
-      OVH_APPLICATION_SECRET  = self.triggers.ovh_application_secret
-      OVH_CONSUMER_KEY        = self.triggers.ovh_consumer_key
-      OVH_SERVICE_NAME        = self.triggers.service_name
-      OVH_REGION              = self.triggers.region
-      OVH_GATEWAY_NAME            = self.triggers.gateway_name
+      OVH_ENDPOINT     = self.triggers.ovh_endpoint
+      OVH_SERVICE_NAME = self.triggers.service_name
+      OVH_REGION       = self.triggers.region
+      OVH_GATEWAY_NAME = self.triggers.gateway_name
+      OVH_SUBNET_ID    = self.triggers.subnet_id
     }
 
     command = <<-EOT
-      if [ -z "$OVH_GATEWAY_NAME" ]; then
-        exit 0
+      if [ -z "$OVH_APPLICATION_KEY" ] || [ -z "$OVH_APPLICATION_SECRET" ] || [ -z "$OVH_CONSUMER_KEY" ]; then
+        echo "ERROR: OVH destroy cleanup needs OVH_APPLICATION_KEY, OVH_APPLICATION_SECRET, and OVH_CONSUMER_KEY in the environment." >&2
+        echo "       ${self.triggers.credential_hint}" >&2
+        exit 1
       fi
       # Prefer 'uv' when available: it runs the script in an ephemeral,
       # cached venv with the ovh package, requires no persistent install,

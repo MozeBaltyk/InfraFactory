@@ -95,73 +95,111 @@ locals {
   }
 
   ##
-  ## Private NIC netplan
+  ## Private NIC route cleanup — no competing default route
   ##
-  ## OVH instances have two NICs: a public one (ens3) and a private one
-  ## (ens4) on the OpenStack subnet. The private subnet has DHCP with
-  ## enable_gateway_ip = true, so the DHCP server advertises a default
-  ## route on the private NIC. Without override, that route competes with
-  ## the public NIC's default route and breaks inbound SSH via asymmetric
+  ## OVH instances have two NICs: public and private. The private NIC gets
+  ## its reserved IP from DHCP (the OpenStack port already pins
+  ## ip = each.value.private_ip). However the subnet's DHCP server can also
+  ## advertise a default route when a subnet gateway exists, which competes
+  ## with the public NIC's default route and breaks inbound SSH via asymmetric
   ## routing.
   ##
-  ## We write a netplan that keeps DHCP on the private NIC (so it still
-  ## receives the IP reserved by Terraform on the OpenStack port) but
-  ## ignores the DHCP-supplied default route.
-  ##
-  ## On first boot the netplan is written and generated via bootcmd (runs
-  ## in cloud-init-local.service, before systemd-networkd starts).
-  ## netplan generate writes the systemd-networkd .network files to
-  ## /run/systemd/network/ without restarting networking (which would
-  ## fail anyway since systemd-networkd is not yet running). When
-  ## systemd-networkd starts after network-pre.target it reads these
-  ## configs and applies use-routes: false on ens4, preventing the
-  ## competing default route from ever being installed.
-  ## write_files persists the same file for subsequent boots.
-  ##
-
-  ovh_private_netplan_yaml = templatefile(
-    "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
-    {
-      interface_id         = "privatenic"
-      interface_match_name = "ens4"
-
-      use_dhcp           = true
-      accept_dhcp_routes = false
-      accept_dhcp_dns    = true
-
-      ip_address  = ""
-      cidr_prefix = ""
-
-      network_gateway = null
-      dns_servers     = null
-      domain          = ""
-    }
-  )
+  ## Let OpenStack metadata/cloud-init own NIC configuration. We only remove
+  ## the default route from the NIC that received the deterministic private IP,
+  ## and install a small timer so DHCP renewals or reboots cannot keep the
+  ## private default route around.
 
   cloudinit_user_data = {
     for name, body in local.common_cloudinit :
     name => "#cloud-config\n${yamlencode(merge(
       yamldecode(body),
       {
-        bootcmd = [
-          "cat > /etc/netplan/99-infrafactory-private.yaml << 'NETPLANEOF'\n${chomp(local.ovh_private_netplan_yaml)}\nNETPLANEOF\nnetplan generate",
-        ]
-
-        runcmd = concat(
-          try(yamldecode(body).runcmd, []),
-          [["ip", "route", "del", "default", "dev", "ens4"]]
-        )
-
         write_files = concat(
           try(yamldecode(body).write_files, []),
           [
             {
-              path        = "/etc/netplan/99-infrafactory-private.yaml"
-              permissions = "0600"
+              path        = "/usr/local/sbin/infrafactory-ovh-private-route-cleanup"
+              permissions = "0755"
               owner       = "root:root"
-              content     = local.ovh_private_netplan_yaml
+              content     = <<-SCRIPT
+                #!/bin/sh
+                set -eu
+
+                PRIVATE_IP="${local.all_vms_map[name].private_ip}"
+
+                i=0
+                PRIVATE_IF=""
+                while [ "$i" -lt 60 ]; do
+                  PRIVATE_IF="$(ip -o -4 addr show | awk -v ip="$PRIVATE_IP" '$4 ~ "^" ip "/" {print $2; exit}')"
+                  [ -n "$PRIVATE_IF" ] && break
+                  i=$((i + 1))
+                  sleep 1
+                done
+
+                if [ -z "$PRIVATE_IF" ]; then
+                  echo "Unable to find OVH private interface for $PRIVATE_IP" >&2
+                  exit 0
+                fi
+
+                while ip route show default dev "$PRIVATE_IF" | grep -q '^default '; do
+                  ip route del default dev "$PRIVATE_IF" 2>/dev/null || break
+                done
+                SCRIPT
+            },
+            {
+              path        = "/etc/systemd/system/infrafactory-ovh-private-route-cleanup.service"
+              permissions = "0644"
+              owner       = "root:root"
+              content     = <<-UNIT
+                [Unit]
+                Description=Remove OVH private NIC default route
+                After=network-online.target
+                Wants=network-online.target
+
+                [Service]
+                Type=oneshot
+                ExecStart=/usr/local/sbin/infrafactory-ovh-private-route-cleanup
+                UNIT
+            },
+            {
+              path        = "/etc/systemd/system/infrafactory-ovh-private-route-cleanup.timer"
+              permissions = "0644"
+              owner       = "root:root"
+              content     = <<-UNIT
+                [Unit]
+                Description=Periodically remove OVH private NIC default route
+
+                [Timer]
+                OnBootSec=30s
+                OnUnitActiveSec=1min
+                AccuracySec=10s
+
+                [Install]
+                WantedBy=timers.target
+                UNIT
             },
           ]
+        )
+
+        bootcmd = [
+          <<-EOT
+            PRIVATE_IP="${local.all_vms_map[name].private_ip}"
+            PRIVATE_IF="$(ip -o -4 addr show | awk -v ip="$PRIVATE_IP" '$4 ~ "^" ip "/" {print $2; exit}')"
+            if [ -n "$PRIVATE_IF" ]; then
+              while ip route show default dev "$PRIVATE_IF" | grep -q '^default '; do
+                ip route del default dev "$PRIVATE_IF" 2>/dev/null || break
+              done
+            fi
+          EOT
+        ]
+
+        runcmd = concat(
+          [
+            ["/usr/local/sbin/infrafactory-ovh-private-route-cleanup"],
+            ["systemctl", "daemon-reload"],
+            ["systemctl", "enable", "--now", "infrafactory-ovh-private-route-cleanup.timer"],
+          ],
+          try(yamldecode(body).runcmd, [])
         )
       }
     ))}"

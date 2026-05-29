@@ -23,4 +23,7 @@ deploy:
 destroy:
     @tofu init
     @just _workspace
-    @tofu destroy -auto-approve -var-file={{ ENV_TFVARS_PATH }}; 
+    @OVH_APPLICATION_KEY="$(sed -n 's/^[[:space:]]*ovh_application_key[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' {{ ENV_TFVARS_PATH }})" \
+      OVH_APPLICATION_SECRET="$(sed -n 's/^[[:space:]]*ovh_application_secret[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' {{ ENV_TFVARS_PATH }})" \
+      OVH_CONSUMER_KEY="$(sed -n 's/^[[:space:]]*ovh_consumer_key[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' {{ ENV_TFVARS_PATH }})" \
+      tofu destroy -auto-approve -var-file={{ ENV_TFVARS_PATH }}

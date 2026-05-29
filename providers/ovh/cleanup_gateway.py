@@ -6,14 +6,13 @@ The OVH provider's load balancer resource uses `gateway_create` and
 `floating_ip_create` to allocate a gateway and a floating IP, but it does NOT
 cascade-delete either of them when the load balancer is destroyed. The
 gateway's port keeps the subnet busy (blocking subnet delete) and the floating
-IP stays allocated on the project (still billable).
+IP may stay allocated on the project (still billable).
 
 This script is called by Terraform's local-exec destroy provisioner on
 `null_resource.private_network_destroy_grace` after the LB has been destroyed
-and before the subnet destroy runs. It deletes gateway by name (targeted, so
-it never touches unrelated resources) and cleans up all orphan floating IPs
-(status=down, no associated entity) that may have been left behind by the LB
-destroy.
+and before the subnet destroy runs. It deletes gateway by name, deletes an
+exact load-balancer floating IP when OVH_FLOATING_IP is provided, and waits
+for subnet ports to drain before subnet deletion proceeds.
 
 Configuration is passed via environment variables (set by the provisioner):
 
@@ -24,6 +23,7 @@ Configuration is passed via environment variables (set by the provisioner):
   OVH_SERVICE_NAME              OVH Public Cloud project service name
   OVH_REGION                    OVH region (e.g. GRA9)
   OVH_GATEWAY_NAME              Gateway name to delete (skip if empty)
+  OVH_FLOATING_IP               Exact floating IP to delete (skip if empty)
 """
 import os
 import sys
@@ -96,53 +96,106 @@ def cleanup_gateway(client, service_name, region, gateway_name):
     )
 
 
-def cleanup_orphan_floating_ips(client, service_name, region):
+def cleanup_floating_ip(client, service_name, region, target_ip):
     """
-    Find and delete all orphan floating IPs (status=down, no entity attached).
+    Delete the exact floating IP created for this cluster's load balancer.
 
-    The OVH API does not expose the 'description' field on floating IP
-    resources, so we cannot match by the LB's floating_ip_create.description.
-    Instead, we clean all orphaned FIPs, which is safe because they are no
-    longer connected to any gateway or instance.
+    The caller can pass the known load-balancer address before destroy. This
+    keeps cleanup scoped to the current cluster and avoids deleting other
+    intentionally detached floating IPs in the same OVH region.
     """
+    if not target_ip:
+        print("OVH_FLOATING_IP empty, skipping floating IP cleanup.")
+        return True
+
     floating_ips = client.get(
         f'/cloud/project/{service_name}/region/{region}/floatingip'
     )
-    orphans = [
-        fip for fip in floating_ips
-        if fip.get('associatedEntity') is None and fip.get('status') == 'down'
-    ]
-    if not orphans:
-        print("No orphan floating IPs found, nothing to clean up.")
+    floating_ip = next(
+        (fip for fip in floating_ips if fip.get('ip') == target_ip),
+        None,
+    )
+    if floating_ip is None:
+        print(f"Floating IP '{target_ip}' not found, nothing to clean up.")
         return True
 
-    all_ok = True
-    for fip in orphans:
-        fip_id = fip['id']
-        fip_ip = fip.get('ip', 'unknown')
-        print(f"Found orphan floating IP '{fip_ip}' (ID: {fip_id})")
-        print(f"Deleting floating IP {fip_id}...")
-        try:
-            result = client.delete(
-                f'/cloud/project/{service_name}/region/{region}/floatingip/{fip_id}'
-            )
-            if result is None:
-                print(f"Floating IP {fip_ip} deleted (synchronous).")
-            elif not wait_for_operation(
-                client, service_name, result.get('id'), f'floating IP {fip_ip}'
-            ):
-                all_ok = False
-        except Exception as e:
-            print(f"Floating IP {fip_id} deletion failed: {e}")
-            all_ok = False
+    fip_id = floating_ip['id']
+    print(f"Found floating IP '{target_ip}' (ID: {fip_id})")
+    print(f"Deleting floating IP {fip_id}...")
+    try:
+        result = client.delete(
+            f'/cloud/project/{service_name}/region/{region}/floatingip/{fip_id}'
+        )
+    except Exception as e:
+        print(f"Floating IP {fip_id} deletion failed: {e}")
+        return False
 
-    return all_ok
+    if result is None:
+        print(f"Floating IP {target_ip} deleted (synchronous).")
+        return True
+
+    return wait_for_operation(
+        client, service_name, result.get('id'), f'floating IP {target_ip}'
+    )
+
+
+def drain_subnet_ports(client, service_name):
+    """
+    Poll the subnet until no IPs are allocated (after VMs + gateway are gone).
+
+    OVH VM deletion is async — the API returns immediately but the nova port
+    can take seconds to clean up.  If OpenTofu tries to delete the subnet
+    before ports are gone, it gets HTTP 409 ("One or more ports have an IP
+    allocation from this subnet").
+
+    This function polls the subnet's ipPools[0].allocated count and returns
+    only when it reaches 0 (or the gateway IP remains, which should be just
+    1 allocated IP that resolves within a few seconds).
+    """
+    subnet_id = os.environ.get('OVH_SUBNET_ID', '')
+    if not subnet_id:
+        print("OVH_SUBNET_ID not set, skipping subnet port drain.")
+        return True
+
+    print(f"Waiting for subnet {subnet_id} ports to drain...", flush=True)
+    for attempt in range(60):  # 60 * 10s = 10 minutes max
+        time.sleep(10)
+        try:
+            subnet = client.get(
+                f'/cloud/project/{service_name}/region/{os.environ["OVH_REGION"]}'
+                f'/network/subnet/{subnet_id}'
+            )
+        except Exception:
+            # Subnet already gone — nothing to drain.
+            print("  Subnet no longer reachable (already deleted).")
+            return True
+
+        ip_pools = subnet.get('ipPools', [])
+        if not ip_pools:
+            print("  No ipPools — subnet is empty.")
+            return True
+
+        allocated = ip_pools[0].get('allocated', 999)
+        used = ip_pools[0].get('used', 999)
+        print(f"  attempt {attempt + 1}: allocated={allocated}, used={used}", flush=True)
+
+        if allocated == 0 and used == 0:
+            print("  Subnet ports fully drained.")
+            return True
+
+        # If only 1 IP remains allocated it is probably the gateway being
+        # cleaned up asynchronously — keep waiting.
+        print("  Still waiting for port cleanup...", flush=True)
+
+    print("WARNING: subnet ports did not drain within 10 minutes.")
+    return False
 
 
 def main():
     service_name = get_env_or_fail('OVH_SERVICE_NAME', 'Service name')
     region = get_env_or_fail('OVH_REGION', 'Region')
     gateway_name = os.environ.get('OVH_GATEWAY_NAME', '')
+    floating_ip = os.environ.get('OVH_FLOATING_IP', '')
 
     client = ovh.Client(
         endpoint=os.environ.get('OVH_ENDPOINT', 'ovh-eu'),
@@ -163,11 +216,16 @@ def main():
     else:
         print("OVH_GATEWAY_NAME empty, skipping gateway cleanup.")
 
-    if not cleanup_orphan_floating_ips(client, service_name, region):
+    if not cleanup_floating_ip(client, service_name, region, floating_ip):
         print(
             "WARNING: floating IP cleanup failed. Some floating IPs may "
             "remain allocated (and billable). Check the OVH console."
         )
+        exit_code = 1
+
+    if not drain_subnet_ports(client, service_name):
+        print("WARNING: subnet port draining did not complete. The subnet "
+              "may still be blocked. Check OVH console for orphaned ports.")
         exit_code = 1
 
     if exit_code == 0:
