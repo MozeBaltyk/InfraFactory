@@ -165,10 +165,14 @@ def drain_subnet_ports(client, service_name):
                 f'/cloud/project/{service_name}/region/{os.environ["OVH_REGION"]}'
                 f'/network/subnet/{subnet_id}'
             )
-        except Exception:
+        except ovh.exceptions.ResourceNotFoundError:
             # Subnet already gone — nothing to drain.
             print("  Subnet no longer reachable (already deleted).")
             return True
+        except Exception as e:
+            # Transient API error — retry instead of bailing.
+            print(f"  Warning: subnet query failed ({e}), retrying...", flush=True)
+            continue
 
         ip_pools = subnet.get('ipPools', [])
         if not ip_pools:
