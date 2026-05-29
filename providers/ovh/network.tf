@@ -119,10 +119,12 @@ resource "terraform_data" "capture_lb_floating_ip" {
     command = "echo '${self.input.ip}' > '${self.input.module_path}/.fip_${self.input.cluster_id}'"
   }
 
-  provisioner "local-exec" {
-    when    = destroy
-    command = "rm -f '${self.input.module_path}/.fip_${self.input.cluster_id}'"
-  }
+  # Intentionally NO destroy provisioner — the file must persist on disk until
+  # null_resource.private_network_destroy_grace finishes reading it. That
+  # resource runs later in the destroy-ordering chain (after VMs, gateway, and
+  # LB are gone). Only remove the file once destroy cleanup is complete.
+  # The file is a small marker in the provider directory and is safely
+  # overwritten on the next apply for the same cluster ID.
 
   depends_on = [
     ovh_cloud_project_loadbalancer.kube_api,
