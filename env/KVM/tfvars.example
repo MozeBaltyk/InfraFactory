@@ -6,6 +6,7 @@ cluster = {
   node_name_format    = "serial" # serial => factory-node01, role => factory-m01/factory-w01
   cloud_init_selected = "k3s"
   factory_root_path   = "/srv"
+  package_upgrade_enabled = "false" # Optional
 }
 
 infra = {
@@ -95,12 +96,19 @@ os = {
 
 # if cloud_init_selected=rke2
 #rke2 = {
-#  version        = "v1.35.1+rke2r1"  # Optional
-#  token          = "shared-token"    # Optional
-#  tls_sans       = ["dns1", "ip1"]   # Optional
-#  etcd_enabled   = true              # Optional
-#  ingress_nginx_enabled  = true      # Optional
-#  metrics_server_enabled = true      # Optional
+#  version                = "v1.35.4+rke2r1"  # Optional
+#  token                  = "shared-token"    # Optional
+#  tls_sans               = ["dns1", "ip1"]   # Optional
+#  etcd_enabled           = true              # Optional
+#  ingress_nginx_enabled  = true              # Optional
+#  metrics_server_enabled = true              # Optional
+#  cni                    = "cilium"          # Optional: "calico", "canal", "cilium", "none" (null = RKE2 default)
+#  ingress_type           = "traefik"         # Optional: "ingress-nginx", "traefik", "cilium", "none" (null = RKE2 default)
+#  kube_proxy_enabled     = true              # Optional (default: true)
+#  cilium = {
+#    hubble_enabled    = true                 # Optional: Hubble observability (default: false, only with cni="cilium")
+#    operator_replicas = 1                    # Optional: Cilium operator replicas when kube_proxy_enabled=false
+#  }
 #}
 
 #ansible = {

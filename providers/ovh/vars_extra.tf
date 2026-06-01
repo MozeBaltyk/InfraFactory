@@ -35,15 +35,42 @@ variable "rke2" {
   description = "RKE2 cluster configuration"
 
   type = object({
-    version                = optional(string, "latest")
+    version                = optional(string, "latest") #"v1.35.1+rke2r1"
     token                  = optional(string)
     tls_sans               = optional(list(string), [])
     etcd_enabled           = optional(bool, true)
     ingress_nginx_enabled  = optional(bool, true)
     metrics_server_enabled = optional(bool, true)
+    kube_proxy_enabled     = optional(bool, true)
+    cni                    = optional(string) # "calico", "canal", "cilium", "none" (null = RKE2 default)
+    ingress_type           = optional(string) # "ingress-nginx", "traefik", "cilium", "none" (null = RKE2 default)
+    cilium = optional(object({
+      hubble_enabled    = optional(bool, false) # Enable Hubble observability (only with cni="cilium")
+      operator_replicas = optional(number, 1)   # Cilium operator replicas when kube-proxy is disabled
+    }), {})
   })
 
   default = {}
+
+  validation {
+    condition     = var.rke2.cni == null ? true : contains(["calico", "canal", "cilium", "none"], var.rke2.cni)
+    error_message = "RKE2 cni must be one of: \"calico\", \"canal\", \"cilium\", \"none\", or null (for RKE2 default)."
+  }
+
+  validation {
+    condition     = var.rke2.ingress_type == null ? true : contains(["ingress-nginx", "traefik", "cilium", "none"], var.rke2.ingress_type)
+    error_message = "RKE2 ingress_type must be one of: \"ingress-nginx\", \"traefik\", \"cilium\", \"none\", or null (for RKE2 default)."
+  }
+
+  validation {
+    condition     = var.rke2.ingress_type == "cilium" ? var.rke2.cni == "cilium" : true
+    error_message = "RKE2 ingress_type \"cilium\" requires rke2.cni to also be \"cilium\"."
+  }
+
+  validation {
+    condition     = var.rke2.cilium.operator_replicas >= 1 && floor(var.rke2.cilium.operator_replicas) == var.rke2.cilium.operator_replicas
+    error_message = "RKE2 cilium.operator_replicas must be an integer greater than or equal to 1."
+  }
 }
 
 ###################################
