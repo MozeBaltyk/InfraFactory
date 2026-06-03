@@ -99,37 +99,59 @@ locals {
     )
   }
 
-  public_network_config = {
+  ##
+  ## OVH static private NIC config
+  ##
+  ## Let OVH/OpenStack metadata own first-boot public networking. OVH's instance
+  ## resource does not expose a separate cloud-init network_config argument, and
+  ## overriding top-level `network:` in user-data can break public SSH. Instead,
+  ## write an additional netplan file for the private NIC and use non-disruptive
+  ## first-boot `ip` commands to make the private IP available early without
+  ## restarting public networking.
+
+  private_prefix = split("/", local.private_cidr)[1]
+
+  ovh_private_netplan_yaml = {
     for name, vm in local.all_vms_map :
-    name => yamldecode(templatefile(
-      "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
-      {
-        interface_id         = "ens3"
-        interface_match_name = "ens3"
-
-        use_dhcp           = true
-        accept_dhcp_routes = true
-        accept_dhcp_dns    = true
-
-        ip_address      = null
-        cidr_prefix     = null
-        network_gateway = null
-        dns_servers     = null
-        domain          = local.subdomain
+    name => "# Managed by InfraFactory: configure OVH private NIC only.\n${yamlencode({
+      network = {
+        version = 2
+        ethernets = {
+          ens4 = {
+            dhcp4     = false
+            optional  = true
+            addresses = ["${vm.private_ip}/${local.private_prefix}"]
+          }
+        }
       }
-    ))
+    })}"
   }
 
-  # cloudinit_user_data = {
-  #   for name, body in local.common_cloudinit :
-  #   name => body
-  # }
-
   cloudinit_user_data = {
-    for name, body in local.common_cloudinit :
+    for name, vm in local.all_vms_map :
     name => "#cloud-config\n${yamlencode(merge(
-      yamldecode(body),
-      local.public_network_config[name]
+      yamldecode(local.common_cloudinit[name]),
+      {
+        write_files = concat(
+          try(yamldecode(local.common_cloudinit[name]).write_files, []),
+          [
+            {
+              path        = "/etc/netplan/99-infrafactory-private.yaml"
+              permissions = "0644"
+              owner       = "root:root"
+              content     = local.ovh_private_netplan_yaml[name]
+            }
+          ]
+        )
+
+        bootcmd = concat(
+          [
+            "ip link set ens4 up || true",
+            "ip addr replace ${vm.private_ip}/${local.private_prefix} dev ens4 || true"
+          ],
+          try(yamldecode(local.common_cloudinit[name]).bootcmd, [])
+        )
+      }
     ))}"
   }
 }

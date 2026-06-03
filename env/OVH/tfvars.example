@@ -50,12 +50,20 @@ os = {
 ### Valid range: 0-4000.
 ###
 ### Internet → Floating IP → Gateway → LB → masters:6443
-### 
+###
+### Security group note: the ovh/ovh provider used by this module does not
+### expose Public Cloud OpenStack security group rules, so this module cannot
+### explicitly manage/restrict TCP/22 without adding the OpenStack provider.
+###
 
 # Minimal (private network only, no load balancer; endpoint = first master public IP)
 # network = {
 #   private = {
 #     cidr    = "10.0.0.0/24"
+#   }
+#
+#   kube_api = {
+#     endpoint = "public_ip"
 #   }
 # }
 

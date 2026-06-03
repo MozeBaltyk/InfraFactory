@@ -91,5 +91,3 @@ EOT
     null_resource.reconcile_tls_san
   ]
 }
-
-

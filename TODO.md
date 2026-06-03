@@ -15,6 +15,7 @@ OVH now includes:
 - multi-master clusters when `network.private_cidr` is set
 - kube-api load-balancer exposure
 - an exact-match floating-IP cleanup helper and subnet port drain for destroy leftovers
+- OVH static private netplan config plus private NIC preflight without overriding public cloud networking
 - Ansible-based cloud-init readiness check
 - Ansible-based TLS SAN reconciliation (adds public IP to kube-apiserver cert)
 - Ansible-based kubeconfig fetch with public IP endpoint

@@ -178,6 +178,10 @@ variable "infra" {
 ###################################
 # Network Config
 ###################################
+# OVH provider limitation: ovh/ovh v2.13.1 does not expose Public Cloud
+# OpenStack security group resources/rules. SSH ingress (TCP/22) therefore
+# cannot be restricted here without adding the OpenStack provider, which this
+# provider intentionally avoids.
 variable "network" {
   description = "Cluster networking"
 
@@ -187,7 +191,7 @@ variable "network" {
       vlan_id = optional(number, 0)
     })
     kube_api = optional(object({
-      endpoint = optional(string, "lb_ip")
+      endpoint = optional(string, "public_ip")
 
       dns = optional(object({
         name = string
@@ -205,6 +209,24 @@ variable "network" {
     private = {
       cidr = "10.0.0.0/24"
     }
+  }
+
+  validation {
+    condition = (
+      try(var.network.kube_api.endpoint, "public_ip") != "lb_ip" ||
+      try(var.network.kube_api.load_balancer.enabled, false)
+    )
+
+    error_message = "network.kube_api.endpoint = \"lb_ip\" requires network.kube_api.load_balancer.enabled = true. Use endpoint = \"public_ip\" for minimal no-LB deployments."
+  }
+
+  validation {
+    condition = (
+      try(var.network.kube_api.endpoint, "public_ip") != "dns" ||
+      try(trimspace(var.network.kube_api.dns.name), "") != ""
+    )
+
+    error_message = "network.kube_api.endpoint = \"dns\" requires network.kube_api.dns.name to be set."
   }
 }
 
@@ -279,18 +301,18 @@ locals {
   ## Public-facing API endpoint for kubeconfig
   ## Resolution order:
   ##   1. Load Balancer floating IP when network.kube_api.endpoint == "lb_ip" and LB exists
-  ##   2. Literal value when network.kube_api.endpoint is neither "lb_ip" nor "dns"
-  ##   3. DNS name when network.kube_api.endpoint == "dns" and dns.name is set
-  ##   4. First master's public IP (fallback)
+  ##   2. DNS name when network.kube_api.endpoint == "dns" and dns.name is set
+  ##   3. First master's public IP when endpoint == "public_ip" or as fallback
+  ##   4. Literal value when network.kube_api.endpoint is not a known mode
   ##   5. First master's private IP (last resort)
   public_kube_api_endpoint = (
     var.network.kube_api.endpoint == "lb_ip" && local.lb_floating_ip_address != null
     ) ? local.lb_floating_ip_address : (
-    !contains(["lb_ip", "dns"], var.network.kube_api.endpoint)
-    ) ? var.network.kube_api.endpoint : (
     var.network.kube_api.endpoint == "dns" && try(var.network.kube_api.dns.name, "") != ""
-    ? var.network.kube_api.dns.name
-    : try(local.vm_public_ipv4_addresses[local.first_master_name], local.kube_api_bootstrap_endpoint)
+    ) ? var.network.kube_api.dns.name : (
+    var.network.kube_api.endpoint == "public_ip" || contains(["lb_ip", "dns"], var.network.kube_api.endpoint)
+    ? try(local.vm_public_ipv4_addresses[local.first_master_name], local.kube_api_bootstrap_endpoint)
+    : var.network.kube_api.endpoint
   )
 
   ## Disks Topology

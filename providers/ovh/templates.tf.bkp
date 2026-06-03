@@ -99,6 +99,14 @@ locals {
     )
   }
 
+  ##
+  ## OVH network configuration
+  ##
+  ## ovh_cloud_project_instance does not expose a separate network_config
+  ## argument. Merge the shared cloud-init network template into user_data so
+  ## networking is handled by cloud-init before package/bootstrap modules run.
+  ## OVH instances use ens3 for public DHCP and ens4 for the private subnet.
+
   public_network_config = {
     for name, vm in local.all_vms_map :
     name => yamldecode(templatefile(
@@ -120,16 +128,45 @@ locals {
     ))
   }
 
-  # cloudinit_user_data = {
-  #   for name, body in local.common_cloudinit :
-  #   name => body
-  # }
+  private_network_config = {
+    for name, vm in local.all_vms_map :
+    name => yamldecode(templatefile(
+      "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
+      {
+        interface_id         = "ens4"
+        interface_match_name = "ens4"
+
+        use_dhcp           = false
+        accept_dhcp_routes = true
+        accept_dhcp_dns    = true
+
+        ip_address      = local.all_vms_map[name].private_ip
+        cidr_prefix     = split("/", local.private_cidr)[1]
+        network_gateway = null
+        dns_servers     = null
+        domain          = local.subdomain
+      }
+    ))
+  }
+
+  merged_network_config = {
+    for name, vm in local.all_vms_map :
+    name => {
+      network = {
+        version = 2
+        ethernets = merge(
+          local.public_network_config[name].network.ethernets,
+          local.private_network_config[name].network.ethernets
+        )
+      }
+    }
+  }
 
   cloudinit_user_data = {
     for name, body in local.common_cloudinit :
     name => "#cloud-config\n${yamlencode(merge(
       yamldecode(body),
-      local.public_network_config[name]
+      local.merged_network_config[name]
     ))}"
   }
 }

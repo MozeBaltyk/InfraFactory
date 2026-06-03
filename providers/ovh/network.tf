@@ -16,9 +16,9 @@ resource "ovh_cloud_project_network_private_subnet_v2" "cluster" {
   name         = format("%s-subnet", var.cluster.id)
   cidr         = local.private_cidr
   # Gateway is mandatory for lb with public floating IP (but not for private-only network).
-  enable_gateway_ip = local.lb_enabled
-  # use_default_public_dns_resolver = true
-  # dhcp                            = true
+  enable_gateway_ip               = local.lb_enabled
+#   use_default_public_dns_resolver = false
+#   dhcp                            = false
 }
 
 # The OVH provider's LB Delete does NOT cascade delete the gateway created by
@@ -101,12 +101,12 @@ resource "terraform_data" "capture_lb_floating_ip" {
   count = local.lb_enabled ? 1 : 0
 
   input = {
-    ip            = local.lb_floating_ip_address
-    cluster_id    = var.cluster.id
-    module_path   = abspath(path.module)
-    ovh_endpoint  = var.ovh_endpoint
-    service_name  = var.ovh_project_service_name
-    region        = var.cluster.region
+    ip           = local.lb_floating_ip_address
+    cluster_id   = var.cluster.id
+    module_path  = abspath(path.module)
+    ovh_endpoint = var.ovh_endpoint
+    service_name = var.ovh_project_service_name
+    region       = var.cluster.region
   }
 
   provisioner "local-exec" {
