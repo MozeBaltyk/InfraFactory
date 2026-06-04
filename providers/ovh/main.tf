@@ -119,14 +119,14 @@ resource "ovh_cloud_project_instance" "vms" {
   network {
     public = true
 
-    # private {
-    #   ip = each.value.private_ip
+    private {
+      ip = each.value.private_ip
 
-    #   network {
-    #     id        = local.private_network_id
-    #     subnet_id = local.private_subnet_id
-    #   }
-    # }
+      network {
+        id        = local.private_network_id
+        subnet_id = local.private_subnet_id
+      }
+    }
   }
 
   timeouts {

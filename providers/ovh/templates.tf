@@ -99,38 +99,9 @@ locals {
     )
   }
 
-  public_network_config = {
-    for name, vm in local.all_vms_map :
-    name => yamldecode(templatefile(
-      "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
-      {
-        interface_id         = "ens3"
-        interface_match_name = "ens3"
-
-        use_dhcp           = true
-        accept_dhcp_routes = true
-        accept_dhcp_dns    = true
-
-        ip_address      = null
-        cidr_prefix     = null
-        network_gateway = null
-        dns_servers     = null
-        domain          = local.subdomain
-      }
-    ))
-  }
-
-  # cloudinit_user_data = {
-  #   for name, body in local.common_cloudinit :
-  #   name => body
-  # }
-
   cloudinit_user_data = {
     for name, body in local.common_cloudinit :
-    name => "#cloud-config\n${yamlencode(merge(
-      yamldecode(body),
-      local.public_network_config[name]
-    ))}"
+    name => body
   }
 }
 
