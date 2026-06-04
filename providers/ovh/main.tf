@@ -121,7 +121,6 @@ resource "ovh_cloud_project_instance" "vms" {
 
     private {
       ip = each.value.private_ip
-
       network {
         id        = local.private_network_id
         subnet_id = local.private_subnet_id
@@ -153,11 +152,13 @@ resource "time_sleep" "wait_instance_networks" {
 }
 
 data "ovh_cloud_project_instance" "vms" {
-  for_each = ovh_cloud_project_instance.vms
+  # Keep keys static so OpenTofu can evaluate this data source during import
+  # and partial-state recovery. Instance IDs remain apply-time values.
+  for_each = local.all_vms_map
 
   service_name = var.ovh_project_service_name
   region       = var.cluster.region
-  instance_id  = each.value.id
+  instance_id  = ovh_cloud_project_instance.vms[each.key].id
 
   depends_on = [
     time_sleep.wait_instance_networks

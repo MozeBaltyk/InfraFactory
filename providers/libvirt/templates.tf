@@ -70,6 +70,7 @@ resource "libvirt_cloudinit_disk" "commoninit" {
       # Primary NIC on Libvirt cloud images
       interface_id         = "primary"
       interface_match_name = "ens3"
+      interface_optional   = false
 
       # Libvirt drives DHCP vs static via var.network.ip_type
       use_dhcp   = var.network.ip_type == "dhcp"

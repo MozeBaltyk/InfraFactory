@@ -99,9 +99,93 @@ locals {
     )
   }
 
-  cloudinit_user_data = {
+  common_cloudinit_config = {
     for name, body in local.common_cloudinit :
-    name => body
+    name => yamldecode(body)
+  }
+
+  ovh_private_netplan = {
+    for name, vm in local.all_vms_map :
+    name => templatefile(
+      "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
+      {
+        # OVH exposes the public NIC as ens3 and the private vRack NIC as ens4.
+        # The OVH port keeps the same fixed IP as this guest-side static netplan.
+        interface_id         = "ens4"
+        interface_match_name = "ens4"
+        interface_optional   = true
+
+        use_dhcp           = false
+        ip_address         = vm.private_ip
+        cidr_prefix        = split("/", local.private_cidr)[1]
+        accept_dhcp_routes = false
+        accept_dhcp_dns    = false
+
+        network_gateway = null
+        dns_servers     = null
+        domain          = local.subdomain
+      }
+    )
+  }
+
+  ovh_private_netplan_write_files = {
+    for name, vm in local.all_vms_map :
+    name => [
+      {
+        path        = "/etc/netplan/99-infrafactory-ovh-private.yaml"
+        permissions = "0644"
+        content     = local.ovh_private_netplan[name]
+      },
+      {
+        path        = "/usr/local/sbin/infrafactory-ovh-private-netplan.sh"
+        permissions = "0755"
+        content     = <<-EOT
+          #!/bin/bash
+          set -e
+
+          IFACE="ens4"
+          PRIVATE_IP="${vm.private_ip}"
+          PREFIX="${split("/", local.private_cidr)[1]}"
+          CIDR="$PRIVATE_IP/$PREFIX"
+
+          if ! ip link show dev "$IFACE" >/dev/null 2>&1; then
+            echo "Private interface $IFACE not found" >&2
+            exit 1
+          fi
+
+          ip link set dev "$IFACE" up
+          ip addr replace "$CIDR" dev "$IFACE"
+
+          while ip -4 route show default dev "$IFACE" | grep -q '^default '; do
+            ip -4 route del default dev "$IFACE" 2>/dev/null || break
+          done
+
+          netplan generate
+        EOT
+      }
+    ]
+  }
+
+  ovh_private_netplan_runcmd = {
+    for name, vm in local.all_vms_map :
+    name => [
+      ["/usr/local/sbin/infrafactory-ovh-private-netplan.sh"],
+    ]
+  }
+
+  cloudinit_user_data = {
+    for name, config in local.common_cloudinit_config :
+    name => "#cloud-config\n${yamlencode(merge(config, {
+      write_files = concat(
+        try(config.write_files, []),
+        local.ovh_private_netplan_write_files[name]
+      )
+
+      runcmd = concat(
+        local.ovh_private_netplan_runcmd[name],
+        try(config.runcmd, [])
+      )
+    }))}"
   }
 }
 

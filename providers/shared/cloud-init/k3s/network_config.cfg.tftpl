@@ -4,6 +4,9 @@ network:
     ${interface_id}:
       match:
         name: "${interface_match_name}"
+%{ if try(interface_optional, false) ~}
+      optional: true
+%{ endif ~}
 %{ if use_dhcp ~}
       dhcp4: true
 %{ if !accept_dhcp_routes || !accept_dhcp_dns ~}

@@ -17,8 +17,9 @@ resource "ovh_cloud_project_network_private_subnet_v2" "cluster" {
   cidr         = local.private_cidr
   # Gateway is mandatory for lb with public floating IP (but not for private-only network).
   enable_gateway_ip               = local.lb_enabled
-#   use_default_public_dns_resolver = false
-#   dhcp                            = false
+  use_default_public_dns_resolver = false
+  # Private VM ports and guest netplan use deterministic static private IPs.
+  dhcp = false
 }
 
 # The OVH provider's LB Delete does NOT cascade delete the gateway created by
