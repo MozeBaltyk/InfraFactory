@@ -47,6 +47,12 @@ variable "rke2" {
     cilium = optional(object({
       hubble_enabled    = optional(bool, false) # Enable Hubble observability (only with cni="cilium")
       operator_replicas = optional(number, 1)   # Cilium operator replicas when kube-proxy is disabled
+      l2announcements = optional(object({
+        enabled           = optional(bool, false) # Enable Cilium L2 announcements (only with cni="cilium")
+        lb_pool_start     = optional(string)      # Start of the load balancer IP pool
+        lb_pool_end       = optional(string)      # End of the load balancer IP pool
+        network_interface = optional(string)      # Network interface to use for L2 announcements (e.g., "eth0")
+      }), {})
     }), {})
   })
 
@@ -70,6 +76,25 @@ variable "rke2" {
   validation {
     condition     = var.rke2.cilium.operator_replicas >= 1 && floor(var.rke2.cilium.operator_replicas) == var.rke2.cilium.operator_replicas
     error_message = "RKE2 cilium.operator_replicas must be an integer greater than or equal to 1."
+  }
+
+  validation {
+    condition     = !try(var.rke2.cilium.l2announcements.enabled, false) || var.rke2.cni == "cilium"
+    error_message = "RKE2 cilium.l2announcements.enabled requires rke2.cni to be \"cilium\"."
+  }
+
+  validation {
+    condition     = !try(var.rke2.cilium.l2announcements.enabled, false) || !var.rke2.kube_proxy_enabled
+    error_message = "RKE2 cilium.l2announcements.enabled requires rke2.kube_proxy_enabled to be false."
+  }
+
+  validation {
+    condition = !try(var.rke2.cilium.l2announcements.enabled, false) || alltrue([
+      try(var.rke2.cilium.l2announcements.lb_pool_start != null && trimspace(var.rke2.cilium.l2announcements.lb_pool_start) != "", false),
+      try(var.rke2.cilium.l2announcements.lb_pool_end != null && trimspace(var.rke2.cilium.l2announcements.lb_pool_end) != "", false),
+      try(var.rke2.cilium.l2announcements.network_interface != null && trimspace(var.rke2.cilium.l2announcements.network_interface) != "", false),
+    ])
+    error_message = "RKE2 cilium.l2announcements.enabled requires lb_pool_start, lb_pool_end, and network_interface to be set."
   }
 }
 

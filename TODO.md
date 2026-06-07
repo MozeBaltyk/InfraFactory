@@ -4,6 +4,7 @@
 Azure provider is implemented following the Libvirt pattern.
 GitOps now includes `just` recipes for Flux/tofu-controller Terraform stack status, watch, logs, runner, lock, and event inspection from the `gitops/` folder.
 RKE2 Cilium cloud-init supports nested Cilium options, including configurable operator replicas for kube-proxy replacement mode.
+RKE2 Cilium L2 announcements are consistently modeled across Libvirt, Azure, and OVH providers.
 
 OVH now includes:
 - public-IP-based operator access
@@ -73,3 +74,4 @@ OVH now includes:
 
 ### Phase 6: Cluster Bootstrap Options
 - [X] Add nested RKE2 Cilium options with configurable operator replicas for kube-proxy replacement mode
+- [X] Align RKE2 Cilium L2 announcement inputs across Libvirt, Azure, and OVH

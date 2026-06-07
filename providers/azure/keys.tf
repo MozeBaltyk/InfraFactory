@@ -25,8 +25,8 @@ resource "local_file" "ssh_public_key" {
 
 # Save the private key to a local file
 resource "local_sensitive_file" "ssh_private_key" {
-  filename = "${local.env_path}/.key.private"
-  content = tls_private_key.global_key.private_key_pem
+  filename        = "${local.env_path}/.key.private"
+  content         = tls_private_key.global_key.private_key_pem
   file_permission = "0600"
 
   depends_on = [null_resource.env_directory]
@@ -34,8 +34,8 @@ resource "local_sensitive_file" "ssh_private_key" {
 
 # Generate a random token for K3s/RKE2 if not provided via variables
 resource "random_string" "cluster_token" {
-  length  = 32
-  special = true
+  length           = 32
+  special          = true
   override_special = "-_"
 }
 
@@ -45,8 +45,8 @@ locals {
 }
 
 resource "local_file" "cluster_token" {
-  filename = "${local.env_path}/.token"
-  content  = local.cluster_token
+  filename        = "${local.env_path}/.token"
+  content         = local.cluster_token
   file_permission = "0600"
 
   depends_on = [null_resource.env_directory]

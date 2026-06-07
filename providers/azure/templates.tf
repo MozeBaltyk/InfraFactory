@@ -57,14 +57,18 @@ locals {
           [for master in local.master_details : azurerm_network_interface.vm-interface[master.name].private_ip_address],
           [for master in local.master_details : "${master.name}.${local.subdomain}"]
         )
-        rke2_etcd_enabled             = var.rke2.etcd_enabled
-        rke2_ingress_nginx_enabled    = var.rke2.ingress_nginx_enabled
-        rke2_metrics_server_enabled   = var.rke2.metrics_server_enabled
-        rke2_cni                      = var.rke2.cni
-        rke2_ingress_type             = var.rke2.ingress_type
-        rke2_kube_proxy_enabled       = try(var.rke2.kube_proxy_enabled, true)
-        rke2_cilium_hubble_enabled    = try(var.rke2.cilium.hubble_enabled, false)
-        rke2_cilium_operator_replicas = try(var.rke2.cilium.operator_replicas, 1)
+        rke2_etcd_enabled                   = var.rke2.etcd_enabled
+        rke2_ingress_nginx_enabled          = var.rke2.ingress_nginx_enabled
+        rke2_metrics_server_enabled         = var.rke2.metrics_server_enabled
+        rke2_cni                            = var.rke2.cni
+        rke2_ingress_type                   = var.rke2.ingress_type
+        rke2_kube_proxy_enabled             = try(var.rke2.kube_proxy_enabled, true)
+        rke2_cilium_hubble_enabled          = try(var.rke2.cilium.hubble_enabled, false)
+        rke2_cilium_operator_replicas       = try(var.rke2.cilium.operator_replicas, 1)
+        rke2_cilium_l2announcements_enabled = try(var.rke2.cilium.l2announcements.enabled, false)
+        lb_pool_start                       = try(var.rke2.cilium.l2announcements.lb_pool_start, null)
+        lb_pool_end                         = try(var.rke2.cilium.l2announcements.lb_pool_end, null)
+        network_interface                   = try(var.rke2.cilium.l2announcements.network_interface, null)
 
         # Optional managed package install
         ansible_pull_repo     = replace(try(var.ansible.pull.repo, ""), "https://", "")

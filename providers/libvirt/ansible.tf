@@ -61,11 +61,11 @@ resource "null_resource" "fetch_kubeconfig" {
   count = contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ? 1 : 0
 
   triggers = {
-    cluster_name              = var.cluster.id
-    abs_env_path              = abspath(local.env_path)
-    ssh_host                  = local.vm_operator_endpoints[local.first_master_name]
-    kube_api_endpoint         = local.kube_api_endpoint
-    cloud_init_selected       = var.cluster.cloud_init_selected
+    cluster_name        = var.cluster.id
+    abs_env_path        = abspath(local.env_path)
+    ssh_host            = local.vm_operator_endpoints[local.first_master_name]
+    kube_api_endpoint   = local.kube_api_endpoint
+    cloud_init_selected = var.cluster.cloud_init_selected
   }
 
   provisioner "local-exec" {
@@ -81,7 +81,7 @@ EOT
   }
 
   provisioner "local-exec" {
-    when = destroy
+    when    = destroy
     command = "rm -f ${self.triggers.abs_env_path}/kubeconfig"
   }
 

@@ -43,17 +43,21 @@ resource "libvirt_cloudinit_disk" "commoninit" {
       k3s_flannel_enabled        = var.k3s.flannel_enabled
 
       # Optional RKE2 config
-      rke2_token                    = local.cluster_token
-      rke2_version                  = var.rke2.version
-      rke2_tls_sans                 = concat(var.rke2.tls_sans, [for master in local.master_details : local.vm_fqdns[master.name]])
-      rke2_etcd_enabled             = var.rke2.etcd_enabled
-      rke2_ingress_nginx_enabled    = var.rke2.ingress_nginx_enabled
-      rke2_metrics_server_enabled   = var.rke2.metrics_server_enabled
-      rke2_cni                      = var.rke2.cni
-      rke2_ingress_type             = var.rke2.ingress_type
-      rke2_kube_proxy_enabled       = try(var.rke2.kube_proxy_enabled, true)
-      rke2_cilium_hubble_enabled    = try(var.rke2.cilium.hubble_enabled, false)
-      rke2_cilium_operator_replicas = try(var.rke2.cilium.operator_replicas, 1)
+      rke2_token                          = local.cluster_token
+      rke2_version                        = var.rke2.version
+      rke2_tls_sans                       = concat(var.rke2.tls_sans, [for master in local.master_details : local.vm_fqdns[master.name]])
+      rke2_etcd_enabled                   = var.rke2.etcd_enabled
+      rke2_ingress_nginx_enabled          = var.rke2.ingress_nginx_enabled
+      rke2_metrics_server_enabled         = var.rke2.metrics_server_enabled
+      rke2_cni                            = var.rke2.cni
+      rke2_ingress_type                   = var.rke2.ingress_type
+      rke2_kube_proxy_enabled             = try(var.rke2.kube_proxy_enabled, true)
+      rke2_cilium_hubble_enabled          = try(var.rke2.cilium.hubble_enabled, false)
+      rke2_cilium_operator_replicas       = try(var.rke2.cilium.operator_replicas, 1)
+      rke2_cilium_l2announcements_enabled = try(var.rke2.cilium.l2announcements.enabled, false)
+      lb_pool_start                       = try(var.rke2.cilium.l2announcements.lb_pool_start, null)
+      lb_pool_end                         = try(var.rke2.cilium.l2announcements.lb_pool_end, null)
+      network_interface                   = try(var.rke2.cilium.l2announcements.network_interface, null)
 
       # Optional Ansible
       ansible_pull_repo     = replace(try(var.ansible.pull.repo, ""), "https://", "")

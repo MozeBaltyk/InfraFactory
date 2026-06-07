@@ -89,10 +89,16 @@ nsg_rules = {
 #  metrics_server_enabled = true              # Optional
 #  cni                    = "cilium"          # Optional: "calico", "canal", "cilium", "none" (null = RKE2 default)
 #  ingress_type           = "traefik"         # Optional: "ingress-nginx", "traefik", "cilium", "none" (null = RKE2 default)
-#  kube_proxy_enabled     = true              # Optional (default: true)
+#  kube_proxy_enabled     = true              # Optional (default: true; required false when cilium.l2announcements.enabled=true)
 #  cilium = {
 #    hubble_enabled    = true                 # Optional: Hubble observability (default: false, only with cni="cilium")
 #    operator_replicas = 1                    # Optional: Cilium operator replicas when kube_proxy_enabled=false
+#    l2announcements = {
+#      enabled           = false              # Optional: requires cni="cilium" and kube_proxy_enabled=false when true
+#      lb_pool_start     = "192.168.100.200" # Required when enabled=true
+#      lb_pool_end       = "192.168.100.220" # Required when enabled=true
+#      network_interface = "eth0"            # Required when enabled=true
+#    }
 #  }
 #}
 
