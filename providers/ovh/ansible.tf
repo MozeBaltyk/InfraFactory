@@ -3,7 +3,7 @@
 ###
 
 resource "null_resource" "check_cloudinit" {
-  count = 1
+  count = local.kubernetes_enabled && var.infra.masters.count > 0 ? 1 : 0
 
   triggers = {
     abs_env_path = abspath(local.env_path)
@@ -30,7 +30,7 @@ EOT
 ###
 
 resource "null_resource" "reconcile_tls_san" {
-  count = contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ? 1 : 0
+  count = local.kubernetes_enabled && var.infra.masters.count > 0 ? 1 : 0
 
   triggers = {
     abs_env_path        = abspath(local.env_path)
@@ -59,7 +59,7 @@ EOT
 ###
 
 resource "null_resource" "fetch_kubeconfig" {
-  count = contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ? 1 : 0
+  count = local.kubernetes_enabled && var.infra.masters.count > 0 ? 1 : 0
 
   triggers = {
     cluster_name        = var.cluster.id

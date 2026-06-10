@@ -118,6 +118,7 @@ Every provider module MUST implement all of the following:
 | **Image discovery** | Search patterns matching image names in region (filters nvidia, prefers non-UEFI) |
 | **Flavor discovery** | Flavor IDs looked up by name from `data.ovh_cloud_project_flavors` |
 | **Public IP validation** | Validates all VMs received public IPv4 addresses |
+| **Standalone extra VMs** | Optional `infra.vms` block provisions private-only non-cluster VMs that always use shared `default` cloud-init. OVH also supports VM-only deployments with `cloud_init_selected = "default"`, `masters.count = 0`, `workers.count = 0`, and `vms.count > 0`. In `network.private.mode = "existing"`, the provider discovers exactly one private network by `vlan_id + region` and one subnet by `cidr`; static `infra.vms.ip_addresses` are required. |
 | **Gateway cleanup** | `cleanup_gateway.py` — removes LB gateway + orphan floating IP on destroy (prevents subnet deletion blocking) |
 | **Ansible inventory** | Public IP based |
 | **Deploy-time checks** | `checks.tf`: multi-master requires private CIDR, LB requires private CIDR, LB flavor exists, CIDR provides enough IPs |

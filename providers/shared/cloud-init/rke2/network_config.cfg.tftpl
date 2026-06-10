@@ -27,6 +27,10 @@ network:
       routes:
         - to: default
           via: ${network_gateway}
+%{ else ~}
+%{ if try(emit_empty_routes, false) ~}
+      routes: []
+%{ endif ~}
 %{ endif ~}
 %{ if dns_servers != null && dns_servers != "" ~}
       nameservers:

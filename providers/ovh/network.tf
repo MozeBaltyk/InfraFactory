@@ -3,6 +3,8 @@
 ###
 
 resource "ovh_cloud_project_network_private" "cluster" {
+  count = local.private_network_managed ? 1 : 0
+
   service_name = var.ovh_project_service_name
   name         = format("%s-private", var.cluster.id)
   vlan_id      = var.network.private.vlan_id
@@ -10,8 +12,10 @@ resource "ovh_cloud_project_network_private" "cluster" {
 }
 
 resource "ovh_cloud_project_network_private_subnet_v2" "cluster" {
+  count = local.private_network_managed ? 1 : 0
+
   service_name = var.ovh_project_service_name
-  network_id   = ovh_cloud_project_network_private.cluster.regions_openstack_ids[var.cluster.region]
+  network_id   = ovh_cloud_project_network_private.cluster[0].regions_openstack_ids[var.cluster.region]
   region       = var.cluster.region
   name         = format("%s-subnet", var.cluster.id)
   cidr         = local.private_cidr
@@ -20,6 +24,43 @@ resource "ovh_cloud_project_network_private_subnet_v2" "cluster" {
   use_default_public_dns_resolver = false
   # Private VM ports and guest netplan use deterministic static private IPs.
   dhcp = false
+}
+
+data "ovh_cloud_project_network_privates" "existing" {
+  count = local.private_network_existing ? 1 : 0
+
+  service_name = var.ovh_project_service_name
+}
+
+data "ovh_cloud_project_network_private_subnets" "existing" {
+  count = local.private_network_existing && local.existing_private_network_global_id != null ? 1 : 0
+
+  service_name = var.ovh_project_service_name
+  network_id   = local.existing_private_network_global_id
+}
+
+resource "terraform_data" "validate_existing_private_network" {
+  count = local.private_network_existing ? 1 : 0
+
+  input = {
+    vlan_id       = var.network.private.vlan_id
+    cidr          = local.private_cidr
+    region        = var.cluster.region
+    network_count = length(local.existing_private_network_matches)
+    subnet_count  = length(local.existing_private_subnet_matches)
+  }
+
+  lifecycle {
+    precondition {
+      condition     = length(local.existing_private_network_matches) == 1
+      error_message = "network.private.mode = \"existing\" requires exactly one OVH private network matching network.private.vlan_id in cluster.region."
+    }
+
+    precondition {
+      condition     = length(local.existing_private_subnet_matches) == 1
+      error_message = "network.private.mode = \"existing\" requires exactly one OVH private subnet matching network.private.cidr on the discovered private network."
+    }
+  }
 }
 
 # The OVH provider's LB Delete does NOT cascade delete the gateway created by
@@ -31,6 +72,8 @@ resource "ovh_cloud_project_network_private_subnet_v2" "cluster" {
 #   LB → VMs → private_network_destroy_grace (cleanup gateway) → subnet
 # VMs depend on this resource so OpenTofu destroys them BEFORE this one.
 resource "null_resource" "private_network_destroy_grace" {
+  count = local.private_network_managed ? 1 : 0
+
   triggers = {
     network_id      = local.private_network_id
     subnet_id       = local.private_subnet_id

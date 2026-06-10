@@ -116,6 +116,11 @@ variable "cluster" {
     cloud_init_selected     = "k3s"
     package_upgrade_enabled = true
   }
+
+  validation {
+    condition     = contains(["default", "k3s", "rke2"], var.cluster.cloud_init_selected)
+    error_message = "cluster.cloud_init_selected must be one of: default, k3s, rke2."
+  }
 }
 
 ###################################
@@ -148,6 +153,12 @@ variable "infra" {
         label      = string
       })), [])
     })
+
+    vms = optional(object({
+      count         = number
+      instance_size = optional(string, "b2-7")
+      ip_addresses  = optional(list(string), [])
+    }), { count = 0 })
   })
 
   default = {
@@ -157,11 +168,19 @@ variable "infra" {
     workers = {
       count = 0
     }
+    vms = {
+      count = 0
+    }
   }
 
   validation {
-    condition     = var.infra.masters.count >= 1
-    error_message = "OVH requires at least one master node."
+    condition     = var.infra.masters.count >= 1 || (var.cluster.cloud_init_selected == "default" && var.infra.workers.count == 0 && var.infra.vms.count >= 1)
+    error_message = "OVH requires at least one master node unless cluster.cloud_init_selected is \"default\", infra.workers.count is 0, and infra.vms.count is at least 1."
+  }
+
+  validation {
+    condition     = var.infra.masters.count >= 1 || var.infra.workers.count == 0
+    error_message = "OVH workers require at least one master node. Use infra.vms for VM-only deployments."
   }
 
   validation {
@@ -189,6 +208,7 @@ variable "network" {
     private = object({
       cidr    = string
       vlan_id = optional(number, 0)
+      mode    = optional(string, "managed")
     })
     kube_api = optional(object({
       endpoint = optional(string, "public_ip")
@@ -212,7 +232,61 @@ variable "network" {
   }
 
   validation {
+    condition     = contains(["managed", "existing"], var.network.private.mode)
+    error_message = "network.private.mode must be either \"managed\" or \"existing\"."
+  }
+
+  validation {
     condition = (
+      var.network.private.mode != "existing" ||
+      (
+        var.cluster.cloud_init_selected == "default" &&
+        var.infra.masters.count == 0 &&
+        var.infra.workers.count == 0 &&
+        var.infra.vms.count > 0
+      )
+    )
+    error_message = "network.private.mode = \"existing\" is only supported for VM-only deployments: cloud_init_selected = \"default\", masters.count = 0, workers.count = 0, and vms.count > 0."
+  }
+
+  validation {
+    condition = (
+      var.network.private.mode != "existing" ||
+      length(var.infra.vms.ip_addresses) == var.infra.vms.count
+    )
+    error_message = "network.private.mode = \"existing\" requires infra.vms.ip_addresses to contain exactly one static private IP per VM."
+  }
+
+  validation {
+    condition = (
+      var.network.private.mode != "existing" ||
+      length(distinct(var.infra.vms.ip_addresses)) == length(var.infra.vms.ip_addresses)
+    )
+    error_message = "infra.vms.ip_addresses must be unique."
+  }
+
+  validation {
+    condition = (
+      var.network.private.mode != "existing" ||
+      alltrue([
+        for ip in var.infra.vms.ip_addresses :
+        can(cidrnetmask("${ip}/32"))
+      ])
+    )
+    error_message = "infra.vms.ip_addresses must contain valid IPv4 addresses."
+  }
+
+  validation {
+    condition = (
+      var.network.private.mode != "existing" ||
+      !try(var.network.kube_api.load_balancer.enabled, false)
+    )
+    error_message = "network.private.mode = \"existing\" cannot create or manage a kube-api load balancer."
+  }
+
+  validation {
+    condition = (
+      !contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ||
       try(var.network.kube_api.endpoint, "public_ip") != "lb_ip" ||
       try(var.network.kube_api.load_balancer.enabled, false)
     )
@@ -222,6 +296,7 @@ variable "network" {
 
   validation {
     condition = (
+      !contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ||
       try(var.network.kube_api.endpoint, "public_ip") != "dns" ||
       try(trimspace(var.network.kube_api.dns.name), "") != ""
     )
@@ -238,14 +313,43 @@ locals {
 
   subdomain = "${var.cluster.id}.${var.cluster.domain}"
 
+  kubernetes_enabled = contains(["k3s", "rke2"], var.cluster.cloud_init_selected)
+
   ## Private handling
+  private_network_mode     = var.network.private.mode
+  private_network_managed  = local.private_network_mode == "managed"
+  private_network_existing = local.private_network_mode == "existing"
+
   private_cidr                = var.network.private.cidr
   private_ip_host_offset_base = (tonumber(split("/", local.private_cidr)[1]) <= 28 ? 10 : 2)
-  private_network_id          = ovh_cloud_project_network_private.cluster.regions_openstack_ids[var.cluster.region]
-  private_subnet_id           = ovh_cloud_project_network_private_subnet_v2.cluster.id
+
+  existing_private_network_matches = local.private_network_existing ? [
+    for network in data.ovh_cloud_project_network_privates.existing[0].networks : network
+    if network.vlan_id == var.network.private.vlan_id && length([
+      for region in network.regions : region
+      if region.region == var.cluster.region
+    ]) == 1
+  ] : []
+
+  existing_private_network_global_id = local.private_network_existing ? try(local.existing_private_network_matches[0].id, null) : null
+
+  existing_private_network_openstack_id = local.private_network_existing ? try(one([
+    for region in local.existing_private_network_matches[0].regions : region.openstack_id
+    if region.region == var.cluster.region
+  ]), null) : null
+
+  existing_private_subnet_matches = local.private_network_existing && local.existing_private_network_global_id != null ? [
+    for subnet in data.ovh_cloud_project_network_private_subnets.existing[0].subnets : subnet
+    if subnet.cidr == local.private_cidr
+  ] : []
+
+  existing_private_subnet_id = local.private_network_existing ? try(local.existing_private_subnet_matches[0].id, null) : null
+
+  private_network_id = local.private_network_managed ? ovh_cloud_project_network_private.cluster[0].regions_openstack_ids[var.cluster.region] : local.existing_private_network_openstack_id
+  private_subnet_id  = local.private_network_managed ? ovh_cloud_project_network_private_subnet_v2.cluster[0].id : local.existing_private_subnet_id
 
   ## Load Balancer
-  lb_enabled             = try(var.network.kube_api.load_balancer.enabled, false)
+  lb_enabled             = local.kubernetes_enabled && var.infra.masters.count > 0 && try(var.network.kube_api.load_balancer.enabled, false)
   lb_floating_ip_address = try(ovh_cloud_project_loadbalancer.kube_api[0].floating_ip.ip, null)
   lb_flavor_id = local.lb_enabled ? one([
     for f in data.ovh_cloud_project_loadbalancer_flavors.lb[0].flavors :
@@ -260,11 +364,13 @@ locals {
         ? format("%s-node%02d", var.cluster.id, i + 1)
         : format("%s-m%02d", var.cluster.id, i + 1)
       )
-      role          = "master"
-      instance_size = var.infra.masters.instance_size
-      disk_size     = var.infra.masters.disk_size
-      extra_disks   = try(var.infra.masters.extra_disks, [])
-      private_ip    = (cidrhost(local.private_cidr, local.private_ip_host_offset_base + i))
+      role           = "master"
+      instance_size  = var.infra.masters.instance_size
+      disk_size      = var.infra.masters.disk_size
+      extra_disks    = try(var.infra.masters.extra_disks, [])
+      private_ip     = (cidrhost(local.private_cidr, local.private_ip_host_offset_base + i))
+      private_attach = true
+      public_attach  = true
     }
   ]
 
@@ -275,11 +381,13 @@ locals {
         ? format("%s-node%02d", var.cluster.id, i + 1 + var.infra.masters.count)
         : format("%s-w%02d", var.cluster.id, i + 1)
       )
-      role          = "worker"
-      instance_size = var.infra.workers.instance_size
-      disk_size     = var.infra.workers.disk_size
-      extra_disks   = try(var.infra.workers.extra_disks, [])
-      private_ip    = (cidrhost(local.private_cidr, local.private_ip_host_offset_base + i + var.infra.masters.count))
+      role           = "worker"
+      instance_size  = var.infra.workers.instance_size
+      disk_size      = var.infra.workers.disk_size
+      extra_disks    = try(var.infra.workers.extra_disks, [])
+      private_ip     = (cidrhost(local.private_cidr, local.private_ip_host_offset_base + i + var.infra.masters.count))
+      private_attach = true
+      public_attach  = true
     }
   ]
 
@@ -291,13 +399,32 @@ locals {
     for vm in local.worker_details : vm.name => vm
   }
 
-  all_vms_map = merge(local.masters_map, local.workers_map)
+  vm_details = [
+    for i in range(var.infra.vms.count) : {
+      name = (
+        var.cluster.node_name_format == "serial"
+        ? format("%s-node%02d", var.cluster.id, i + 1 + var.infra.masters.count + var.infra.workers.count)
+        : format("%s-v%02d", var.cluster.id, i + 1)
+      )
+      role           = "vm"
+      instance_size  = var.infra.vms.instance_size
+      private_ip     = local.private_network_existing ? var.infra.vms.ip_addresses[i] : cidrhost(local.private_cidr, local.private_ip_host_offset_base + i + var.infra.masters.count + var.infra.workers.count)
+      private_attach = true
+      public_attach  = true
+    }
+  ]
+
+  vms_map = {
+    for vm in local.vm_details : vm.name => vm
+  }
+
+  all_vms_map = merge(local.masters_map, local.workers_map, local.vms_map)
 
   first_master_name = try(local.master_details[0].name, null)
   first_master_fqdn = local.first_master_name != null ? "${local.first_master_name}.${local.subdomain}" : null
 
   ## Kubernetes API bootstrap endpoint (first master private IP); overridden by LB when present
-  kube_api_bootstrap_endpoint = local.master_details[0].private_ip
+  kube_api_bootstrap_endpoint = try(local.master_details[0].private_ip, null)
   ## Public-facing API endpoint for kubeconfig
   ## Resolution order:
   ##   1. Load Balancer floating IP when network.kube_api.endpoint == "lb_ip" and LB exists
@@ -311,7 +438,7 @@ locals {
     var.network.kube_api.endpoint == "dns" && try(var.network.kube_api.dns.name, "") != ""
     ) ? var.network.kube_api.dns.name : (
     var.network.kube_api.endpoint == "public_ip" || contains(["lb_ip", "dns"], var.network.kube_api.endpoint)
-    ? try(local.vm_public_ipv4_addresses[local.first_master_name], local.kube_api_bootstrap_endpoint)
+    ? try(local.vm_public_ipv4_addresses[local.first_master_name], local.kube_api_bootstrap_endpoint, null)
     : var.network.kube_api.endpoint
   )
 

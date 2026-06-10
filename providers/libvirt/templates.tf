@@ -94,8 +94,9 @@ resource "libvirt_cloudinit_disk" "commoninit" {
       # rendered netplan matches the previous network_config_dhcp.cfg output.
       network_gateway = var.network.ip_type == "static" ? local.network_gateway : null
 
-      dns_servers = local.dns_servers
-      domain      = local.subdomain
+      dns_servers       = local.dns_servers
+      domain            = local.subdomain
+      emit_empty_routes = false
     }
   )
 

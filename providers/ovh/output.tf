@@ -33,8 +33,9 @@ output "cluster_nodes" {
   value = {
     controller_ips = compact([for vm in local.master_details : local.vm_public_ipv4_addresses[vm.name]])
     worker_ips     = compact([for vm in local.worker_details : local.vm_public_ipv4_addresses[vm.name]])
+    vm_ips         = [for vm in local.vm_details : vm.private_ip]
 
-    ssh_first_master = try(
+    ssh_first_master = local.first_master_name != null ? try(
       format(
         "ssh -o StrictHostKeyChecking=no -i env/%s/%s/.key.private %s@%s",
         var.infra_provider,
@@ -43,7 +44,7 @@ output "cluster_nodes" {
         local.vm_public_ipv4_addresses[local.first_master_name]
       ),
       "waiting for IP assignment..."
-    )
+    ) : null
   }
 
   depends_on = [ovh_cloud_project_instance.vms]
@@ -62,7 +63,7 @@ output "kube_api_load_balancer" {
 }
 
 output "kubeconfig_command" {
-  value = contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ? (<<-EOT
+  value = local.kubernetes_enabled && var.infra.masters.count > 0 ? (<<-EOT
 kubecm add -cf env/${var.infra_provider}/${terraform.workspace}/kubeconfig --context-name ${var.cluster.cloud_init_selected}-${var.infra_provider}-${terraform.workspace} --create
 # Or :
 export KUBECONFIG=env/${var.infra_provider}/${terraform.workspace}/kubeconfig

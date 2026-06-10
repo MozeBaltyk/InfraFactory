@@ -1,8 +1,13 @@
 locals {
+  ovh_private_interface_names = {
+    for name, vm in local.all_vms_map :
+    name => vm.public_attach ? "ens4" : "ens3"
+  }
+
   common_cloudinit = {
     for vm in local.all_vms_map :
     vm.name => templatefile(
-      "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/cloud_init.cfg.tftpl",
+      "${path.module}/../shared/cloud-init/${vm.role == "vm" ? "default" : var.cluster.cloud_init_selected}/cloud_init.cfg.tftpl",
       {
         ## Base OS
         os_name  = local.os.os_name
@@ -30,11 +35,11 @@ locals {
           vm.name == local.first_master_name
         )
 
-        first_master_ip   = local.master_details[0].private_ip
+        first_master_ip   = local.kube_api_bootstrap_endpoint
         first_master_fqdn = local.first_master_fqdn
 
         ## Join endpoint
-        cluster_join_endpoint = local.master_details[0].private_ip
+        cluster_join_endpoint = local.kube_api_bootstrap_endpoint
 
         ## Disks
         extra_disks = try(local.vm_disks[vm.name], [])
@@ -51,9 +56,8 @@ locals {
 
         k3s_tls_sans = distinct(compact(concat(
           var.k3s.tls_sans,
-          [local.master_details[0].private_ip],
-          [local.first_master_fqdn],
-          [for master in local.master_details : "${master.name}.${local.subdomain}"]
+          [local.kube_api_bootstrap_endpoint],
+          [local.first_master_fqdn]
         )))
 
         k3s_etcd_enabled           = var.k3s.etcd_enabled
@@ -72,9 +76,8 @@ locals {
 
         rke2_tls_sans = distinct(compact(concat(
           var.rke2.tls_sans,
-          [local.master_details[0].private_ip],
-          [local.first_master_fqdn],
-          [for master in local.master_details : "${master.name}.${local.subdomain}"]
+          [local.kube_api_bootstrap_endpoint],
+          [local.first_master_fqdn]
         )))
 
         rke2_etcd_enabled                   = var.rke2.etcd_enabled
@@ -113,10 +116,11 @@ locals {
     name => templatefile(
       "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
       {
-        # OVH exposes the public NIC as ens3 and the private vRack NIC as ens4.
+        # OVH exposes public+private VMs as ens3(public)+ens4(private).
+        # Private-only VMs expose the private network as their first NIC: ens3.
         # The OVH port keeps the same fixed IP as this guest-side static netplan.
-        interface_id         = "ens4"
-        interface_match_name = "ens4"
+        interface_id         = local.ovh_private_interface_names[name]
+        interface_match_name = local.ovh_private_interface_names[name]
         interface_optional   = true
 
         use_dhcp           = false
@@ -125,9 +129,10 @@ locals {
         accept_dhcp_routes = false
         accept_dhcp_dns    = false
 
-        network_gateway = null
-        dns_servers     = null
-        domain          = local.subdomain
+        network_gateway   = null
+        dns_servers       = null
+        domain            = local.subdomain
+        emit_empty_routes = true
       }
     )
   }
@@ -137,7 +142,7 @@ locals {
     name => [
       {
         path        = "/etc/netplan/99-infrafactory-ovh-private.yaml"
-        permissions = "0644"
+        permissions = "0600"
         content     = local.ovh_private_netplan[name]
       },
       {
@@ -147,10 +152,16 @@ locals {
           #!/bin/bash
           set -e
 
-          IFACE="ens4"
+          IFACE="${local.ovh_private_interface_names[name]}"
+          NETPLAN_FILE="/etc/netplan/99-infrafactory-ovh-private.yaml"
           PRIVATE_IP="${vm.private_ip}"
           PREFIX="${split("/", local.private_cidr)[1]}"
           CIDR="$PRIVATE_IP/$PREFIX"
+          NEED_APPLY=0
+
+          if [ -f "$NETPLAN_FILE" ]; then
+            chmod 0600 "$NETPLAN_FILE"
+          fi
 
           if ! ip link show dev "$IFACE" >/dev/null 2>&1; then
             echo "Private interface $IFACE not found" >&2
@@ -158,13 +169,40 @@ locals {
           fi
 
           ip link set dev "$IFACE" up
-          ip addr replace "$CIDR" dev "$IFACE"
-
-          while ip -4 route show default dev "$IFACE" | grep -q '^default '; do
-            ip -4 route del default dev "$IFACE" 2>/dev/null || break
-          done
 
           netplan generate
+
+          if ! ip -4 addr show dev "$IFACE" | grep -Fq " $CIDR"; then
+            NEED_APPLY=1
+          fi
+
+          if [ "$NEED_APPLY" -eq 1 ]; then
+            netplan apply
+          fi
+
+          ip addr replace "$CIDR" dev "$IFACE"
+
+          ip -4 route show default dev "$IFACE" | while read -r route; do
+            [ -n "$route" ] || continue
+            ip -4 route del $route 2>/dev/null || true
+          done
+        EOT
+      },
+      {
+        path        = "/etc/systemd/system/infrafactory-ovh-private-netplan.service"
+        permissions = "0644"
+        content     = <<-EOT
+          [Unit]
+          Description=InfraFactory OVH private netplan route guard
+          Wants=network-online.target
+          After=network-online.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/sbin/infrafactory-ovh-private-netplan.sh
+
+          [Install]
+          WantedBy=multi-user.target
         EOT
       }
     ]
@@ -173,7 +211,8 @@ locals {
   ovh_private_netplan_runcmd = {
     for name, vm in local.all_vms_map :
     name => [
-      ["/usr/local/sbin/infrafactory-ovh-private-netplan.sh"],
+      ["systemctl", "daemon-reload"],
+      ["systemctl", "enable", "--now", "infrafactory-ovh-private-netplan.service"],
     ]
   }
 
@@ -182,11 +221,11 @@ locals {
     name => "#cloud-config\n${yamlencode(merge(config, {
       write_files = concat(
         try(config.write_files, []),
-        local.ovh_private_netplan_write_files[name]
+        local.all_vms_map[name].private_attach ? local.ovh_private_netplan_write_files[name] : []
       )
 
       runcmd = concat(
-        local.ovh_private_netplan_runcmd[name],
+        local.all_vms_map[name].private_attach ? local.ovh_private_netplan_runcmd[name] : [],
         try(config.runcmd, [])
       )
     }))}"
