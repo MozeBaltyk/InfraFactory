@@ -65,6 +65,11 @@ variable "cluster" {
     condition     = contains(["serial", "role"], var.cluster.node_name_format)
     error_message = "cluster.node_name_format must be either 'serial' or 'role'."
   }
+
+  validation {
+    condition     = contains(["default", "k3s", "rke2"], var.cluster.cloud_init_selected)
+    error_message = "cluster.cloud_init_selected must be one of: default, k3s, rke2."
+  }
 }
 
 ###################################
@@ -75,12 +80,13 @@ variable "infra" {
 
   type = object({
     masters = object({
-      count         = number
-      cpu           = number
-      disk_size     = number
-      memory_gb     = number
-      mac_addresses = optional(list(string), [])
-      ip_addresses  = optional(list(string), [])
+      count             = number
+      cpu               = number
+      disk_size         = number
+      memory_gb         = number
+      user_data_enabled = optional(bool, true)
+      mac_addresses     = optional(list(string), [])
+      ip_addresses      = optional(list(string), [])
       extra_disks = optional(list(object({
         size_gb    = number
         mount_path = string
@@ -90,18 +96,36 @@ variable "infra" {
     })
 
     workers = object({
-      count         = number
-      cpu           = number
-      disk_size     = number
-      memory_gb     = number
-      mac_addresses = optional(list(string), [])
-      ip_addresses  = optional(list(string), [])
+      count             = number
+      cpu               = number
+      disk_size         = number
+      memory_gb         = number
+      user_data_enabled = optional(bool, true)
+      mac_addresses     = optional(list(string), [])
+      ip_addresses      = optional(list(string), [])
       extra_disks = optional(list(object({
         size_gb    = number
         mount_path = string
         filesystem = optional(string, "ext4")
         label      = string
       })), [])
+    })
+
+    vms = optional(object({
+      count             = number
+      cpu               = number
+      disk_size         = number
+      memory_gb         = number
+      user_data_enabled = optional(bool, true)
+      mac_addresses     = optional(list(string), [])
+      ip_addresses      = optional(list(string), [])
+      }), {
+      count         = 0
+      cpu           = 2
+      disk_size     = 10
+      memory_gb     = 4
+      mac_addresses = []
+      ip_addresses  = []
     })
   })
 
@@ -125,13 +149,33 @@ variable "infra" {
       ip_addresses  = []
       extra_disks   = []
     }
+
+    vms = {
+      count         = 0
+      cpu           = 2
+      disk_size     = 10
+      memory_gb     = 4
+      mac_addresses = []
+      ip_addresses  = []
+    }
+  }
+
+  validation {
+    condition     = var.infra.masters.count >= 1 || (var.cluster.cloud_init_selected == "default" && var.infra.workers.count == 0 && var.infra.vms.count >= 1)
+    error_message = "Libvirt requires at least one master node unless cluster.cloud_init_selected is \"default\", infra.workers.count is 0, and infra.vms.count is at least 1."
+  }
+
+  validation {
+    condition     = var.infra.masters.count >= 1 || var.infra.workers.count == 0
+    error_message = "Libvirt workers require at least one master node. Use infra.vms for VM-only deployments."
   }
 
   validation {
     condition = alltrue([
       for mac in concat(
         var.infra.masters.mac_addresses,
-        try(var.infra.workers.mac_addresses, [])
+        try(var.infra.workers.mac_addresses, []),
+        try(var.infra.vms.mac_addresses, [])
       ) :
       can(regex("^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$", mac))
     ])
@@ -272,13 +316,14 @@ locals {
         ? format("${var.cluster.id}-node%02d", i + 1)
         : format("${var.cluster.id}-m%02d", i + 1)
       )
-      role        = "master"
-      cpu         = var.infra.masters.cpu
-      memory_mb   = var.infra.masters.memory_gb * 1024
-      disk_size   = var.infra.masters.disk_size
-      ip          = try(var.infra.masters.ip_addresses[i], null)
-      mac         = try(var.infra.masters.mac_addresses[i], null)
-      extra_disks = try(var.infra.masters.extra_disks, [])
+      role              = "master"
+      cpu               = var.infra.masters.cpu
+      memory_mb         = var.infra.masters.memory_gb * 1024
+      disk_size         = var.infra.masters.disk_size
+      ip                = try(var.infra.masters.ip_addresses[i], null)
+      mac               = try(var.infra.masters.mac_addresses[i], null)
+      extra_disks       = try(var.infra.masters.extra_disks, [])
+      user_data_enabled = var.infra.masters.user_data_enabled
     }
   ]
 
@@ -293,13 +338,14 @@ locals {
         ? format("${var.cluster.id}-node%02d", i + 1 + var.infra.masters.count)
         : format("${var.cluster.id}-w%02d", i + 1)
       )
-      role        = "worker"
-      cpu         = var.infra.workers.cpu
-      memory_mb   = var.infra.workers.memory_gb * 1024
-      disk_size   = var.infra.workers.disk_size
-      ip          = try(var.infra.workers.ip_addresses[i], null)
-      mac         = try(var.infra.workers.mac_addresses[i], null)
-      extra_disks = try(var.infra.workers.extra_disks, [])
+      role              = "worker"
+      cpu               = var.infra.workers.cpu
+      memory_mb         = var.infra.workers.memory_gb * 1024
+      disk_size         = var.infra.workers.disk_size
+      ip                = try(var.infra.workers.ip_addresses[i], null)
+      mac               = try(var.infra.workers.mac_addresses[i], null)
+      extra_disks       = try(var.infra.workers.extra_disks, [])
+      user_data_enabled = var.infra.workers.user_data_enabled
     }
   ]
 
@@ -307,16 +353,38 @@ locals {
     for vm in local.worker_details : vm.name => vm
   }
 
-  all_vms_map = merge(local.masters_map, local.workers_map)
+  vm_details = [
+    for i in range(var.infra.vms.count) : {
+      name = (
+        var.cluster.node_name_format == "serial"
+        ? format("${var.cluster.id}-node%02d", i + 1 + var.infra.masters.count + var.infra.workers.count)
+        : format("${var.cluster.id}-v%02d", i + 1)
+      )
+      role              = "vm"
+      cpu               = var.infra.vms.cpu
+      memory_mb         = var.infra.vms.memory_gb * 1024
+      disk_size         = var.infra.vms.disk_size
+      ip                = try(var.infra.vms.ip_addresses[i], null)
+      mac               = try(var.infra.vms.mac_addresses[i], null)
+      extra_disks       = []
+      user_data_enabled = var.infra.vms.user_data_enabled
+    }
+  ]
+
+  vms_map = {
+    for vm in local.vm_details : vm.name => vm
+  }
+
+  all_vms_map = merge(local.masters_map, local.workers_map, local.vms_map)
 
   vm_fqdns = {
     for vm_name, vm in local.all_vms_map :
     vm_name => "${vm_name}.${local.subdomain}"
   }
 
-  first_master_name = local.master_details[0].name
-  first_master_fqdn = local.vm_fqdns[local.first_master_name]
-  first_master_ip   = coalesce(local.masters_map[local.first_master_name].ip, local.first_master_fqdn)
+  first_master_name = try(local.master_details[0].name, null)
+  first_master_fqdn = local.first_master_name != null ? local.vm_fqdns[local.first_master_name] : null
+  first_master_ip   = local.first_master_name != null ? coalesce(local.masters_map[local.first_master_name].ip, local.first_master_fqdn) : null
 
   vm_disks = {
     for vm_name, vm in local.all_vms_map :

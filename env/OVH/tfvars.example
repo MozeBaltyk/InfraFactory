@@ -19,6 +19,9 @@ infra = {
   masters = {
     count = 1 # Can be >1; set network.private_cidr for multi-master/private join
     # instance_size = "b2-7"
+    # Advanced test switch only: set false to omit InfraFactory cloud-init user_data from masters.
+    # Disabling this skips generated user/SSH/base and k3s/rke2 bootstrap user_data.
+    # user_data_enabled = true
     # extra_disks = [    # not supported yet
     #   { size_gb = 20, mount_path = "/data", filesystem = "ext4", label = "data" }
     # ]
@@ -27,12 +30,21 @@ infra = {
   workers = {
     count = 0 # Workers are supported
     # instance_size = "b2-7"
+    # Advanced test switch only: set false to omit InfraFactory cloud-init user_data from workers.
+    # Disabling this skips generated user/SSH/base and k3s/rke2 bootstrap user_data.
+    # user_data_enabled = true
     # extra_disks   = []  # not supported yet
   }
 
   vms = {
-    count = 0 # Private-only standalone extra VMs; always use shared cloud-init default
+    count = 0 # Private-only standalone extra VMs; use shared default cloud-init without OVH netplan overlay
     # instance_size = "b2-7"
+    # Advanced test switch only: set false to omit InfraFactory cloud-init user_data from extra infra.vms.
+    # When true, extra VMs receive only common default cloud-init user_data
+    # (user/SSH/base setup) and no InfraFactory OVH private-netplan write_files/runcmd.
+    # When false, no generated localadmin user/SSH key from InfraFactory is sent for these VMs;
+    # OVH ssh_key injection may still depend on image/cloud behavior.
+    # user_data_enabled = true
   }
 }
 
@@ -101,6 +113,9 @@ os = {
 #       enabled       = true
 #       flavor        = "small"
 #       gateway_model = "s"
+#       # Optional: expose SSH through the same LB to the first master only.
+#       # ssh_jump_enabled = true
+#       # ssh_jump_port    = 22
 #     }
 #   }
 # }
@@ -123,6 +138,9 @@ os = {
 #       enabled       = true
 #       flavor        = "small"
 #       gateway_model = "s"
+#       # Optional: expose SSH through the same LB to the first master only.
+#       # ssh_jump_enabled = true
+#       # ssh_jump_port    = 22
 #     }
 #   }
 # }

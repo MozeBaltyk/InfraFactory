@@ -131,9 +131,10 @@ variable "infra" {
 
   type = object({
     masters = object({
-      count         = number
-      instance_size = optional(string, "b2-7")
-      disk_size     = optional(number, 40)
+      count             = number
+      instance_size     = optional(string, "b2-7")
+      disk_size         = optional(number, 40)
+      user_data_enabled = optional(bool, true)
       extra_disks = optional(list(object({
         size_gb    = number
         mount_path = string
@@ -143,9 +144,10 @@ variable "infra" {
     })
 
     workers = object({
-      count         = number
-      instance_size = optional(string, "b2-7")
-      disk_size     = optional(number, 40)
+      count             = number
+      instance_size     = optional(string, "b2-7")
+      disk_size         = optional(number, 40)
+      user_data_enabled = optional(bool, true)
       extra_disks = optional(list(object({
         size_gb    = number
         mount_path = string
@@ -155,9 +157,10 @@ variable "infra" {
     })
 
     vms = optional(object({
-      count         = number
-      instance_size = optional(string, "b2-7")
-      ip_addresses  = optional(list(string), [])
+      count             = number
+      instance_size     = optional(string, "b2-7")
+      ip_addresses      = optional(list(string), [])
+      user_data_enabled = optional(bool, true)
     }), { count = 0 })
   })
 
@@ -218,9 +221,11 @@ variable "network" {
       }))
 
       load_balancer = optional(object({
-        enabled       = optional(bool, false)
-        flavor        = optional(string, "small")
-        gateway_model = optional(string, "s")
+        enabled          = optional(bool, false)
+        flavor           = optional(string, "small")
+        gateway_model    = optional(string, "s")
+        ssh_jump_enabled = optional(bool, false)
+        ssh_jump_port    = optional(number, 22)
       }), {})
     }), {})
   })
@@ -350,6 +355,8 @@ locals {
 
   ## Load Balancer
   lb_enabled             = local.kubernetes_enabled && var.infra.masters.count > 0 && try(var.network.kube_api.load_balancer.enabled, false)
+  lb_ssh_jump_enabled    = local.lb_enabled && try(var.network.kube_api.load_balancer.ssh_jump_enabled, false)
+  lb_ssh_jump_port       = try(var.network.kube_api.load_balancer.ssh_jump_port, 22)
   lb_floating_ip_address = try(ovh_cloud_project_loadbalancer.kube_api[0].floating_ip.ip, null)
   lb_flavor_id = local.lb_enabled ? one([
     for f in data.ovh_cloud_project_loadbalancer_flavors.lb[0].flavors :
@@ -364,13 +371,14 @@ locals {
         ? format("%s-node%02d", var.cluster.id, i + 1)
         : format("%s-m%02d", var.cluster.id, i + 1)
       )
-      role           = "master"
-      instance_size  = var.infra.masters.instance_size
-      disk_size      = var.infra.masters.disk_size
-      extra_disks    = try(var.infra.masters.extra_disks, [])
-      private_ip     = (cidrhost(local.private_cidr, local.private_ip_host_offset_base + i))
-      private_attach = true
-      public_attach  = true
+      role              = "master"
+      instance_size     = var.infra.masters.instance_size
+      disk_size         = var.infra.masters.disk_size
+      extra_disks       = try(var.infra.masters.extra_disks, [])
+      user_data_enabled = var.infra.masters.user_data_enabled
+      private_ip        = (cidrhost(local.private_cidr, local.private_ip_host_offset_base + i))
+      private_attach    = true
+      public_attach     = true
     }
   ]
 
@@ -381,13 +389,14 @@ locals {
         ? format("%s-node%02d", var.cluster.id, i + 1 + var.infra.masters.count)
         : format("%s-w%02d", var.cluster.id, i + 1)
       )
-      role           = "worker"
-      instance_size  = var.infra.workers.instance_size
-      disk_size      = var.infra.workers.disk_size
-      extra_disks    = try(var.infra.workers.extra_disks, [])
-      private_ip     = (cidrhost(local.private_cidr, local.private_ip_host_offset_base + i + var.infra.masters.count))
-      private_attach = true
-      public_attach  = true
+      role              = "worker"
+      instance_size     = var.infra.workers.instance_size
+      disk_size         = var.infra.workers.disk_size
+      extra_disks       = try(var.infra.workers.extra_disks, [])
+      user_data_enabled = var.infra.workers.user_data_enabled
+      private_ip        = (cidrhost(local.private_cidr, local.private_ip_host_offset_base + i + var.infra.masters.count))
+      private_attach    = true
+      public_attach     = true
     }
   ]
 
@@ -406,11 +415,12 @@ locals {
         ? format("%s-node%02d", var.cluster.id, i + 1 + var.infra.masters.count + var.infra.workers.count)
         : format("%s-v%02d", var.cluster.id, i + 1)
       )
-      role           = "vm"
-      instance_size  = var.infra.vms.instance_size
-      private_ip     = local.private_network_existing ? var.infra.vms.ip_addresses[i] : cidrhost(local.private_cidr, local.private_ip_host_offset_base + i + var.infra.masters.count + var.infra.workers.count)
-      private_attach = true
-      public_attach  = true
+      role              = "vm"
+      instance_size     = var.infra.vms.instance_size
+      user_data_enabled = var.infra.vms.user_data_enabled
+      private_ip        = local.private_network_existing ? var.infra.vms.ip_addresses[i] : cidrhost(local.private_cidr, local.private_ip_host_offset_base + i + var.infra.masters.count + var.infra.workers.count)
+      private_attach    = true
+      public_attach     = true
     }
   ]
 

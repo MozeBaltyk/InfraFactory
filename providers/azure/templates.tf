@@ -2,12 +2,13 @@
 
 # Generate cloud-init configuration for all nodes
 locals {
-  public_kube_api_endpoint = azurerm_public_ip.vm-pip[local.first_master_name].ip_address
+  public_kube_api_endpoint = local.first_master_name != null ? azurerm_public_ip.vm-pip[local.first_master_name].ip_address : null
+  first_master_fqdn        = local.first_master_name != null ? "${local.first_master_name}.${local.subdomain}" : null
 
   cloudinit = {
-    for vm in concat(local.master_details, local.worker_details) :
+    for vm in concat(local.master_details, local.worker_details, local.vm_details) :
     vm.name => templatefile(
-      "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/cloud_init.cfg.tftpl",
+      "${path.module}/../shared/cloud-init/${vm.role == "vm" ? "default" : var.cluster.cloud_init_selected}/cloud_init.cfg.tftpl",
       {
         os_name  = local.os.os_name
         hostname = vm.name
@@ -25,9 +26,9 @@ locals {
 
         public_key = tls_private_key.global_key.public_key_openssh
 
-        is_first_master        = vm.name == local.master_details[0].name
-        first_master_ip        = azurerm_network_interface.vm-interface[local.first_master_name].private_ip_address
-        first_master_fqdn      = "${local.first_master_name}.${local.subdomain}"
+        is_first_master        = vm.name == local.first_master_name
+        first_master_ip        = local.first_master_name != null ? azurerm_network_interface.vm-interface[local.first_master_name].private_ip_address : null
+        first_master_fqdn      = local.first_master_fqdn
         current_public_ip      = azurerm_public_ip.vm-pip[vm.name].ip_address
         current_private_ip     = azurerm_network_interface.vm-interface[vm.name].private_ip_address
         prefer_private_node_ip = false
@@ -38,7 +39,7 @@ locals {
         k3s_token   = local.cluster_token
         k3s_version = var.k3s.version
         k3s_tls_sans = concat(var.k3s.tls_sans,
-          [local.public_kube_api_endpoint],
+          compact([local.public_kube_api_endpoint]),
           [for master in local.master_details : azurerm_network_interface.vm-interface[master.name].private_ip_address],
           [for master in local.master_details : "${master.name}.${local.subdomain}"]
         )
@@ -53,7 +54,7 @@ locals {
         rke2_token   = local.cluster_token
         rke2_version = var.rke2.version
         rke2_tls_sans = concat(var.rke2.tls_sans,
-          [local.public_kube_api_endpoint],
+          compact([local.public_kube_api_endpoint]),
           [for master in local.master_details : azurerm_network_interface.vm-interface[master.name].private_ip_address],
           [for master in local.master_details : "${master.name}.${local.subdomain}"]
         )

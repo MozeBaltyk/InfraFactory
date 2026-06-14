@@ -4,8 +4,8 @@ resource "libvirt_cloudinit_disk" "commoninit" {
 
   name = "${each.value.name}-commoninit.iso"
 
-  user_data = templatefile(
-    "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/cloud_init.cfg.tftpl",
+  user_data = each.value.user_data_enabled ? templatefile(
+    "${path.module}/../shared/cloud-init/${each.value.role == "vm" ? "default" : var.cluster.cloud_init_selected}/cloud_init.cfg.tftpl",
     {
       os_name  = local.os.os_name
       hostname = each.value.name
@@ -66,10 +66,10 @@ resource "libvirt_cloudinit_disk" "commoninit" {
       ansible_pull_token    = try(var.ansible.pull.token, null)
       ansible_pull_timer    = try(var.ansible.pull.timer, null)
     }
-  )
+  ) : null
 
   network_config = templatefile(
-    "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
+    "${path.module}/../shared/cloud-init/${each.value.role == "vm" ? "default" : var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
     {
       # Primary NIC on Libvirt cloud images
       interface_id         = "primary"
@@ -121,6 +121,10 @@ locals {
 
     worker_ips = [
       for vm_name, vm in local.workers_map : local.vm_operator_endpoints[vm_name]
+    ]
+
+    vm_ips = [
+      for vm_name, vm in local.vms_map : local.vm_operator_endpoints[vm_name]
     ]
   })
 

@@ -15,8 +15,10 @@ Every provider module MUST implement all of the following:
 - Write keys to `env/<PROVIDER>/<workspace>/`
 
 ### Compute Topology
-- N masters and N workers, independently configurable
-- Separate `masters` and `workers` objects in the variable schema
+- N masters, N workers, and N standalone VMs, independently configurable where supported by the provider
+- Optional standalone `infra.vms` for non-cluster VMs
+- VM-only default deployments with `cluster.cloud_init_selected = "default"`, `masters.count = 0`, `workers.count = 0`, and `vms.count >= 1`
+- Separate `masters`, `workers`, and `vms` objects in the variable schema
 - Per-role compute sizing:
   - CPU / RAM / disk size
   - Extra disks (structured): `size_gb`, `mount_path`, `filesystem`, `label`
@@ -28,6 +30,8 @@ Every provider module MUST implement all of the following:
 - Cloud-init source paths MUST reference `providers/shared/cloud-init/$type/`
 - Inject username + SSH public key
 - Optional OS upgrade control via `cluster.package_upgrade_enabled`
+- Per-role `user_data_enabled` on masters, workers, and standalone VMs
+- When user data is disabled for a role, cloud-init is not injected for that role
 
 ### Optional Cloud-Init Inputs
 - `extra_packages` (list of strings)
@@ -40,16 +44,23 @@ Every provider module MUST implement all of the following:
 
 ### Ansible Integration
 - Inventory output compatible with `providers/shared/inventory/hosts.tpl`
+- Inventory contains shared `CONTROLLERS`, `WORKERS`, and `VMS` groups
 - Generate `ansible.cfg` with remote user, inventory path, private key
-- Post-deployment playbooks (shared):
-  - Cloud-init readiness check
+- Kubernetes post-deployment playbooks (shared, gated by Kubernetes cloud-init mode and role `user_data_enabled`):
+  - Cloud-init readiness check with bounded `timeout 600 cloud-init status --wait`
   - TLS SAN reconciliation (k3s/rke2)
   - Kubeconfig fetch with endpoint rewrite (k3s/rke2)
+- VM-only `default` deployments generate inventory and SSH artifacts but skip Kubernetes post-steps
 
 ### Outputs
-- `cluster_nodes` — structured list of all provisioned nodes
-- `kubeconfig_command` — command to retrieve the kubeconfig
-- `kube_api_endpoint` — public-facing API address
+- `cluster_nodes` — normalized connection data for all provisioned nodes:
+  - `controller_ips`
+  - `worker_ips`
+  - `vm_ips`
+  - `public_ips`
+  - `private_ips`
+- `kubeconfig_command` — command to use the generated kubeconfig when Kubernetes is enabled
+- Kubernetes API endpoint output or nested detail where supported by the provider
 
 ### Cluster Identity
 - `cluster.id` for resource naming
@@ -69,6 +80,7 @@ Every provider module MUST implement all of the following:
 | **DNS** | Azure Private DNS Zone + A records, linked to VNet |
 | **Public IPs** | Every VM gets a `Standard` SKU static public IP |
 | **Private IP** | Dynamic allocation (Azure-managed) |
+| **Standalone VMs** | `infra.vms` provisions non-cluster VMs and supports VM-only `default` deployments |
 | **NSG rules** | Configurable via `nsg_rules` map (port, name, description, source_address). Defaults for SSH (22) and K8s API (6443). Source address auto-populated from `ifconfig.me` when empty. |
 | **Subnet** | Derived from `network.cidr` via `cidrsubnet()` |
 | **Hostname prefix** | From `os_catalog.hostname_prefix` (e.g. `slaz`) |
@@ -76,7 +88,7 @@ Every provider module MUST implement all of the following:
 | **TLS SANs** | Public IP embedded at install time |
 | **Networking** | Fully ARM-managed (no cloud-init network config) |
 | **Cloud-init variables** | `current_private_ip`, `current_public_ip` (both known at plan time) |
-| **Ansible inventory** | Public IP based |
+| **Ansible inventory** | Public IP based for Kubernetes controllers/workers and standalone `infra.vms` |
 
 ### Libvirt
 
@@ -87,11 +99,12 @@ Every provider module MUST implement all of the following:
 | **IP type** | `dhcp` or `static` |
 | **Per-role IP/MAC** | Optional `ip_addresses` and `mac_addresses` lists (unique to Libvirt) |
 | **Per-role CPU / RAM** | Defined directly on `infra.masters` / `infra.workers` (`cpu`, `memory_gb`) |
+| **Standalone VMs** | `infra.vms` provisions non-cluster VMs with optional IP/MAC lists and supports VM-only `default` deployments |
 | **Gateway** | Optional, auto-derived from CIDR for nat/route, required for bridge+static |
 | **DNS servers** | `network.extra_dns` (default `["8.8.8.8", "8.8.4.4"]`); libvirt gateway prepended in nat/route |
 | **Storage pool** | `cluster.factory_root_path` (default `/srv`) |
 | **Cloud-init delivery** | Via `libvirt_cloudinit_disk` ISO |
-| **Network config** | `network_config.cfg.tftpl` — DHCP and static IP support + DNS |
+| **Network config** | Shared `network_config.cfg.tftpl` — DHCP and static IP support + DNS |
 | **Artifact mode** | `gitops_artifacts_mode` in `{"manual", "gitops"}` |
 | **CPU mode** | `host-passthrough` |
 | **Ansible inventory** | Operator endpoint (coalesces static IP, runtime IP, FQDN) |
@@ -110,18 +123,22 @@ Every provider module MUST implement all of the following:
 | | - `enabled` (bool, default `false`) |
 | | - `flavor` (string: `small`, `medium`, `large`, `xl`) |
 | | - `gateway_model` (string: `s`, `m`, `l`, `xl`, `2xl` — default `s`) |
+| | - `ssh_jump_enabled` (bool, default `false`) |
+| | - `ssh_jump_port` (number, default `22`) |
 | | - TCP listener on port 6443 with health monitor |
 | | - Backend pool members: all master private IPs on port 6443 |
 | | - Floating IP created via `floating_ip_create` |
 | | - Gateway created via `gateway_create` |
+| **SSH jump output** | `master_ssh_jump` is emitted when load balancer SSH jump is enabled and includes the floating IP endpoint, port, target master, and example SSH commands |
 | **API endpoint** | `network.kube_api.endpoint` — resolution priority: LB floating IP > literal value > DNS name > first master public IP > first master private IP |
 | **Image discovery** | Search patterns matching image names in region (filters nvidia, prefers non-UEFI) |
 | **Flavor discovery** | Flavor IDs looked up by name from `data.ovh_cloud_project_flavors` |
-| **Public IP validation** | Validates all VMs received public IPv4 addresses |
-| **Standalone extra VMs** | Optional `infra.vms` block provisions private-only non-cluster VMs that always use shared `default` cloud-init. OVH also supports VM-only deployments with `cloud_init_selected = "default"`, `masters.count = 0`, `workers.count = 0`, and `vms.count > 0`. In `network.private.mode = "existing"`, the provider discovers exactly one private network by `vlan_id + region` and one subnet by `cidr`; static `infra.vms.ip_addresses` are required. |
+| **Public IP validation** | Validates all public-attached VMs received public IPv4 addresses |
+| **Standalone VMs** | Optional `infra.vms` block provisions non-cluster VMs with public and private attachment in current code. OVH supports VM-only deployments with `cloud_init_selected = "default"`, `masters.count = 0`, `workers.count = 0`, and `vms.count > 0`. In `network.private.mode = "existing"`, the provider discovers exactly one private network by `vlan_id + region` and one subnet by `cidr`; static `infra.vms.ip_addresses` are required. |
 | **Gateway cleanup** | `cleanup_gateway.py` — removes LB gateway + orphan floating IP on destroy (prevents subnet deletion blocking) |
 | **Ansible inventory** | Public IP based |
 | **Deploy-time checks** | `checks.tf`: multi-master requires private CIDR, LB requires private CIDR, LB flavor exists, CIDR provides enough IPs |
+| **Targeted replace** | Root `just replace NAME` delegates to OVH and applies `-replace="ovh_cloud_project_instance.vms[\"NAME\"]"` after name validation |
 
 ---
 
@@ -132,16 +149,19 @@ Every provider module MUST implement all of the following:
 - No static IP option (`ip_type` always `"dhcp"`)
 - No gitops artifact mode (always writes local files)
 - No OVH-style load balancer (uses Azure-native constructs)
+- VM-only deployments require `cloud_init_selected = "default"`, no workers, and at least one `infra.vms` instance
 
 ### Libvirt
 - No `region` concept (local hypervisor)
 - No public IP addresses (no OVH/Azure-style public IP model)
+- VM-only deployments require `cloud_init_selected = "default"`, no workers, and at least one `infra.vms` instance
 
 ### OVH
 - Extra disks: blocked by validation (must be empty)
 - Custom root disk sizing: blocked at 40 GB
-- Inventory remains public-IP based even when private network exists (private inventory not yet implemented)
-- Multi-master + workers scenario (3m/2w) not yet in the test matrix
+- Inventory remains public-IP based even when private network exists; standalone `infra.vms` are emitted in `[VMS]`
+- Standalone `infra.vms` are public-attached and private-attached in current code; do not assume private-only VMs
+- `network.private.mode = "existing"` is limited to VM-only default deployments with static `infra.vms.ip_addresses`
 - Provider version not pinned in `providers.tf`
 - `required_version` constraint commented out in `providers.tf`
 
@@ -149,25 +169,28 @@ Every provider module MUST implement all of the following:
 
 ## Test Matrix
 
-| Provider | Infra | k8s type | Config |
-|---|---|---|---|
-| AZ | 1 master | k3s | default |
-| AZ | 3 masters / 2 workers | k3s | default |
-| AZ | 1 master | rke2 | default |
-| AZ | 3 masters / 2 workers | rke2 | default |
-| KVM | 1 master | k3s | default |
-| KVM | 3 masters / 2 workers | k3s | default |
-| KVM | 1 master | rke2 | default |
-| KVM | 3 masters / 2 workers | rke2 | default |
-| OVH | 1 master | k3s | default |
-| OVH | 1 master / 2 workers | k3s | default |
-| OVH | 3 masters | k3s | default |
-| OVH | 1 master | rke2 | default |
-| OVH | 1 master / 2 workers | rke2 | default |
-| OVH | 3 masters | rke2 | default |
+Baseline scenarios to preserve or validate for provider-affecting changes:
 
-All scenarios validated with both `k3s` and `rke2` cloud-init modes where supported.
-Generated inventory and kubeconfig artifacts expected under `env/<PROVIDER>/<workspace>/`.
+| Provider | Infra | Cloud-init mode | Expected post-deploy behavior |
+|---|---|---|---|
+| AZ | `0 masters / 0 workers / N vms` | `default` | Inventory + SSH artifacts; no Kubernetes post-steps |
+| AZ | `1 master` | `k3s` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| AZ | `3 masters / 2 workers` | `k3s` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| AZ | `1 master` | `rke2` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| AZ | `3 masters / 2 workers` | `rke2` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| KVM | `0 masters / 0 workers / N vms` | `default` | Inventory + SSH artifacts; no Kubernetes post-steps |
+| KVM | `1 master` | `k3s` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| KVM | `3 masters / 2 workers` | `k3s` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| KVM | `1 master` | `rke2` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| KVM | `3 masters / 2 workers` | `rke2` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| OVH | `0 masters / 0 workers / N vms` | `default` | Inventory + SSH artifacts; no Kubernetes post-steps |
+| OVH | `1 master` | `k3s` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| OVH | `3 masters / 2 workers` | `k3s` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| OVH | `1 master` | `rke2` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| OVH | `3 masters / 2 workers` | `rke2` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+
+Generated inventory and kubeconfig artifacts are expected under `env/<PROVIDER>/<workspace>/` when applicable.
+Kubeconfig artifacts are only expected for Kubernetes-enabled deployments with enabled master user data.
 
 ### Validation expectations
 
@@ -176,4 +199,5 @@ At minimum, each provider change should preserve:
 - Single-master k3s flow
 - HA-style multi-master + workers flow
 - Both `k3s` and `rke2` cloud-init modes
-- Generated inventory and kubeconfig artifacts
+- VM-only `default` flow with standalone `infra.vms`
+- Generated inventory and kubeconfig artifacts when applicable

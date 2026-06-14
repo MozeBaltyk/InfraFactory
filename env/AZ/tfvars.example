@@ -4,13 +4,13 @@ azure_client_secret   = "xxxxxxxxxxxxxxxxxx"
 azure_tenant_id       = "xxxxxxxxxxxxxxxxxx"
 
 cluster = {
-  id                  = "factory"
-  domain              = "lab"
-  timezone            = "Europe/Paris"
-  region              = "westeurope"
-  username            = "localadmin"
-  cloud_init_selected = "k3s"
-  package_upgrade_enabled = "false" # Optional
+  id                      = "factory"
+  domain                  = "lab"
+  timezone                = "Europe/Paris"
+  region                  = "westeurope"
+  username                = "localadmin"
+  cloud_init_selected     = "k3s"
+  package_upgrade_enabled = false # Optional
 }
 
 infra = {
@@ -18,6 +18,7 @@ infra = {
     count = 1
     # instance_size = "Standard_D2s_v5"
     # disk_size     = 40
+    # user_data_enabled = true
     # extra_disks = [
     #   { size_gb = 20, mount_path = "/data", filesystem = "ext4", label = "data" }
     # ]
@@ -27,6 +28,17 @@ infra = {
     count = 0
     # instance_size = "Standard_D2s_v5"
     # disk_size     = 40
+    # user_data_enabled = true
+    # extra_disks   = []
+  }
+
+  # Standalone non-Kubernetes VMs. Use with cloud_init_selected = "default"
+  # for VM-only deployments, or alongside masters/workers when extra hosts are needed.
+  vms = {
+    count = 0
+    # instance_size = "Standard_D2s_v5"
+    # disk_size     = 40
+    # user_data_enabled = true
     # extra_disks   = []
   }
 }

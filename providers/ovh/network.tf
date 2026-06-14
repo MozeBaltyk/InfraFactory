@@ -23,7 +23,7 @@ resource "ovh_cloud_project_network_private_subnet_v2" "cluster" {
   enable_gateway_ip               = local.lb_enabled
   use_default_public_dns_resolver = false
   # Private VM ports and guest netplan use deterministic static private IPs.
-  dhcp = false
+  dhcp = true
 }
 
 data "ovh_cloud_project_network_privates" "existing" {
@@ -230,35 +230,66 @@ resource "ovh_cloud_project_loadbalancer" "kube_api" {
     }
   }
 
-  listeners = [
-    {
-      port     = 6443
-      protocol = "tcp"
-      name     = "kube-api"
+  listeners = concat(
+    [
+      {
+        port     = 6443
+        protocol = "tcp"
+        name     = "kube-api"
 
-      pool = {
-        algorithm = "roundRobin"
-        protocol  = "tcp"
-        name      = "kube-api-pool"
+        pool = {
+          algorithm = "roundRobin"
+          protocol  = "tcp"
+          name      = "kube-api-pool"
 
-        health_monitor = {
-          name         = "${var.cluster.id}-kube-api-hm"
-          delay        = 5
-          max_retries  = 3
-          timeout      = 3
-          monitor_type = "tcp"
-        }
-
-        members = [
-          for m in local.master_details : {
-            address       = m.private_ip
-            protocol_port = 6443
-            weight        = 1
+          health_monitor = {
+            name         = "${var.cluster.id}-kube-api-hm"
+            delay        = 5
+            max_retries  = 3
+            timeout      = 3
+            monitor_type = "tcp"
           }
-        ]
+
+          members = [
+            for m in local.master_details : {
+              address       = m.private_ip
+              protocol_port = 6443
+              weight        = 1
+            }
+          ]
+        }
       }
-    }
-  ]
+    ],
+    local.lb_ssh_jump_enabled ? [
+      {
+        port     = local.lb_ssh_jump_port
+        protocol = "tcp"
+        name     = "master-ssh-jump"
+
+        pool = {
+          algorithm = "roundRobin"
+          protocol  = "tcp"
+          name      = "master-ssh-jump-pool"
+
+          health_monitor = {
+            name         = "${var.cluster.id}-master-ssh-jump-hm"
+            delay        = 5
+            max_retries  = 3
+            timeout      = 3
+            monitor_type = "tcp"
+          }
+
+          members = [
+            {
+              address       = local.master_details[0].private_ip
+              protocol_port = 22
+              weight        = 1
+            }
+          ]
+        }
+      }
+    ] : []
+  )
 
   depends_on = [
     ovh_cloud_project_network_private_subnet_v2.cluster,

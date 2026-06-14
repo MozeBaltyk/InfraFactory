@@ -40,6 +40,11 @@ plan:
 deploy:
     @just $(just _provider-module)::deploy
 
+# Replace one VM (only for OVH)
+replace NAME:
+    @test "$(just _provider-module)" = "ovh" || { echo "replace is only supported with PROVIDER=OVH" >&2; exit 1; }
+    @ENV={{ ENV }} just ovh::replace {{ NAME }}
+
 # Destroy on Provider specified in PROVIDER env variable (default: KVM)
 destroy:
     @just $(just _provider-module)::destroy

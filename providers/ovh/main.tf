@@ -103,7 +103,7 @@ resource "ovh_cloud_project_instance" "vms" {
   billing_period = "hourly"
 
   name      = each.value.name
-  user_data = local.cloudinit_user_data[each.key]
+  user_data = each.value.user_data_enabled ? local.cloudinit_user_data[each.key] : null
 
   boot_from {
     image_id = local.selected_image.id

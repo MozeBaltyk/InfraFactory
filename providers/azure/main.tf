@@ -112,12 +112,27 @@ resource "azurerm_linux_virtual_machine" "vms" {
     public_key = tls_private_key.global_key.public_key_openssh
   }
 
-  custom_data = base64encode(
+  custom_data = each.value.user_data_enabled ? base64encode(
     local.cloudinit[each.key]
-  )
+  ) : null
+
+  depends_on = [
+    azurerm_subnet_network_security_group_association.factory_project_subnet_nsg
+  ]
+}
+
+resource "null_resource" "wait_cloudinit" {
+  for_each = {
+    for name, vm in local.all_vms_map : name => vm
+    if vm.user_data_enabled
+  }
+
+  triggers = {
+    vm_id = azurerm_linux_virtual_machine.vms[each.key].id
+    host  = azurerm_public_ip.vm-pip[each.key].ip_address
+  }
 
   provisioner "remote-exec" {
-
     inline = [
       "echo 'Waiting for cloud-init to complete...'",
       "cloud-init status --wait > /dev/null",
@@ -126,16 +141,12 @@ resource "azurerm_linux_virtual_machine" "vms" {
 
     connection {
       type        = "ssh"
-      host        = azurerm_public_ip.vm-pip[each.key].ip_address
+      host        = self.triggers.host
       user        = var.cluster.username
       private_key = tls_private_key.global_key.private_key_pem
       timeout     = "5m"
     }
   }
-
-  depends_on = [
-    azurerm_subnet_network_security_group_association.factory_project_subnet_nsg
-  ]
 }
 
 ###########################

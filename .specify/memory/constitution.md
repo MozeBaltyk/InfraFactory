@@ -1,7 +1,7 @@
 <!--
 Sync Impact Report
-- Version change: 1.5.0 -> 1.6.0
-- Modified principles: Expanded Development Workflow to require synced `env/<PROVIDER>/tfvars.example` files when provider variables change
+- Version change: 1.6.0 -> 1.7.0
+- Modified principles: Expanded Provider Symmetry, Provisioning Workflow, Schema Coverage Policy, and Provider Validation Matrix to cover standalone `infra.vms`, VM-only default deployments, per-role user-data gating, shared `[VMS]` inventory, and normalized provider outputs
 - Added sections: None
 - Removed sections: None
 - Implementation Priority updated: No change
@@ -10,8 +10,9 @@ Sync Impact Report
 	- ✅ no change required: .specify/templates/spec-template.md
 	- ✅ no change required: .specify/templates/tasks-template.md
 - Runtime guidance requiring updates:
-	- ✅ updated: AGENTS.md
-	- ✅ no change required: README.md
+	- ✅ no change required: AGENTS.md
+	- ✅ updated: providers/README
+	- ✅ updated: README.md
 - Deferred TODOs: None
 -->
 
@@ -25,18 +26,24 @@ provider directories. Each feature added to one provider must be evaluated for g
 across all providers to maintain architectural consistency.
 
 ### II. Provider Symmetry
-Each provider MUST enable deployment of N masters and N workers in identical fashion. All 
-providers must expose similar variables and outputs. Feature implementations should be as 
-provider-agnostic as possible; differences only when technically unavoidable.
+Each provider MUST enable deployment of N masters, N workers, and standalone `infra.vms` in
+identical fashion where the platform allows it. Providers MUST also support VM-only deployments
+using `cluster.cloud_init_selected = "default"`, `masters.count = 0`, `workers.count = 0`, and
+`vms.count >= 1`. All providers must expose similar variables and outputs. Feature implementations
+should be as provider-agnostic as possible; differences only when technically unavoidable.
 
 The common provider capability baseline is:
 - SSH key generation
 - separate master and worker objects
+- standalone `infra.vms` objects for non-cluster VMs
 - per-role compute and disk sizing
 - structured extra disks
 - shared cloud-init selection and related optional inputs
+- per-role `user_data_enabled` controls for masters, workers, and standalone VMs
 - kubeconfig retrieval for Kubernetes-enabled cloud-init modes
-- Ansible-compatible inventory generation
+- Ansible-compatible inventory generation with shared `CONTROLLERS`, `WORKERS`, and `VMS` groups
+- normalized `cluster_nodes` outputs with `controller_ips`, `worker_ips`, `vm_ips`, `public_ips`,
+  and `private_ips`
 
 Provider-specific capabilities may extend this baseline where required by the platform contract.
 
@@ -49,7 +56,12 @@ Infrastructure provisioning follows this immutable sequence:
 2. VMs initialized via shared cloud-init templates stored at
 	`providers/shared/cloud-init/$type`
 3. Providers generate Ansible-compatible inventory from OpenTofu outputs
-4. Ansible handles post-provision configuration
+4. Ansible handles post-provision configuration when applicable
+
+Kubernetes post-provision steps (cloud-init readiness check, TLS SAN reconciliation, and
+kubeconfig retrieval) MUST be gated to Kubernetes cloud-init modes and enabled master user data.
+Worker readiness checks MUST also respect worker `user_data_enabled`. VM-only default deployments
+MUST still generate inventory and connection artifacts, but MUST NOT require Kubernetes post-steps.
 
 Deviation from this workflow requires documented justification.
 
@@ -73,7 +85,8 @@ Avoid provider-specific hacks; prefer solving at abstraction level.
 Recognized provider-specific differences include:
 - **Azure**: NSG rules and cloud-native security/network resources
 - **Libvirt**: optional per-role IP/MAC configuration and host-level network mode choices
-- **OVH**: closest-equivalent behavior documented before feature implementation
+- **OVH**: Public Cloud private networking, optional kube-api load balancer behavior, and
+  closest-equivalent behavior documented before feature implementation
 
 ## Implementation Priority
 
@@ -128,6 +141,11 @@ platform contract. In these cases, specifications MUST document:
 - any external service dependency introduced at plan/apply time
 - any local artifacts created, updated, or deleted as part of the workflow
 
+Standalone VMs are part of the common schema baseline. If a provider-specific implementation
+requires different network attachment, addressing, or operator access behavior for `infra.vms`,
+that behavior MUST be documented in `providers/README` and MUST still preserve the normalized
+inventory and output contract where possible.
+
 ### Provider Parity Validation
 Each change MUST maintain or improve provider parity. Review checklist:
 - Does feature apply to all providers?
@@ -143,6 +161,7 @@ Provider and feature validation SHOULD be planned against the documented matrix 
 `providers/README`.
 
 Minimum expected validation coverage for provider-affecting changes:
+- VM-only deployment with `default` cloud-init and `infra.vms`
 - 1 master with `k3s`
 - 3 masters / 2 workers with `k3s`
 - 1 master with `rke2`
@@ -167,4 +186,4 @@ This Constitution supersedes all other practices and project guidance. Amendment
 Runtime development guidance is defined in [AGENTS.md](AGENTS.md). All infrastructure 
 feature additions must verify compliance with these Core Principles before implementation.
 
-**Version**: 1.6.0 | **Ratified**: 2025-03-10 | **Last Amended**: 2026-04-07
+**Version**: 1.7.0 | **Ratified**: 2025-03-10 | **Last Amended**: 2026-06-14

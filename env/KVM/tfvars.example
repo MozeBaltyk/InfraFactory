@@ -15,6 +15,7 @@ infra = {
     cpu           = 2
     disk_size     = 10
     memory_gb     = 4
+    #user_data_enabled = true # Optional
     #mac_addresses = []  # Optionnal 
     #ip_addresses = []   # Optionnal 
     #extra_disks = [
@@ -27,9 +28,19 @@ infra = {
     cpu           = 2
     disk_size     = 10
     memory_gb     = 4
+    #user_data_enabled = true # Optional
     #mac_addresses = []  # Optionnal 
     #ip_addresses = []   # Optionnal 
     #extra_disks = []    # Optionnal 
+  }
+  vms = {
+    count         = 0
+    cpu           = 2
+    disk_size     = 10
+    memory_gb     = 4
+    #user_data_enabled = true # Optional; standalone VMs always use shared default cloud-init
+    #mac_addresses = []  # Optionnal
+    #ip_addresses = []   # Optionnal
   }
 }
 

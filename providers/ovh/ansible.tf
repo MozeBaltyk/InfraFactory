@@ -2,8 +2,16 @@
 ### Check cloud-init status on all nodes using Ansible (shared playbook)
 ###
 
+locals {
+  k8s_master_user_data_enabled = local.kubernetes_enabled && var.infra.masters.count > 0 && var.infra.masters.user_data_enabled
+  k8s_cloudinit_check_enabled = (
+    local.k8s_master_user_data_enabled &&
+    (var.infra.workers.count == 0 || var.infra.workers.user_data_enabled)
+  )
+}
+
 resource "null_resource" "check_cloudinit" {
-  count = local.kubernetes_enabled && var.infra.masters.count > 0 ? 1 : 0
+  count = local.k8s_cloudinit_check_enabled ? 1 : 0
 
   triggers = {
     abs_env_path = abspath(local.env_path)
@@ -30,7 +38,7 @@ EOT
 ###
 
 resource "null_resource" "reconcile_tls_san" {
-  count = local.kubernetes_enabled && var.infra.masters.count > 0 ? 1 : 0
+  count = local.k8s_master_user_data_enabled ? 1 : 0
 
   triggers = {
     abs_env_path        = abspath(local.env_path)
@@ -59,7 +67,7 @@ EOT
 ###
 
 resource "null_resource" "fetch_kubeconfig" {
-  count = local.kubernetes_enabled && var.infra.masters.count > 0 ? 1 : 0
+  count = local.k8s_master_user_data_enabled ? 1 : 0
 
   triggers = {
     cluster_name        = var.cluster.id

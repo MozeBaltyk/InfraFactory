@@ -20,7 +20,14 @@ OVH now includes:
 - Ansible-based cloud-init readiness check
 - Ansible-based TLS SAN reconciliation (adds public IP to kube-apiserver cert)
 - Ansible-based kubeconfig fetch with public IP endpoint
-- private-only standalone extra VMs via `infra.vms`, including VM-only default cloud-init deployments
+- standalone extra VMs via `infra.vms`, including VM-only default cloud-init deployments
+- OVH extra VMs receive common default cloud-init only, without the OVH private-netplan overlay
+- optional master SSH jump listener on the kube-api load balancer, targeting only the first master
+- explicit `just` recipes for planning and applying targeted OVH VM replacement
+
+Libvirt has been realigned with the recent OVH baseline for standalone `infra.vms`, per-role `user_data_enabled`, shared default cloud-init on standalone VMs, inventory VM groups, and normalized controller/worker/VM IP outputs.
+
+Azure has been realigned with the recent OVH/Libvirt baseline for standalone `infra.vms`, per-role `user_data_enabled`, shared default cloud-init on standalone VMs, inventory VM groups, normalized public/private IP outputs, and Ansible task gating.
 
 ---
 
@@ -53,6 +60,7 @@ OVH now includes:
 - [X] Implement templates.tf for azure
 - [X] Implement outputs.tf for azure
 - [X] Introduce `public_kube_api_endpoint` abstraction for Azure kubeconfig/output generation
+- [X] Align Azure provider with standalone VM and normalized output baseline
 - [ ] Test azure provider end-to-end
 
 ### Phase 4: Provider OVH (Priority 3)
@@ -63,6 +71,7 @@ OVH now includes:
 - [X] Implement templates.tf for ovh
 - [X] Implement outputs.tf for ovh
 - [X] Test ovh provider end-to-end
+- [X] Add explicit plan/apply recipes for targeted OVH VM replacement
 
 ### Phase 5: Ansible Integration
 - [X] Create shared ansible playbook: `check_cloudinit.yml` — wait for cloud-init to finish on all nodes

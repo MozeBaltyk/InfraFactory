@@ -43,7 +43,8 @@ resource "null_resource" "network_validation" {
         var.network.ip_type == "dhcp" ||
         (
           length(var.infra.masters.ip_addresses) >= var.infra.masters.count &&
-          length(var.infra.workers.ip_addresses) >= var.infra.workers.count
+          length(var.infra.workers.ip_addresses) >= var.infra.workers.count &&
+          length(var.infra.vms.ip_addresses) >= var.infra.vms.count
         )
       )
       error_message = "Static IP mode requires enough IP addresses for all VMs."
@@ -126,8 +127,20 @@ resource "libvirt_domain" "vms" {
     autoport    = true
   }
 
-  provisioner "remote-exec" {
+}
 
+resource "null_resource" "wait_cloudinit" {
+  for_each = {
+    for name, vm in local.all_vms_map : name => vm
+    if vm.user_data_enabled
+  }
+
+  triggers = {
+    domain_id = libvirt_domain.vms[each.key].id
+    host      = local.vm_operator_endpoints[each.key]
+  }
+
+  provisioner "remote-exec" {
     inline = [
       "echo 'Waiting for cloud-init to complete...'",
       "cloud-init status --wait > /dev/null",
@@ -135,15 +148,8 @@ resource "libvirt_domain" "vms" {
     ]
 
     connection {
-      type = "ssh"
-      host = coalesce(
-        each.value.ip,
-        try(element([
-          for addr in self.network_interface[0].addresses :
-          addr if can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+$", addr))
-        ], 0), null),
-        local.vm_fqdns[each.key]
-      )
+      type        = "ssh"
+      host        = self.triggers.host
       user        = var.cluster.username
       private_key = tls_private_key.global_key.private_key_pem
     }

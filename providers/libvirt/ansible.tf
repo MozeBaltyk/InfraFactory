@@ -2,8 +2,16 @@
 ### Check cloud-init status on all nodes using Ansible (shared playbook)
 ###
 
+locals {
+  k8s_master_user_data_enabled = contains(["k3s", "rke2"], var.cluster.cloud_init_selected) && var.infra.masters.count > 0 && var.infra.masters.user_data_enabled
+  k8s_cloudinit_check_enabled = (
+    local.k8s_master_user_data_enabled &&
+    (var.infra.workers.count == 0 || var.infra.workers.user_data_enabled)
+  )
+}
+
 resource "null_resource" "check_cloudinit" {
-  count = 1
+  count = local.k8s_cloudinit_check_enabled ? 1 : 0
 
   triggers = {
     abs_env_path = abspath(local.env_path)
@@ -18,7 +26,7 @@ EOT
   }
 
   depends_on = [
-    libvirt_domain.vms,
+    null_resource.wait_cloudinit,
     local_file.ansible_inventory,
     local_file.ansible_config
   ]
@@ -29,7 +37,7 @@ EOT
 ###
 
 resource "null_resource" "reconcile_tls_san" {
-  count = contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ? 1 : 0
+  count = local.k8s_master_user_data_enabled ? 1 : 0
 
   triggers = {
     abs_env_path        = abspath(local.env_path)
@@ -58,7 +66,7 @@ EOT
 ###
 
 resource "null_resource" "fetch_kubeconfig" {
-  count = contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ? 1 : 0
+  count = local.k8s_master_user_data_enabled ? 1 : 0
 
   triggers = {
     cluster_name        = var.cluster.id

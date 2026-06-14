@@ -221,11 +221,11 @@ locals {
     name => "#cloud-config\n${yamlencode(merge(config, {
       write_files = concat(
         try(config.write_files, []),
-        local.all_vms_map[name].private_attach ? local.ovh_private_netplan_write_files[name] : []
+        local.all_vms_map[name].private_attach && local.all_vms_map[name].public_attach && local.all_vms_map[name].role != "vm" ? local.ovh_private_netplan_write_files[name] : []
       )
 
       runcmd = concat(
-        local.all_vms_map[name].private_attach ? local.ovh_private_netplan_runcmd[name] : [],
+        local.all_vms_map[name].private_attach && local.all_vms_map[name].public_attach && local.all_vms_map[name].role != "vm" ? local.ovh_private_netplan_runcmd[name] : [],
         try(config.runcmd, [])
       )
     }))}"

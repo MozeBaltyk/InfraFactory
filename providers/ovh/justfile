@@ -2,6 +2,7 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
 ENV := env_var_or_default("ENV", "lab")
 ENV_TFVARS_PATH := "../../env/OVH/" + ENV + ".tfvars"
+
 [private]
 _workspace:
     @tofu workspace select {{ ENV }} || tofu workspace new {{ ENV }}
@@ -19,6 +20,16 @@ deploy:
     @tofu init
     @just _workspace
     @tofu apply -auto-approve -var-file={{ ENV_TFVARS_PATH }}
+
+# Replace one OVH VM instance by its OpenTofu key, for example kamaji-node05
+replace NAME:
+    @name="{{ NAME }}"; \
+      case "$name" in \
+        *[!A-Za-z0-9._-]*|'') echo "Invalid VM name: $name" >&2; exit 1 ;; \
+      esac; \
+      tofu init; \
+      just _workspace; \
+      tofu apply -var-file={{ ENV_TFVARS_PATH }} -replace="ovh_cloud_project_instance.vms[\"$name\"]"
 
 destroy:
     @tofu init
