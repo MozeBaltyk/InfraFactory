@@ -21,7 +21,7 @@ OVH now includes:
 - Ansible-based TLS SAN reconciliation (adds public IP to kube-apiserver cert)
 - Ansible-based kubeconfig fetch with public IP endpoint
 - standalone extra VMs via `infra.vms`, including VM-only default cloud-init deployments
-- OVH extra VMs receive common default cloud-init only, without the OVH private-netplan overlay
+- OVH extra VMs receive common default cloud-init plus the OVH private-netplan overlay
 - optional master SSH jump listener on the kube-api load balancer, targeting only the first master
 - explicit `just` recipes for planning and applying targeted OVH VM replacement
 

@@ -39,17 +39,6 @@ output "cluster_nodes" {
     controller_ips = compact([for vm in local.master_details : local.vm_public_ipv4_addresses[vm.name]])
     worker_ips     = compact([for vm in local.worker_details : local.vm_public_ipv4_addresses[vm.name]])
     vm_ips         = compact([for vm in local.vm_details : local.vm_public_ipv4_addresses[vm.name]])
-    public_ips = compact(concat(
-      [for vm in local.master_details : local.vm_public_ipv4_addresses[vm.name]],
-      [for vm in local.worker_details : local.vm_public_ipv4_addresses[vm.name]],
-      [for vm in local.vm_details : local.vm_public_ipv4_addresses[vm.name]],
-    ))
-    private_ips = {
-      controllers = [for vm in local.master_details : vm.private_ip]
-      workers     = [for vm in local.worker_details : vm.private_ip]
-      vms         = [for vm in local.vm_details : vm.private_ip]
-      all         = [for vm in local.all_vms_map : vm.private_ip]
-    }
 
     ssh_first_master = local.first_master_name != null ? try(
       format(
