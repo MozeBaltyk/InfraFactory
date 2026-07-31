@@ -41,7 +41,7 @@ locals {
   selected_images = [
     for image in data.ovh_cloud_project_images.all.images :
     image
-    if (
+    if(
       alltrue([
         for pattern in local.os.image.search_patterns :
         strcontains(lower(image.name), lower(pattern))
@@ -67,7 +67,7 @@ locals {
 resource "terraform_data" "validate_image" {
   lifecycle {
     precondition {
-      condition     = local.selected_image != null
+      condition = local.selected_image != null
       error_message = format(
         "No OVH image matching patterns [%s] found in region '%s'.",
         join(", ", local.os.image.search_patterns),
@@ -102,7 +102,7 @@ resource "ovh_cloud_project_instance" "vms" {
   billing_period = "hourly"
 
   name      = each.value.name
-  user_data = local.common_cloudinit[each.key]
+  user_data = module.cloudinit.rendered[each.key]
 
   boot_from {
     image_id = local.selected_image.id
@@ -123,8 +123,8 @@ resource "ovh_cloud_project_instance" "vms" {
       ip = each.value.private_ip
 
       network {
-          id        = local.private_network_id
-          subnet_id = local.private_subnet_id
+        id        = local.private_network_id
+        subnet_id = local.private_subnet_id
       }
     }
   }
@@ -154,8 +154,8 @@ data "ovh_cloud_project_instance" "vms" {
   for_each = ovh_cloud_project_instance.vms
 
   service_name = var.ovh_project_service_name
-  region        = var.cluster.region
-  instance_id   = each.value.id
+  region       = var.cluster.region
+  instance_id  = each.value.id
 
   depends_on = [
     time_sleep.wait_instance_networks

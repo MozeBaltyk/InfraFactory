@@ -113,7 +113,7 @@ resource "azurerm_linux_virtual_machine" "vms" {
   }
 
   custom_data = base64encode(
-    local.cloudinit[each.key]
+    module.cloudinit.rendered[each.key]
   )
 
   provisioner "remote-exec" {
