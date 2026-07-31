@@ -47,6 +47,19 @@ variable "rke2" {
 }
 
 ###################################
+# Talos Linux specific variables
+###################################
+variable "talos" {
+  description = "Talos Linux cluster configuration"
+
+  type = object({
+    version = optional(string, "v1.13.7")
+  })
+
+  default = {}
+}
+
+###################################
 # Ansible Pull specific variables
 ###################################
 variable "ansible" {

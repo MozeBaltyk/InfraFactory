@@ -1,6 +1,6 @@
-# Use CloudInit ISO to add SSH key to the instances
+# Use CloudInit ISO to add SSH key to the instances (skipped for Talos: nodes boot to maintenance mode)
 resource "libvirt_cloudinit_disk" "commoninit" {
-  for_each = local.all_vms_map
+  for_each = local.is_talos ? {} : local.all_vms_map
 
   name = "${each.value.name}-commoninit.iso"
 
@@ -108,7 +108,7 @@ EOT
 
 # Generate environment-specific ansible.cfg
 resource "local_file" "ansible_config" {
-  count = local.write_local_artifacts ? 1 : 0
+  count = local.write_local_artifacts && !local.is_talos ? 1 : 0
 
   filename = "${local.env_path}/ansible.cfg"
   content  = local.rendered_ansible_config
@@ -119,5 +119,5 @@ resource "local_file" "ansible_config" {
 # Output the rendered ansible.cfg content in gitops mode, otherwise null
 output "gitops_ansible_cfg" {
   description = "GitOps-mode rendered ansible.cfg content."
-  value       = local.gitops_mode ? local.rendered_ansible_config : null
+  value       = local.gitops_mode && !local.is_talos ? local.rendered_ansible_config : null
 }

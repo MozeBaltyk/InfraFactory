@@ -10,6 +10,10 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.5"
     }
+    talos = {
+      source  = "siderolabs/talos"
+      version = "~> 0.11.0"
+    }
   }
 }
 

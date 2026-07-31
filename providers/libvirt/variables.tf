@@ -14,6 +14,12 @@ variable "os_catalog" {
       os_version_long  = "24.04"
       os_URL           = "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img"
     }
+    talos = {
+      os_name          = "talos"
+      os_version_short = 1
+      os_version_long  = "1.13.7"
+      os_URL           = "https://factory.talos.dev/image/376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba/v1.13.7/metal-amd64.raw.xz"
+    }
   }
 }
 
@@ -62,6 +68,11 @@ variable "cluster" {
   validation {
     condition     = contains(["serial", "role"], var.cluster.node_name_format)
     error_message = "cluster.node_name_format must be either 'serial' or 'role'."
+  }
+
+  validation {
+    condition     = contains(["default", "k3s", "rke2", "talos"], var.cluster.cloud_init_selected)
+    error_message = "cluster.cloud_init_selected must be one of 'default', 'k3s', 'rke2' or 'talos'."
   }
 }
 
@@ -217,6 +228,9 @@ variable "gitops_artifacts_mode" {
 locals {
   gitops_mode           = var.gitops_artifacts_mode == "gitops"
   write_local_artifacts = !local.gitops_mode
+
+  # Talos replaces cloud-init + Ansible: nodes boot to maintenance mode and are configured by the talos provider
+  is_talos = var.cluster.cloud_init_selected == "talos"
 
   env_root = "${path.module}/../../env"
   env_path = "${local.env_root}/${var.infra_provider}/${terraform.workspace}"

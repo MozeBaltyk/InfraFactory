@@ -3,7 +3,7 @@
 ###
 
 resource "null_resource" "check_cloudinit" {
-  count = 1
+  count = local.is_talos ? 0 : 1
 
   triggers = {
     abs_env_path = abspath(local.env_path)

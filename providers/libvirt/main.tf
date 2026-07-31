@@ -7,12 +7,40 @@ resource "libvirt_pool" "factory_pool" {
 
 ### Disks
 
+# Talos image is a raw .xz: download, decompress and convert to qcow2 in the pool path
+resource "null_resource" "talos_image" {
+  count = local.is_talos ? 1 : 0
+
+  triggers = {
+    url  = local.os.os_URL
+    path = local.factory_pool_path
+  }
+
+  provisioner "local-exec" {
+    command = <<EOT
+mkdir -p ${local.factory_pool_path}
+DST=${local.factory_pool_path}/talos-metal.qcow2
+SRC=${local.factory_pool_path}/talos-metal.raw
+[ -f "$DST" ] || {
+  curl -fsSLo "${local.factory_pool_path}/talos-metal.raw.xz" ${local.os.os_URL} \
+    && xz -df "${local.factory_pool_path}/talos-metal.raw.xz" \
+    && qemu-img convert -f raw -O qcow2 "$SRC" "$DST" \
+    && rm -f "$SRC"
+}
+EOT
+  }
+
+  depends_on = [libvirt_pool.factory_pool]
+}
+
 # Fetch the OS image
 resource "libvirt_volume" "os_image" {
   name   = "${local.os.os_name}${local.os.os_version_short}-os_image"
   pool   = libvirt_pool.factory_pool.name
-  source = local.os.os_URL
+  source = local.is_talos ? "${local.factory_pool_path}/talos-metal.qcow2" : local.os.os_URL
   format = "qcow2"
+
+  depends_on = [null_resource.talos_image]
 }
 
 resource "libvirt_volume" "resized_os_image" {
@@ -108,7 +136,7 @@ resource "libvirt_domain" "vms" {
     mac            = each.value.mac
   }
 
-  cloudinit = libvirt_cloudinit_disk.commoninit[each.key].id
+  cloudinit = local.is_talos ? null : libvirt_cloudinit_disk.commoninit[each.key].id
 
   cpu = {
     mode = "host-passthrough"
@@ -124,28 +152,5 @@ resource "libvirt_domain" "vms" {
     type        = "vnc"
     listen_type = "address"
     autoport    = true
-  }
-
-  provisioner "remote-exec" {
-
-    inline = [
-      "echo 'Waiting for cloud-init to complete...'",
-      "cloud-init status --wait > /dev/null",
-      "echo 'Completed cloud-init!'"
-    ]
-
-    connection {
-      type = "ssh"
-      host = coalesce(
-        each.value.ip,
-        try(element([
-          for addr in self.network_interface[0].addresses :
-          addr if can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+$", addr))
-        ], 0), null),
-        local.vm_fqdns[each.key]
-      )
-      user        = var.cluster.username
-      private_key = tls_private_key.global_key.private_key_pem
-    }
   }
 }

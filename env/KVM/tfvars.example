@@ -58,6 +58,23 @@ os = {
   selected = "ubuntu24"
 }
 
+# Experimental: Talos Linux cluster (replaces cloud-init + Ansible)
+#os = {
+#  selected = "talos"
+#}
+#talos = {
+#  version = "v1.13.7" # Optional
+#}
+#cluster = {
+#  id                  = "factory"
+#  domain              = "lab"
+#  timezone            = "Europe/Paris"
+#  username            = "localadmin"
+#  node_name_format    = "serial"
+#  cloud_init_selected = "talos"
+#  factory_root_path   = "/srv"
+#}
+
 # Libvirt connexion
 #libvirt = {
 #  remote = true
