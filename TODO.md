@@ -75,7 +75,7 @@ OVH now includes:
 - [X] M1: full fresh-deploy validation (destroy + apply) on libvirt
 - [X] M3: extract cloudinit-renderer module (k3s/rke2/ansible/extra_packages var surface)
 - [X] M4: extract talos-cluster module (talos orchestration chain), migrate libvirt
-- [ ] M2: extract ansible-artifacts module (ansible.cfg + hosts.ini + fetch/reconcile flow)
+- [X] M2: extract ansible-artifacts module (ansible.cfg + hosts.ini + fetch/reconcile flow)
 
 ### Eval: Talos on libvirt (branch `eval/talos-deployment`)
 - [X] Deploy 1 control-plane + 1 worker, k8s v1.36.0 / Talos v1.13.7 (live cluster)
