@@ -7,37 +7,41 @@ resource "libvirt_pool" "factory_pool" {
 
 ### Disks
 
-# Talos image is a raw .xz: download, decompress and convert to qcow2 in the pool path
+# Talos image is a raw .xz: download, decompress and convert to qcow2.
+# The cache lives outside the libvirt pool: libvirtd creates the pool dir as root,
+# so the tofu user could not write the downloaded image into it.
+locals {
+  talos_image_cache = "${local.env_root}/.cache/talos"
+}
+
 resource "null_resource" "talos_image" {
   count = local.is_talos ? 1 : 0
 
   triggers = {
     url  = local.os.os_URL
-    path = local.factory_pool_path
+    path = local.talos_image_cache
   }
 
   provisioner "local-exec" {
     command = <<EOT
-mkdir -p ${local.factory_pool_path}
-DST=${local.factory_pool_path}/talos-metal.qcow2
-SRC=${local.factory_pool_path}/talos-metal.raw
+mkdir -p ${local.talos_image_cache}
+DST=${local.talos_image_cache}/talos-metal-${var.talos.version}.qcow2
+SRC=${local.talos_image_cache}/talos-metal-${var.talos.version}.raw
 [ -f "$DST" ] || {
-  curl -fsSLo "${local.factory_pool_path}/talos-metal.raw.xz" ${local.os.os_URL} \
-    && xz -df "${local.factory_pool_path}/talos-metal.raw.xz" \
+  curl -fsSLo "${local.talos_image_cache}/talos-metal-${var.talos.version}.raw.xz" ${local.os.os_URL} \
+    && xz -df "${local.talos_image_cache}/talos-metal-${var.talos.version}.raw.xz" \
     && qemu-img convert -f raw -O qcow2 "$SRC" "$DST" \
     && rm -f "$SRC"
 }
 EOT
   }
-
-  depends_on = [libvirt_pool.factory_pool]
 }
 
 # Fetch the OS image
 resource "libvirt_volume" "os_image" {
   name   = "${local.os.os_name}${local.os.os_version_short}-os_image"
   pool   = libvirt_pool.factory_pool.name
-  source = local.is_talos ? "${local.factory_pool_path}/talos-metal.qcow2" : local.os.os_URL
+  source = local.is_talos ? "${local.talos_image_cache}/talos-metal-${var.talos.version}.qcow2" : local.os.os_URL
   format = "qcow2"
 
   depends_on = [null_resource.talos_image]
