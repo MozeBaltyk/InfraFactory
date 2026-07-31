@@ -2,7 +2,7 @@ set positional-arguments := true
 set quiet := true
 set shell := ['bash', '-euo', 'pipefail', '-c']
 
-mod runner_image "runner/mod.justfile"
+mod runner_image "scripts/runner/mod.justfile"
 
 PROVIDER := env_var_or_default("PROVIDER", "KVM")
 ENV := env_var_or_default("ENV", "lab")
@@ -75,7 +75,7 @@ _manifest-runner-image manifest:
     @if [ ! -f "{{ manifest }}" ]; then \
         echo missing; \
       else \
-        python3 -c $'import re\nimport sys\nfrom pathlib import Path\npath = Path(sys.argv[1])\ntext = path.read_text()\nmatch = re.search(r"(?m)^\\s{2}runnerPodTemplate:\\s*$", text)\nif not match:\n    print("controller-default", end="")\n    sys.exit(0)\nlines = text.splitlines()\nstart = next((i for i, line in enumerate(lines) if re.match(r"^\\s{2}runnerPodTemplate:\\s*$", line)), None)\nif start is None:\n    print("controller-default", end="")\n    sys.exit(0)\nfor line in lines[start + 1:]:\n    if line and not line.startswith("    "):\n        break\n    m = re.match(r"^\\s+image:\\s*(.+?)\\s*$", line)\n    if m:\n        print(m.group(1).strip().strip("\\\'\\\""), end="")\n        sys.exit(0)\nprint("controller-default", end="")' "{{ manifest }}"; \
+        yq -r '.spec.runnerPodTemplate.spec.image // "controller-default"' "{{ manifest }}"; \
       fi
 
 [private]
@@ -83,14 +83,14 @@ _manifest-source-ref manifest:
     @if [ ! -f "{{ manifest }}" ]; then \
         echo missing; \
       else \
-        python3 -c $'import re\nimport sys\nfrom pathlib import Path\ntext = Path(sys.argv[1]).read_text()\nlines = text.splitlines()\nstart = next((i for i, line in enumerate(lines) if re.match(r"^\\s{2}sourceRef:\\s*$", line)), None)\nvalues = {}\nif start is not None:\n    for line in lines[start + 1:]:\n        if line and not line.startswith("    "):\n            break\n        m = re.match(r"^\\s+(kind|name|namespace):\\s*(.+?)\\s*$", line)\n        if m:\n            values[m.group(1)] = m.group(2).strip().strip("\\\'\\\"")\nkind = values.get("kind", "unknown")\nname = values.get("name", "unknown")\nnamespace = values.get("namespace", "flux-system")\nprint(f"{kind}/{name} namespace={namespace}", end="")' "{{ manifest }}"; \
+        yq -r '.spec.sourceRef | "\(.kind)/\(.name) namespace=\(.namespace // \"flux-system\")"' "{{ manifest }}"; \
       fi
 
 [private]
 _flux-instance-source:
     @manifest="./apps/flux-system/flux-instance/app/helmrelease.yaml"; \
       if [ ! -f "$manifest" ]; then echo missing; exit 0; fi; \
-      python3 -c $'import re\nimport sys\nfrom pathlib import Path\ntext = Path(sys.argv[1]).read_text()\nvalues = {}\nfor name in ("url", "ref", "path"):\n    m = re.search(rf"(?m)^\\s+{name}:\\s*(.+?)\\s*$", text)\n    values[name] = m.group(1).strip().strip("\\\'\\\"") if m else "unknown"\nprint(f"url={values[\'url\']} ref={values[\'ref\']} path={values[\'path\']}", end="")' "$manifest"
+      yq -r '.spec.values.instance.sync | "url=\(.url // \"unknown\") ref=\(.ref // \"unknown\") path=\(.path // \"unknown\")"' "$manifest"
 
 [private]
 _live-terraform-runner-image:
@@ -503,7 +503,11 @@ _ensure-provider-kustomization:
 [private]
 _set-provider-resource resource present:
     @provider_kustomization="$(just _tf-provider-kustomization)"; \
-      python3 -c $'import sys\nfrom pathlib import Path\npath = Path(sys.argv[1])\nresource = sys.argv[2]\npresent = sys.argv[3] == "true"\ntext = path.read_text() if path.exists() else ""\nlines = text.splitlines()\nstart = None\nend = None\nfor index, line in enumerate(lines):\n    if line.strip() == "resources:" or line.strip() == "resources: []":\n        start = index\n        end = index + 1\n        if line.strip() == "resources:":\n            while end < len(lines):\n                stripped = lines[end].strip()\n                if lines[end].startswith((" ", "\\t")) or stripped == "" or stripped.startswith("#"):\n                    end += 1\n                else:\n                    break\n        break\nresources = []\nkept = []\nif start is not None and lines[start].strip() == "resources:":\n    for line in lines[start + 1:end]:\n        stripped = line.strip()\n        if stripped.startswith("- "):\n            item = stripped[2:].strip()\n            if item and item not in resources:\n                resources.append(item)\n        elif stripped == "" or stripped.startswith("#"):\n            kept.append(line)\nif present and resource not in resources:\n    resources.append(resource)\nif not present:\n    resources = [item for item in resources if item != resource]\nblock = ["resources:"] + kept + [f"  - {item}" for item in resources] if resources or kept else ["resources: []"]\nif start is None:\n    if lines and lines[-1].strip() != "":\n        lines.append("")\n    new_lines = lines + block\nelse:\n    new_lines = lines[:start] + block + lines[end:]\npath.write_text("\\n".join(new_lines).rstrip() + "\\n")' "$provider_kustomization" "{{ resource }}" "{{ present }}"
+      if [ "{{ present }}" = "true" ]; then \
+        yq -i '.resources |= (. // []) + ["{{ resource }}"] | .resources |= unique' "$provider_kustomization"; \
+      else \
+        yq -i '.resources |= map(select(. != "{{ resource }}"))' "$provider_kustomization"; \
+      fi
 
 [doc('Activate selected tf overlay in Flux tree')]
 [group('Overlay')]
@@ -711,9 +715,9 @@ publish-libvirt-artifacts:
     @kubeconfig_path="$(just _manual-kubeconfig-path)"; \
       if [ ! -f "$kubeconfig_path" ]; then \
         output_json="$(cd ../providers/libvirt && tofu workspace select {{ ENV }} >/dev/null && tofu output -json)"; \
-        ssh_endpoint="$(printf '%s' "$output_json" | python3 -c 'import json,sys; data=json.load(sys.stdin); print(data.get("gitops_kubeconfig_host", {}).get("value") or "")')"; \
-        ssh_user="$(printf '%s' "$output_json" | python3 -c 'import json,sys; data=json.load(sys.stdin); print(data.get("gitops_kubeconfig_user", {}).get("value") or "")')"; \
-        remote_path="$(printf '%s' "$output_json" | python3 -c 'import json,sys; data=json.load(sys.stdin); print(data.get("gitops_kubeconfig_remote_path", {}).get("value") or "")')"; \
+        ssh_endpoint="$(printf '%s' "$output_json" | yq -r '."gitops_kubeconfig_host".value // ""')"; \
+        ssh_user="$(printf '%s' "$output_json" | yq -r '."gitops_kubeconfig_user".value // ""')"; \
+        remote_path="$(printf '%s' "$output_json" | yq -r '."gitops_kubeconfig_remote_path".value // ""')"; \
         if [ -n "$ssh_endpoint" ] && [ -n "$ssh_user" ] && [ -n "$remote_path" ]; then \
           mkdir -p "$(dirname "$kubeconfig_path")"; \
           ssh -o StrictHostKeyChecking=no -i "$artifact_dir/.key.private" "$ssh_user@$ssh_endpoint" "sudo cat $remote_path" > "$kubeconfig_path"; \

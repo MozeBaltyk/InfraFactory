@@ -345,14 +345,14 @@ In this context, GitOps bootstrap is different from cloud-init bootstrap:
 
 ## Governance & Architecture
 
-Infrastructure deployments are governed by the [InfraFactory Constitution](.specify/memory/constitution.md), enforcing:
+Infrastructure deployments are governed by the principles in [AGENTS.md](AGENTS.md), enforcing:
 
 - **Core Principles**: Modular design, provider symmetry, consistent workflows
 - **Development Priority**: Libvirt (dev) → Azure → OVH
 - **Code Quality**: Incremental implementation, focused commits, no system modifications
 - **Architecture**: Schema coverage policy, provider parity validation
 
-See [AGENTS.md](AGENTS.md) for AI assistant context and [constitution.md](.specify/memory/constitution.md) for full governance rules.
+See [AGENTS.md](AGENTS.md) for AI assistant context and full governance rules.
 
 ---
 
