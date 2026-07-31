@@ -5,7 +5,7 @@ variable "os_catalog" {
     os_name          = string
     os_version_short = number
     os_version_long  = string
-    os_URL           = string
+    os_URL           = optional(string) # required for cloud images; Talos URL is derived via talos_image_factory_urls
   }))
   default = {
     ubuntu24 = {
@@ -18,7 +18,8 @@ variable "os_catalog" {
       os_name          = "talos"
       os_version_short = 1
       os_version_long  = "1.13.7"
-      os_URL           = "https://factory.talos.dev/image/376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba/v1.13.7/metal-amd64.raw.xz"
+      # no os_URL: the metal image URL is built from var.talos.version + var.talos.schematic_id
+      # via data.talos_image_factory_urls (talos.tf)
     }
   }
 }

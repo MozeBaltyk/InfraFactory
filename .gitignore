@@ -12,3 +12,4 @@ kubeconfig
 .local
 
 env/.cache/
+talosconfig

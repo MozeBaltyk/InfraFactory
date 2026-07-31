@@ -18,7 +18,7 @@ resource "null_resource" "talos_image" {
   count = local.is_talos ? 1 : 0
 
   triggers = {
-    url  = local.os.os_URL
+    url  = data.talos_image_factory_urls.this[0].urls.disk_image
     path = local.talos_image_cache
   }
 
@@ -28,8 +28,8 @@ mkdir -p ${local.talos_image_cache}
 DST=${local.talos_image_cache}/talos-metal-${var.talos.version}.qcow2
 SRC=${local.talos_image_cache}/talos-metal-${var.talos.version}.raw
 [ -f "$DST" ] || {
-  curl -fsSLo "${local.talos_image_cache}/talos-metal-${var.talos.version}.raw.xz" ${local.os.os_URL} \
-    && xz -df "${local.talos_image_cache}/talos-metal-${var.talos.version}.raw.xz" \
+  curl -fsSLo "${local.talos_image_cache}/talos-metal-${var.talos.version}.raw.zst" ${data.talos_image_factory_urls.this[0].urls.disk_image} \
+    && zstd -df "${local.talos_image_cache}/talos-metal-${var.talos.version}.raw.zst" \
     && qemu-img convert -f raw -O qcow2 "$SRC" "$DST" \
     && rm -f "$SRC"
 }

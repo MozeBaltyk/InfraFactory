@@ -8,10 +8,28 @@
 ### Only active when cluster.cloud_init_selected == "talos".
 ###
 
+# Build the metal image download URL from the Talos Factory (schematic + version)
+data "talos_image_factory_urls" "this" {
+  count         = local.is_talos ? 1 : 0
+  talos_version = var.talos.version
+  schematic_id  = var.talos.schematic_id
+  platform      = "metal"
+}
+
 # Cluster identity and TLS bootstrap secrets
 resource "talos_machine_secrets" "this" {
   count         = local.is_talos ? 1 : 0
   talos_version = var.talos.version
+}
+
+# Generate the talosconfig (for talosctl) with endpoints/nodes baked in
+data "talos_client_configuration" "this" {
+  count = local.is_talos ? 1 : 0
+
+  cluster_name         = var.cluster.id
+  client_configuration = talos_machine_secrets.this[0].client_configuration
+  endpoints            = local.talos_controlplane_endpoints
+  nodes                = [for vm_name, vm in local.all_vms_map : local.vm_operator_endpoints[vm_name]]
 }
 
 # Per-role machine configuration (controlplane / worker)
@@ -62,6 +80,27 @@ resource "talos_machine_bootstrap" "this" {
   ]
 }
 
+# Wait for the cluster to be healthy before exposing the kubeconfig
+data "talos_cluster_health" "this" {
+  count = local.is_talos ? 1 : 0
+
+  client_configuration = talos_machine_secrets.this[0].client_configuration
+  control_plane_nodes  = local.talos_controlplane_endpoints
+  worker_nodes = [
+    for vm_name, vm in local.all_vms_map :
+    local.vm_operator_endpoints[vm_name] if vm.role == "worker"
+  ]
+  endpoints = local.talos_controlplane_endpoints
+
+  timeouts = {
+    read = "20m"
+  }
+
+  depends_on = [
+    talos_machine_bootstrap.this
+  ]
+}
+
 # Fetch the cluster kubeconfig
 resource "talos_cluster_kubeconfig" "this" {
   count                = local.is_talos ? 1 : 0
@@ -70,7 +109,8 @@ resource "talos_cluster_kubeconfig" "this" {
   endpoint             = local.vm_operator_endpoints[local.first_master_name]
 
   depends_on = [
-    talos_machine_bootstrap.this
+    talos_machine_bootstrap.this,
+    data.talos_cluster_health.this
   ]
 }
 
@@ -80,6 +120,19 @@ resource "local_sensitive_file" "talos_kubeconfig" {
 
   filename        = "${local.env_path}/kubeconfig"
   content         = talos_cluster_kubeconfig.this[0].kubeconfig_raw
+  file_permission = "0600"
+
+  depends_on = [
+    null_resource.env_directory
+  ]
+}
+
+# Write the talosconfig to the environment directory (for talosctl)
+resource "local_sensitive_file" "talos_config" {
+  count = local.is_talos && local.write_local_artifacts ? 1 : 0
+
+  filename        = "${local.env_path}/talosconfig"
+  content         = data.talos_client_configuration.this[0].talos_config
   file_permission = "0600"
 
   depends_on = [

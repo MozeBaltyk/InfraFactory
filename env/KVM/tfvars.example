@@ -63,7 +63,8 @@ os = {
 #  selected = "talos"
 #}
 #talos = {
-#  version = "v1.13.7" # Optional
+#  version      = "v1.13.7" # Optional
+#  schematic_id = "3765679..." # Optional; vanilla Talos by default (see providers/libvirt/vars_extra.tf)
 #}
 #cluster = {
 #  id                  = "factory"

@@ -54,6 +54,9 @@ variable "talos" {
 
   type = object({
     version = optional(string, "v1.13.7")
+    # Talos Factory schematic ID; vanilla Talos by default. Custom kernels/modules
+    # require a custom schematic (see factory.talos.dev).
+    schematic_id = optional(string, "376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba")
   })
 
   default = {}
