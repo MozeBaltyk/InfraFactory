@@ -43,25 +43,12 @@ resource "null_resource" "sleep_before_inventory" {
   ]
 }
 
-resource "local_file" "ansible_inventory" {
-  count = local.write_local_artifacts && !local.is_talos ? 1 : 0
-
-  content = local.rendered_ansible_inventory
-
-  filename = "${local.env_path}/hosts.ini"
-
-  depends_on = [
-    module.ssh_keys,
-    null_resource.sleep_before_inventory
-  ]
-}
-
 ###
 ### Output the rendered hosts.ini content in gitops mode, otherwise null
 ###
 output "gitops_hosts_ini" {
   description = "GitOps-mode rendered inventory content."
-  value       = local.gitops_mode && !local.is_talos ? local.rendered_ansible_inventory : null
+  value       = try(module.ansible[0].gitops_hosts_ini, null)
 }
 
 ###
@@ -123,7 +110,7 @@ export KUBECONFIG=env/${var.infra_provider}/${terraform.workspace}/kubeconfig
 # Then :
 kubectl get nodes
 EOT
-    ) : (
+      ) : (
       local.is_talos ? (<<-EOT
 export KUBECONFIG=env/${var.infra_provider}/${terraform.workspace}/kubeconfig
 # Or :

@@ -1,91 +1,26 @@
 ###
-### Check cloud-init status on all nodes using Ansible (shared playbook)
+### Ansible flow: cloud-init check, TLS SAN reconciliation and kubeconfig fetch
+### (shared module)
 ###
 
-resource "null_resource" "check_cloudinit" {
-  count = 1
+module "ansible" {
+  source = "../shared/modules/ansible-artifacts"
 
-  triggers = {
-    abs_env_path = abspath(local.env_path)
-  }
+  env_path            = local.env_path
+  cluster_id          = var.cluster.id
+  username            = var.cluster.username
+  cloud_init_selected = var.cluster.cloud_init_selected
+  kube_api_endpoint   = local.public_kube_api_endpoint
+  ssh_host            = azurerm_public_ip.vm-pip[local.first_master_name].ip_address
 
-  provisioner "local-exec" {
-    command = <<EOT
-ANSIBLE_CONFIG=${self.triggers.abs_env_path}/ansible.cfg \
-ansible-playbook \
-  ${path.module}/../shared/ansible/check_cloudinit.yml
-EOT
-  }
-
-  depends_on = [
-    azurerm_linux_virtual_machine.vms,
-    local_file.ansible_inventory,
-    local_file.ansible_config
+  controller_ips = [
+    for k, vm in local.masters_map : azurerm_public_ip.vm-pip[k].ip_address
   ]
-}
-
-###
-### Reconcile kube-apiserver TLS SAN on first master (add public IP)
-###
-
-resource "null_resource" "reconcile_tls_san" {
-  count = contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ? 1 : 0
-
-  triggers = {
-    abs_env_path        = abspath(local.env_path)
-    kube_api_endpoint   = local.public_kube_api_endpoint
-    cloud_init_selected = var.cluster.cloud_init_selected
-  }
-
-  provisioner "local-exec" {
-    command = <<EOT
-ANSIBLE_CONFIG=${self.triggers.abs_env_path}/ansible.cfg \
-ansible-playbook \
-  ${path.module}/../shared/ansible/reconciliate_tls.yml \
-  --limit controller1 \
-  -e cloud_init_selected=${self.triggers.cloud_init_selected} \
-  -e kube_api_endpoint=${self.triggers.kube_api_endpoint}
-EOT
-  }
-
-  depends_on = [
-    null_resource.check_cloudinit
+  worker_ips = [
+    for k, vm in local.workers_map : azurerm_public_ip.vm-pip[k].ip_address
   ]
-}
-
-###
-### Import kubeconfig using Ansible (shared playbook)
-###
-
-resource "null_resource" "fetch_kubeconfig" {
-  count = contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ? 1 : 0
-
-  triggers = {
-    cluster_name              = var.cluster.id
-    abs_env_path              = abspath(local.env_path)
-    ssh_host                  = azurerm_public_ip.vm-pip[local.first_master_name].ip_address
-    kube_api_endpoint         = local.public_kube_api_endpoint
-    cloud_init_selected       = var.cluster.cloud_init_selected
-  }
-
-  provisioner "local-exec" {
-    command = <<EOT
-ANSIBLE_CONFIG=${self.triggers.abs_env_path}/ansible.cfg \
-ansible-playbook \
-  ${path.module}/../shared/ansible/fetch_kubeconfig.yml \
-  --limit controller1 \
-  -e cloud_init_selected=${self.triggers.cloud_init_selected} \
-  -e kube_api_endpoint=${self.triggers.kube_api_endpoint} \
-  -e local_kubeconfig_path=${self.triggers.abs_env_path}/kubeconfig
-EOT
-  }
-
-  provisioner "local-exec" {
-    when    = destroy
-    command = "rm -f ${self.triggers.abs_env_path}/kubeconfig"
-  }
 
   depends_on = [
-    null_resource.reconcile_tls_san
+    azurerm_linux_virtual_machine.vms
   ]
 }

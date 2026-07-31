@@ -42,22 +42,3 @@ module "cloudinit" {
     }
   }
 }
-
-# Generate environment-specific ansible.cfg
-resource "local_file" "ansible_config" {
-  filename = "${local.env_path}/ansible.cfg"
-  content  = <<-EOT
-[defaults]
-remote_user = ${var.cluster.username}
-inventory =  ./hosts.ini
-roles_path = ../../../ansible/roles
-host_key_checking = false
-display_skipped_hosts = false
-deprecation_warnings = false
-force_color       = True
-stdout_callback   = yaml
-private_key_file = ./.key.private
-EOT
-
-  depends_on = [module.ssh_keys]
-}
