@@ -116,7 +116,7 @@ resource "libvirt_domain" "vms" {
   vcpu   = each.value.cpu
 
   autostart  = true
-  qemu_agent = true
+  qemu_agent = false # ponytail: no guest agent in Talos/k3s images; lease source covers NAT/dhcp
 
   disk {
     volume_id = libvirt_volume.resized_os_image[each.key].id
