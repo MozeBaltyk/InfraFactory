@@ -23,7 +23,7 @@ resource "random_id" "ssh_key_suffix" {
 resource "ovh_cloud_project_ssh_key" "cluster" {
   service_name = var.ovh_project_service_name
   name         = "${terraform.workspace}-${random_id.ssh_key_suffix.hex}"
-  public_key   = trimspace(tls_private_key.global_key.public_key_openssh)
+  public_key   = trimspace(module.ssh_keys.public_key_openssh)
 }
 
 locals {

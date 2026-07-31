@@ -19,7 +19,7 @@ resource "libvirt_cloudinit_disk" "commoninit" {
       timezone      = var.cluster.timezone
       node_username = var.cluster.username
 
-      public_key = tls_private_key.global_key.public_key_openssh
+      public_key = module.ssh_keys.public_key_openssh
 
       is_first_master        = each.value.name == local.first_master_name
       first_master_ip        = local.first_master_ip
@@ -30,7 +30,7 @@ resource "libvirt_cloudinit_disk" "commoninit" {
       node_role = each.value.role
 
       # Optional K3s config
-      k3s_token                  = local.cluster_token
+      k3s_token                  = module.ssh_keys.cluster_token
       k3s_version                = var.k3s.version
       k3s_tls_sans               = concat(var.k3s.tls_sans, [for master in local.master_details : local.vm_fqdns[master.name]])
       k3s_etcd_enabled           = var.k3s.etcd_enabled
@@ -41,7 +41,7 @@ resource "libvirt_cloudinit_disk" "commoninit" {
       k3s_flannel_enabled        = var.k3s.flannel_enabled
 
       # Optional RKE2 config
-      rke2_token                  = local.cluster_token
+      rke2_token                  = module.ssh_keys.cluster_token
       rke2_version                = var.rke2.version
       rke2_tls_sans               = concat(var.rke2.tls_sans, [for master in local.master_details : local.vm_fqdns[master.name]])
       rke2_etcd_enabled           = var.rke2.etcd_enabled
@@ -113,7 +113,7 @@ resource "local_file" "ansible_config" {
   filename = "${local.env_path}/ansible.cfg"
   content  = local.rendered_ansible_config
 
-  depends_on = [null_resource.env_directory]
+  depends_on = [module.ssh_keys]
 }
 
 # Output the rendered ansible.cfg content in gitops mode, otherwise null

@@ -51,7 +51,7 @@ resource "local_file" "ansible_inventory" {
   filename = "${local.env_path}/hosts.ini"
 
   depends_on = [
-    null_resource.env_directory,
+    module.ssh_keys,
     null_resource.sleep_before_inventory
   ]
 }

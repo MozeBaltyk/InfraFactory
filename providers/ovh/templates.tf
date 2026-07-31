@@ -17,7 +17,7 @@ locals {
         clusterid     = var.cluster.id
 
         ## SSH
-        public_key = tls_private_key.global_key.public_key_openssh
+        public_key = module.ssh_keys.public_key_openssh
 
         ## Networking
         current_private_ip = vm.private_ip
@@ -43,7 +43,7 @@ locals {
         # K3S
         #################################################
 
-        k3s_token   = local.cluster_token
+        k3s_token   = module.ssh_keys.cluster_token
         k3s_version = var.k3s.version
 
         k3s_tls_sans = distinct(compact(concat(
@@ -64,7 +64,7 @@ locals {
         # RKE2
         #################################################
 
-        rke2_token   = local.cluster_token
+        rke2_token   = module.ssh_keys.cluster_token
         rke2_version = var.rke2.version
 
         rke2_tls_sans = distinct(compact(concat(
@@ -107,5 +107,5 @@ stdout_callback   = yaml
 private_key_file = ./.key.private
 EOT
 
-  depends_on = [null_resource.env_directory]
+  depends_on = [module.ssh_keys]
 }

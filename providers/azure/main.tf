@@ -109,7 +109,7 @@ resource "azurerm_linux_virtual_machine" "vms" {
 
   admin_ssh_key {
     username   = var.cluster.username
-    public_key = tls_private_key.global_key.public_key_openssh
+    public_key = module.ssh_keys.public_key_openssh
   }
 
   custom_data = base64encode(
@@ -128,7 +128,7 @@ resource "azurerm_linux_virtual_machine" "vms" {
       type        = "ssh"
       host        = azurerm_public_ip.vm-pip[each.key].ip_address
       user        = var.cluster.username
-      private_key = tls_private_key.global_key.private_key_pem
+      private_key = module.ssh_keys.private_key_pem
       timeout     = "5m"
     }
   }

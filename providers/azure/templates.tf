@@ -21,7 +21,7 @@ locals {
         timezone      = var.cluster.timezone
         node_username = var.cluster.username
 
-        public_key = tls_private_key.global_key.public_key_openssh
+        public_key = module.ssh_keys.public_key_openssh
 
         is_first_master        = vm.name == local.master_details[0].name
         first_master_ip        = azurerm_network_interface.vm-interface[local.first_master_name].private_ip_address
@@ -33,7 +33,7 @@ locals {
         node_role = vm.role
 
         # Optional K3s config
-        k3s_token   = local.cluster_token
+        k3s_token   = module.ssh_keys.cluster_token
         k3s_version = var.k3s.version
         k3s_tls_sans = concat(var.k3s.tls_sans,
           [local.public_kube_api_endpoint],
@@ -48,7 +48,7 @@ locals {
         k3s_flannel_enabled        = var.k3s.flannel_enabled
 
         # Optional RKE2 config
-        rke2_token   = local.cluster_token
+        rke2_token   = module.ssh_keys.cluster_token
         rke2_version = var.rke2.version
         rke2_tls_sans = concat(var.rke2.tls_sans,
           [local.public_kube_api_endpoint],
@@ -86,5 +86,5 @@ stdout_callback   = yaml
 private_key_file = ./.key.private
 EOT
 
-  depends_on = [null_resource.env_directory]
+  depends_on = [module.ssh_keys]
 }

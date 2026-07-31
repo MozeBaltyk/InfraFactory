@@ -123,7 +123,7 @@ resource "local_sensitive_file" "talos_kubeconfig" {
   file_permission = "0600"
 
   depends_on = [
-    null_resource.env_directory
+    module.ssh_keys
   ]
 }
 
@@ -136,6 +136,6 @@ resource "local_sensitive_file" "talos_config" {
   file_permission = "0600"
 
   depends_on = [
-    null_resource.env_directory
+    module.ssh_keys
   ]
 }
