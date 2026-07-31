@@ -72,8 +72,8 @@ OVH now includes:
 ### Phase 6: Provider module extraction (drift reduction)
 - [X] Evaluate candidate shared modules (keys/ansible/cloud-init/talos) across libvirt/azure/ovh
 - [X] M1: extract `providers/shared/modules/ssh-keys`, migrate libvirt/azure/ovh, `tofu state mv` live libvirt cluster
-- [ ] M1: full fresh-deploy validation (destroy + apply) on libvirt
-- [ ] M3: extract cloudinit-renderer module (k3s/rke2/ansible/extra_packages var surface)
+- [X] M1: full fresh-deploy validation (destroy + apply) on libvirt
+- [X] M3: extract cloudinit-renderer module (k3s/rke2/ansible/extra_packages var surface)
 - [ ] M2: extract ansible-artifacts module (ansible.cfg + hosts.ini + fetch/reconcile flow)
 - [ ] M4: extract talos module (talos.tf)
 
