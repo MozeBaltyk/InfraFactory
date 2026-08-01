@@ -32,11 +32,13 @@ variable "cloud_init_selected" {
 variable "kube_api_endpoint" {
   description = "Kubernetes API endpoint address (no scheme, no port)."
   type        = string
+  default     = null
 }
 
 variable "ssh_host" {
   description = "Operator-reachable SSH host of the first master."
   type        = string
+  default     = null
 }
 
 variable "controller_ips" {
@@ -47,6 +49,24 @@ variable "controller_ips" {
 variable "worker_ips" {
   description = "Operator-reachable IPs of the worker nodes."
   type        = list(string)
+}
+
+variable "vm_ips" {
+  description = "Operator-reachable IPs of the standalone infra VMs."
+  type        = list(string)
+  default     = []
+}
+
+variable "cloudinit_check_enabled" {
+  description = "Run the cloud-init readiness check (false when nodes boot without user-data)."
+  type        = bool
+  default     = true
+}
+
+variable "k8s_flow_enabled" {
+  description = "Run the TLS SAN reconciliation and kubeconfig fetch flow."
+  type        = bool
+  default     = true
 }
 
 variable "write_local_artifacts" {

@@ -13,6 +13,11 @@ controller${idx + 1} ansible_host=${ip} # Controller${idx + 1}
 worker${idx + 1} ansible_host=${ip} # Worker${idx + 1}
 %{ endfor ~}
 
+[VMS]
+%{ for idx, ip in vm_ips ~}
+vm${idx + 1} ansible_host=${ip} # VM${idx + 1}
+%{ endfor ~}
+
 [K8S_CLUSTER:children]
 CONTROLLERS
 WORKERS

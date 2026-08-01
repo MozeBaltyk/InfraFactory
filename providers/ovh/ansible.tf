@@ -3,6 +3,14 @@
 ### (shared module)
 ###
 
+locals {
+  k8s_master_user_data_enabled = local.kubernetes_enabled && var.infra.masters.count > 0 && var.infra.masters.user_data_enabled
+  k8s_cloudinit_check_enabled = (
+    local.k8s_master_user_data_enabled &&
+    (var.infra.workers.count == 0 || var.infra.workers.user_data_enabled)
+  )
+}
+
 module "ansible" {
   source = "../shared/modules/ansible-artifacts"
 
@@ -22,6 +30,14 @@ module "ansible" {
     for vm in local.worker_details :
     local.vm_public_ipv4_addresses[vm.name]
   ])
+
+  vm_ips = compact([
+    for vm in local.vm_details :
+    local.vm_public_ipv4_addresses[vm.name]
+  ])
+
+  cloudinit_check_enabled = local.k8s_cloudinit_check_enabled
+  k8s_flow_enabled        = local.k8s_master_user_data_enabled
 
   depends_on = [
     ovh_cloud_project_instance.vms,

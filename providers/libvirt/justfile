@@ -11,15 +11,41 @@ validate:
     @tofu init -backend=false
     @tofu validate
 
-plan:
+plan NAME='':
     @tofu init
     @just _workspace
-    @tofu plan -var-file={{ ENV_TFVARS_PATH }}
+    @name="{{ NAME }}"; \
+      target_args=(); \
+      if test -n "$name"; then \
+        case "$name" in \
+          *[!A-Za-z0-9._-]*|'') echo "Invalid VM name: $name" >&2; exit 1 ;; \
+        esac; \
+        target_args=(-target="libvirt_domain.vms[\"$name\"]"); \
+      fi; \
+      tofu plan -var-file={{ ENV_TFVARS_PATH }} "${target_args[@]}"
 
-deploy:
+deploy NAME='':
     @tofu init
     @just _workspace
-    @tofu apply -auto-approve -var-file={{ ENV_TFVARS_PATH }}
+    @name="{{ NAME }}"; \
+      target_args=(); \
+      if test -n "$name"; then \
+        case "$name" in \
+          *[!A-Za-z0-9._-]*|'') echo "Invalid VM name: $name" >&2; exit 1 ;; \
+        esac; \
+        target_args=(-target="libvirt_domain.vms[\"$name\"]"); \
+      fi; \
+      tofu apply -auto-approve -var-file={{ ENV_TFVARS_PATH }} "${target_args[@]}"
+
+# Force rebuild one VM instance
+replace NAME:
+    @name="{{ NAME }}"; \
+      case "$name" in \
+        *[!A-Za-z0-9._-]*|'') echo "Invalid VM name: $name" >&2; exit 1 ;; \
+      esac; \
+      tofu init; \
+      just _workspace; \
+      tofu apply -var-file={{ ENV_TFVARS_PATH }} -target="libvirt_domain.vms[\"$name\"]" -replace="libvirt_domain.vms[\"$name\"]"
 
 destroy:
     @tofu init

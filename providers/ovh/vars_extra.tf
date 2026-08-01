@@ -14,7 +14,7 @@ variable "k3s" {
   description = "K3s cluster configuration"
 
   type = object({
-    version                = optional(string, "latest") #"v1.34.5+k3s1"
+    version                = optional(string, "latest")
     token                  = optional(string)
     tls_sans               = optional(list(string), [])
     etcd_enabled           = optional(bool, true)
@@ -99,22 +99,6 @@ variable "rke2" {
 }
 
 ###################################
-# Talos Linux specific variables
-###################################
-variable "talos" {
-  description = "Talos Linux cluster configuration"
-
-  type = object({
-    version = optional(string, "v1.13.7")
-    # Talos Factory schematic ID; vanilla Talos by default. Custom kernels/modules
-    # require a custom schematic (see factory.talos.dev).
-    schematic_id = optional(string, "376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba")
-  })
-
-  default = {}
-}
-
-###################################
 # Ansible Pull specific variables
 ###################################
 variable "ansible" {
@@ -123,8 +107,8 @@ variable "ansible" {
       repo     = string
       branch   = string
       playbook = string
-      token    = optional(string) # Oauth token for private repos, if needed
-      timer    = optional(string) # in minutes, e.g "30mins", "1h", "2h30m", etc.
+      token    = optional(string)
+      timer    = optional(string)
     }))
   })
   default = {}

@@ -3,6 +3,8 @@
 ## Current Status
 Azure provider is implemented following the Libvirt pattern.
 GitOps now includes `just` recipes for Flux/tofu-controller Terraform stack status, watch, logs, runner, lock, and event inspection from the `gitops/` folder.
+RKE2 Cilium cloud-init supports nested Cilium options, including configurable operator replicas for kube-proxy replacement mode.
+RKE2 Cilium L2 announcements are consistently modeled across Libvirt, Azure, and OVH providers.
 
 OVH now includes:
 - public-IP-based operator access
@@ -13,10 +15,19 @@ OVH now includes:
 - separate masters and workers
 - multi-master clusters when `network.private_cidr` is set
 - kube-api load-balancer exposure
-- an optional exact-match floating-IP cleanup helper for destroy leftovers
+- an exact-match floating-IP cleanup helper and subnet port drain for destroy leftovers
+- OVH private NIC netplan override with explicit empty routes, strict permissions, and route cleanup without overriding public cloud networking
 - Ansible-based cloud-init readiness check
 - Ansible-based TLS SAN reconciliation (adds public IP to kube-apiserver cert)
 - Ansible-based kubeconfig fetch with public IP endpoint
+- standalone extra VMs via `infra.vms`, including VM-only default cloud-init deployments
+- OVH extra VMs receive common default cloud-init plus the OVH private-netplan overlay
+- optional master SSH jump listener on the kube-api load balancer, targeting only the first master
+- explicit `just` recipes for planning and applying targeted OVH VM replacement
+
+Libvirt has been realigned with the recent OVH baseline for standalone `infra.vms`, per-role `user_data_enabled`, shared default cloud-init on standalone VMs, inventory VM groups, and normalized controller/worker/VM IP outputs.
+
+Azure has been realigned with the recent OVH/Libvirt baseline for standalone `infra.vms`, per-role `user_data_enabled`, shared default cloud-init on standalone VMs, inventory VM groups, normalized public/private IP outputs, and Ansible task gating.
 
 ---
 
@@ -49,6 +60,7 @@ OVH now includes:
 - [X] Implement templates.tf for azure
 - [X] Implement outputs.tf for azure
 - [X] Introduce `public_kube_api_endpoint` abstraction for Azure kubeconfig/output generation
+- [X] Align Azure provider with standalone VM and normalized output baseline
 - [ ] Test azure provider end-to-end
 
 ### Phase 4: Provider OVH (Priority 3)
@@ -59,6 +71,7 @@ OVH now includes:
 - [X] Implement templates.tf for ovh
 - [X] Implement outputs.tf for ovh
 - [X] Test ovh provider end-to-end
+- [X] Add explicit plan/apply recipes for targeted OVH VM replacement
 
 ### Phase 5: Ansible Integration
 - [X] Create shared ansible playbook: `check_cloudinit.yml` — wait for cloud-init to finish on all nodes
@@ -69,13 +82,18 @@ OVH now includes:
 - [X] Wire ansible integration into Libvirt provider
 - [ ] Create ansible playbooks for additional cluster setup / post-provisioning
 
-### Phase 6: Provider module extraction (drift reduction)
+### Phase 6: Cluster Bootstrap Options + Provider module extraction
+- [X] Add nested RKE2 Cilium options with configurable operator replicas for kube-proxy replacement mode
+- [X] Align RKE2 Cilium L2 announcement inputs across Libvirt, Azure, and OVH
 - [X] Evaluate candidate shared modules (keys/ansible/cloud-init/talos) across libvirt/azure/ovh
 - [X] M1: extract `providers/shared/modules/ssh-keys`, migrate libvirt/azure/ovh, `tofu state mv` live libvirt cluster
 - [X] M1: full fresh-deploy validation (destroy + apply) on libvirt
 - [X] M3: extract cloudinit-renderer module (k3s/rke2/ansible/extra_packages var surface)
 - [X] M4: extract talos-cluster module (talos orchestration chain), migrate libvirt
 - [X] M2: extract ansible-artifacts module (ansible.cfg + hosts.ini + fetch/reconcile flow)
+- [X] Merge `feat/ovh-loadbalancer` into `eval/talos-deployment` (18 conflicts resolved; modules win structurally, branch features ported: OVH LB/netplan/floating-IP, unified `network_config.cfg.tftpl`, Cilium L2, user_data_enabled gating, infra.vms, `--limit CONTROLLERS` reconcile)
+- [X] Module extensions for branch parity: cloudinit-renderer (per-VM `cloud_init_selected`, `package_upgrade_enabled`, RKE2 Cilium surface), ansible-artifacts (`vm_ips`, `cloudinit_check_enabled`, `k8s_flow_enabled`)
+- [X] Merge validation: all 3 providers `tofu validate` clean; libvirt talos plan = no resource changes (output-only); libvirt k3s scratch plan = 24 resources, no errors
 
 ### Eval: Talos on libvirt (branch `eval/talos-deployment`)
 - [X] Deploy 1 control-plane + 1 worker, k8s v1.36.0 / Talos v1.13.7 (live cluster)

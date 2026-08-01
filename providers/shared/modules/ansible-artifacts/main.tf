@@ -2,6 +2,7 @@ locals {
   rendered_ansible_inventory = templatefile("${path.module}/../../inventory/hosts.tpl", {
     controller_ips = var.controller_ips
     worker_ips     = var.worker_ips
+    vm_ips         = var.vm_ips
   })
 
   rendered_ansible_config = <<-EOT
@@ -41,6 +42,8 @@ resource "local_file" "ansible_inventory" {
 ###
 
 resource "null_resource" "check_cloudinit" {
+  count = var.cloudinit_check_enabled ? 1 : 0
+
   triggers = {
     abs_env_path = local.abs_env_path
   }
@@ -64,7 +67,7 @@ EOT
 ###
 
 resource "null_resource" "reconcile_tls_san" {
-  count = contains(["k3s", "rke2"], var.cloud_init_selected) ? 1 : 0
+  count = var.k8s_flow_enabled && contains(["k3s", "rke2"], var.cloud_init_selected) ? 1 : 0
 
   triggers = {
     abs_env_path        = local.abs_env_path
@@ -77,7 +80,7 @@ resource "null_resource" "reconcile_tls_san" {
 ANSIBLE_CONFIG=${self.triggers.abs_env_path}/ansible.cfg \
 ansible-playbook \
   ${path.module}/../../ansible/reconciliate_tls.yml \
-  --limit controller1 \
+  --limit CONTROLLERS \
   -e cloud_init_selected=${self.triggers.cloud_init_selected} \
   -e kube_api_endpoint=${self.triggers.kube_api_endpoint}
 EOT
@@ -93,7 +96,7 @@ EOT
 ###
 
 resource "null_resource" "fetch_kubeconfig" {
-  count = contains(["k3s", "rke2"], var.cloud_init_selected) ? 1 : 0
+  count = var.k8s_flow_enabled && contains(["k3s", "rke2"], var.cloud_init_selected) ? 1 : 0
 
   triggers = {
     cluster_name        = var.cluster_id

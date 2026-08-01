@@ -6,7 +6,7 @@ locals {
   rendered = {
     for vm_name, vm in var.vms :
     vm_name => templatefile(
-      "${path.module}/../../../shared/cloud-init/${var.cloud_init_selected}/cloud_init.cfg.tftpl",
+      "${path.module}/../../../shared/cloud-init/${coalesce(vm.cloud_init_selected, var.cloud_init_selected)}/cloud_init.cfg.tftpl",
       {
         hostname     = vm.hostname
         fqdn         = vm.fqdn
@@ -22,8 +22,9 @@ locals {
         current_private_ip = vm.current_private_ip
 
         # Disks and packages
-        extra_disks   = vm.extra_disks
-        extra_packages = var.extra_packages
+        extra_disks          = vm.extra_disks
+        extra_packages       = var.extra_packages
+        package_upgrade_enabled = var.package_upgrade_enabled
 
         # Optional K3s config
         k3s_token   = var.cluster_token
@@ -43,6 +44,15 @@ locals {
         rke2_etcd_enabled           = var.rke2.etcd_enabled
         rke2_ingress_nginx_enabled  = var.rke2.ingress_nginx_enabled
         rke2_metrics_server_enabled = var.rke2.metrics_server_enabled
+        rke2_cni                    = var.rke2.cni
+        rke2_ingress_type           = var.rke2.ingress_type
+        rke2_kube_proxy_enabled     = var.rke2.kube_proxy_enabled
+        rke2_cilium_hubble_enabled  = var.rke2.cilium.hubble_enabled
+        rke2_cilium_operator_replicas = var.rke2.cilium.operator_replicas
+        rke2_cilium_l2announcements_enabled = var.rke2.cilium.l2announcements.enabled
+        lb_pool_start               = var.rke2.cilium.l2announcements.lb_pool_start
+        lb_pool_end                 = var.rke2.cilium.l2announcements.lb_pool_end
+        network_interface           = var.rke2.cilium.l2announcements.network_interface
 
         # Optional Ansible pull config
         ansible_pull_repo     = replace(try(var.ansible.pull.repo, ""), "https://", "")

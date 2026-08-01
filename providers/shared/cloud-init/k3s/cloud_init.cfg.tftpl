@@ -19,7 +19,8 @@ users:
       - ${public_key}
 
 package_update: true
-package_upgrade: true
+package_upgrade: ${package_upgrade_enabled}
+package_reboot_if_required: true
 
 packages:
   - curl
@@ -42,6 +43,14 @@ write_files:
       fs.inotify.max_user_watches=1048576
       fs.inotify.max_user_instances=8192
       fs.file-max=2097152
+      net.ipv4.ip_forward=1
+      net.bridge.bridge-nf-call-iptables=1
+      net.bridge.bridge-nf-call-ip6tables=1
+
+  - path: /etc/modules-load.d/kubernetes.conf
+    content: |
+      overlay
+      br_netfilter
 
   - path: /etc/rancher/k3s/config.yaml
     permissions: "0640"

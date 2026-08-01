@@ -10,9 +10,9 @@
 
 ## Overview
 
-**InfraFactory** is a **reproducible infrastructure framework** designed to provision Kubernetes clusters across multiple environments — locally (KVM/libvirt) or on cloud providers — using a consistent and declarative approach.
+**InfraFactory** is a **reproducible infrastructure framework** designed to provision virtual machines and Kubernetes clusters across multiple environments — locally (KVM/libvirt) or on cloud providers — using a consistent and declarative approach.
 
-It enables you to deploy clusters with varying numbers of control plane (masters) and worker nodes, while supporting multiple Kubernetes distributions.
+It enables you to deploy VM-only environments, Kubernetes clusters with varying numbers of control plane (masters) and worker nodes, and optional standalone VMs, while supporting multiple Kubernetes distributions.
 
 ✨ **Key Features**
 - ☁️ **Multi-platform**:    
@@ -28,10 +28,10 @@ It enables you to deploy clusters with varying numbers of control plane (masters
 
 **Core Workflow:**
 ```
-OpenTofu (provision VMs) 
-  → cloud-init templates (deploy default/k3s/rke2) 
-    → inventory generation and kubeconfig import 
-      → Ansible-pull (optional post-config)
+OpenTofu (provision VMs)
+  → cloud-init templates (default/k3s/rke2, when user data is enabled)
+    → inventory generation
+      → Kubernetes-only Ansible post-steps and optional ansible-pull
 ```
 
 ---
@@ -102,7 +102,7 @@ just plan
 ### 3. Use it
 
 ```bash
-# Deploy cluster
+# Deploy infrastructure
 just deploy
 
 # Ping
@@ -112,15 +112,15 @@ just ping
 just destroy
 ```
 
-### 4. Access Your Cluster
+### 4. Access Your Deployment
 
-After deployment completes, your cluster is **already running** (k3s or rke2 deployed via cloud-init):
+After deployment completes, VMs are reachable through the generated SSH key and inventory. For `k3s` or `rke2` deployments with master user data enabled, the cluster is already running via cloud-init:
 
 ```bash
 ssh -o StrictHostKeyChecking=no -i ./env/<PROVIDER>/<env>/.key.private localadmin@<ip>
 ```
 
-The Ansible inventory is generated in `env/<PROVIDER>/<env>/hosts.ini` for any additional configuration tasks.
+The Ansible inventory is generated in `env/<PROVIDER>/<env>/hosts.ini` for additional configuration tasks. Standalone `infra.vms` are listed in the shared `[VMS]` inventory group.
 
 ---
 
@@ -146,6 +146,7 @@ Available commands:
 | `just ping` | Ping VMs with ansible |
 | `just check` | Check k8s access |
 | `just play` | Run an Ansible playbook against the cluster |
+| `just replace NAME` | Replace one OVH VM instance by name (`PROVIDER=OVH` only) |
 
 
 
@@ -174,6 +175,12 @@ infra = {
   }
   workers = {
     count     = 2
+    cpu       = 2
+    disk_size = 10
+    memory_gb = 4
+  }
+  vms = {
+    count     = 0
     cpu       = 2
     disk_size = 10
     memory_gb = 4
@@ -262,13 +269,13 @@ InfraFactory/
 │       ├── cloud-init/           # Cloud-init templates (default, k3s, rke2)
 │       │   ├── default/
 │       │   │   ├── cloud_init.cfg.tftpl
-│       │   │   └── network_config_dhcp.cfg
+│       │   │   └── network_config.cfg.tftpl
 │       │   ├── k3s/
 │       │   │   ├── cloud_init.cfg.tftpl      # k3s deployment template
-│       │   │   └── network_config_dhcp.cfg
+│       │   │   └── network_config.cfg.tftpl
 │       │   └── rke2/
 │       │       ├── cloud_init.cfg.tftpl      # rke2 deployment template
-│       │       └── network_config_dhcp.cfg
+│       │       └── network_config.cfg.tftpl
 │       └── inventory/
 │           └── hosts.tpl         # Ansible inventory template (generated post-deployment)
 │
@@ -306,18 +313,18 @@ In this context, GitOps bootstrap is different from cloud-init bootstrap:
 
 ---
 
-### Workflow: From Code to Running Cluster
+### Workflow: From Code to Running Deployment
 
 ```
 1. Define infrastructure in env/<PROVIDER>/*.tfvars
    ↓
 2. OpenTofu creates VMs with cloud-init configuration
    ↓
-3. Cloud-init templates mount and deploy k3s (or rke2) on VM boot
+3. Cloud-init initializes VMs; k3s/rke2 is installed only for Kubernetes modes
    ↓
 4. OpenTofu generates hosts.ini inventory and ansible.cfg in `env/<PROVIDER>/<env>/`
    ↓
-5. Ansible checks cloud-init readiness on all nodes (via shared playbook)
+5. For Kubernetes modes with enabled user data, Ansible checks cloud-init readiness on K8s nodes
    ↓
 6. Ansible reconciles kube-apiserver TLS SAN with public IP and restarts the service (k3s/rke2 only)
    ↓
@@ -326,10 +333,11 @@ In this context, GitOps bootstrap is different from cloud-init bootstrap:
 
 **Deployment Flow:**
 - You select `cloud_init_selected = "<value>"` in your `.tfvars` where `<value>` can be `[default|k3s|rke2]`
+- For VM-only deployments, use `cloud_init_selected = "default"`, `masters.count = 0`, `workers.count = 0`, and `infra.vms.count > 0`
 - OpenTofu uses the `providers/shared/cloud-init/<value>/` templates
-- These templates are mounted on each VM at boot
-- After cloud-init completes, Ansible runs post-deployment steps (TLS SAN reconciliation, kubeconfig fetch)
-- You can access kubeconfig right after `just deploy` completes
+- These templates are mounted on each VM at boot when that role's `user_data_enabled` is true
+- For Kubernetes deployments, Ansible runs post-deployment steps (bounded cloud-init check with a 600-second wait, TLS SAN reconciliation, kubeconfig fetch)
+- You can access kubeconfig right after `just deploy` completes for Kubernetes deployments with enabled master user data
 
 ---
 
@@ -339,7 +347,7 @@ In this context, GitOps bootstrap is different from cloud-init bootstrap:
 |----------|--------|-------|
 | Libvirt | ✅ Implemented | Core functionality complete, tested |
 | Azure | ✅ Implemented | Full implementation with NSG, DNS, and cloud-init |
-| OVH | ✅ Implemented | Public-IP-based operator access, deterministic private IP assignment, kube-api load balancer, floating-IP cleanup helper, Ansible-based cloud-init check, TLS SAN reconciliation, and kubeconfig fetch |
+| OVH | ✅ Implemented | Public-IP-based operator access, deterministic private IP assignment, standalone VMs, VM-only default deployments, kube-api load balancer with optional SSH jump, targeted VM replace, floating-IP cleanup helper, Ansible-based cloud-init check, TLS SAN reconciliation, and kubeconfig fetch |
 
 ---
 
@@ -359,5 +367,6 @@ See [AGENTS.md](AGENTS.md) for AI assistant context and full governance rules.
 ## Known Limitations
 
 - OVH uses public-IP-based operator access even when a private network exists
+- OVH standalone `infra.vms` are public-attached and private-attached in current code
 - OVH custom root disk sizing and extra disks are not supported yet
 - IPv6 support requires additional configuration

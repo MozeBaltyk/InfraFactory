@@ -22,23 +22,68 @@ _provider-tfvars:
 
 # Print current configuration
 env:
-    @echo "Provider and config applied:"
-    @echo "  PROVIDER  = {{ PROVIDER }}"
-    @echo "  ENV       = {{ ENV }}"
-    @echo "   |-> MODULE          = $(just _provider-module)"
-    @echo "   |-> ENV_TFVARS_PATH = $(just _provider-tfvars)"
+    @module="$(just _provider-module)"; \
+      tfvars="$(just _provider-tfvars)"; \
+      provider_path="providers/$module"; \
+      env_dir="./env/{{ PROVIDER }}/{{ ENV }}"; \
+      if test -t 1 && test -z "${NO_COLOR:-}"; then \
+        reset=$'\033[0m'; bold=$'\033[1m'; blue=$'\033[34m'; green=$'\033[32m'; red=$'\033[31m'; yellow=$'\033[33m'; dim=$'\033[2m'; \
+      else \
+        reset=''; bold=''; blue=''; green=''; red=''; yellow=''; dim=''; \
+      fi; \
+      status_path() { \
+        label="$1"; \
+        path="$2"; \
+        if test -e "$path"; then \
+          printf '  %-16s %s[ok]%s      %s\n' "$label" "$green" "$reset" "$path"; \
+        else \
+          printf '  %-16s %s[missing]%s %s\n' "$label" "$yellow" "$reset" "$path"; \
+        fi; \
+      }; \
+      printf '%s%s%s\n' "$bold" 'InfraFactory environment' "$reset"; \
+      printf '%s%s%s\n' "$dim" '------------------------' "$reset"; \
+      printf '\n%s%s%s\n' "$blue" 'Provider' "$reset"; \
+      printf '  %-16s %s\n' 'PROVIDER' '{{ PROVIDER }}'; \
+      printf '  %-16s %s\n' 'Module' "$module"; \
+      printf '  %-16s %s\n' 'Provider path' "$provider_path"; \
+      printf '\n%s%s%s\n' "$blue" 'Environment' "$reset"; \
+      printf '  %-16s %s\n' 'ENV' '{{ ENV }}'; \
+      status_path 'Tfvars' "$tfvars"; \
+      printf '  %-16s %s\n' 'Workspace' '{{ ENV }}'; \
+      printf '\n%s%s%s\n' "$blue" 'Generated files' "$reset"; \
+      status_path 'Env dir' "$env_dir"; \
+      status_path 'Inventory' "$env_dir/hosts.ini"; \
+      status_path 'Ansible cfg' "$env_dir/ansible.cfg"; \
+      status_path 'Kubeconfig' "$env_dir/kubeconfig"; \
+      status_path 'SSH key' "$env_dir/.key.private"; \
+      printf '\n%s%s%s\n' "$blue" 'Useful commands' "$reset"; \
+      printf '  %-16s %s\n' 'Validate' 'PROVIDER={{ PROVIDER }} ENV={{ ENV }} just validate'; \
+      printf '  %-16s %s\n' 'Plan' 'PROVIDER={{ PROVIDER }} ENV={{ ENV }} just plan'; \
+      printf '  %-16s %s\n' 'Plan VM' 'PROVIDER={{ PROVIDER }} ENV={{ ENV }} just plan NAME'; \
+      printf '  %-16s %s\n' 'Deploy' 'PROVIDER={{ PROVIDER }} ENV={{ ENV }} just deploy'; \
+      printf '  %-16s %s\n' 'Deploy VM' 'PROVIDER={{ PROVIDER }} ENV={{ ENV }} just deploy NAME'; \
+      printf '  %-16s %s\n' 'Replace VM' 'PROVIDER={{ PROVIDER }} ENV={{ ENV }} just replace NAME'; \
+      printf '  %-16s %s\n' 'Destroy' 'PROVIDER={{ PROVIDER }} ENV={{ ENV }} just destroy'; \
+      if ! test -f "$tfvars"; then \
+        printf '\n%s%s%s\n' "$yellow" 'Hint' "$reset"; \
+        printf '  %s\n' "Create $tfvars from ./env/{{ PROVIDER }}/tfvars.example before plan/deploy."; \
+      fi
 
 # Validate Opentofu scripts
 validate:
     @just $(just _provider-module)::validate
 
-# Plan on Provider specified in PROVIDER env variable (default: KVM)
-plan:
-    @just $(just _provider-module)::plan
+# Plan on Provider specified in PROVIDER env variable (default: KVM). Pass NAME to target one VM.
+plan NAME='':
+    @ENV={{ ENV }} just $(just _provider-module)::plan {{ NAME }}
 
-# Deploy on Provider specified in PROVIDER env variable (default: KVM)
-deploy:
-    @just $(just _provider-module)::deploy
+# Deploy on Provider specified in PROVIDER env variable (default: KVM). Pass NAME to target one VM.
+deploy NAME='':
+    @ENV={{ ENV }} just $(just _provider-module)::deploy {{ NAME }}
+
+# Force rebuild one VM on the selected provider
+replace NAME:
+    @ENV={{ ENV }} just $(just _provider-module)::replace {{ NAME }}
 
 # Destroy on Provider specified in PROVIDER env variable (default: KVM)
 destroy:

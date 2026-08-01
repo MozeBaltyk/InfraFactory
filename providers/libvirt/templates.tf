@@ -11,6 +11,7 @@ module "cloudinit" {
   k3s                 = var.k3s
   rke2                = var.rke2
   ansible             = var.ansible
+  package_upgrade_enabled = var.cluster.package_upgrade_enabled
 
   vms = local.is_talos ? {} : {
     for name, vm in local.all_vms_map :
@@ -19,6 +20,7 @@ module "cloudinit" {
       fqdn               = local.vm_fqdns[name]
       domain             = local.subdomain
       node_role          = vm.role
+      cloud_init_selected = vm.role == "vm" ? "default" : null
       is_first_master    = name == local.first_master_name
       first_master_ip    = local.first_master_ip
       current_private_ip = null
@@ -34,15 +36,37 @@ resource "libvirt_cloudinit_disk" "commoninit" {
 
   name = "${each.value.name}-commoninit.iso"
 
-  user_data = module.cloudinit.rendered[each.value.name]
+  user_data = each.value.user_data_enabled ? module.cloudinit.rendered[each.value.name] : null
 
   network_config = templatefile(
-    "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/network_config_${var.network.ip_type}.cfg",
+    "${path.module}/../shared/cloud-init/${each.value.role == "vm" ? "default" : var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
     {
-      network_gateway = local.network_gateway
-      domain          = local.subdomain
-      dns_servers     = local.dns_servers
-      ip_address      = each.value.ip
+      # Primary NIC on Libvirt cloud images
+      interface_id         = "primary"
+      interface_match_name = "ens3"
+      interface_optional   = false
+
+      # Libvirt drives DHCP vs static via var.network.ip_type
+      use_dhcp   = var.network.ip_type == "dhcp"
+      ip_address = each.value.ip
+      # cidr_prefix is only used by the template when use_dhcp = false (static mode).
+      # In DHCP mode the template skips it, but OpenTofu still evaluates the
+      # expression eagerly. Guard against null cidr (valid for bridge mode).
+      cidr_prefix = var.network.cidr != null ? split("/", var.network.cidr)[1] : null
+
+      # In DHCP mode the server already supplies routes and DNS;
+      # nameservers are still injected explicitly below for parity with the
+      # previous behavior.
+      accept_dhcp_routes = true
+      accept_dhcp_dns    = true
+
+      # Static-only: explicit default route. Suppressed in DHCP mode so the
+      # rendered netplan matches the previous network_config_dhcp.cfg output.
+      network_gateway = var.network.ip_type == "static" ? local.network_gateway : null
+
+      dns_servers       = local.dns_servers
+      domain            = local.subdomain
+      emit_empty_routes = false
     }
   )
 

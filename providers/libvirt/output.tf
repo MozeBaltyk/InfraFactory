@@ -21,7 +21,7 @@ locals {
   }
 
   ## Kubernetes API endpoint — first master's operator-accessible address
-  kube_api_endpoint = local.vm_operator_endpoints[local.first_master_name]
+  kube_api_endpoint = local.first_master_name != null ? local.vm_operator_endpoints[local.first_master_name] : null
 
   ## Talos: control plane endpoints (first master is the API endpoint)
   talos_controlplane_endpoints = [
@@ -67,7 +67,7 @@ locals {
 # Output kubeconfig retrieval details in gitops mode, otherwise null
 output "gitops_kubeconfig_host" {
   description = "GitOps-mode preferred endpoint for kubeconfig retrieval."
-  value       = contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ? local.vm_operator_endpoints[local.first_master_name] : null
+  value       = contains(["k3s", "rke2"], var.cluster.cloud_init_selected) && local.first_master_name != null ? local.vm_operator_endpoints[local.first_master_name] : null
 }
 
 output "gitops_kubeconfig_user" {
@@ -89,6 +89,18 @@ output "cluster_nodes" {
   description = "The preferred operator endpoints of the cluster nodes."
 
   value = {
+    controller_ips = [
+      for vm_name, vm in local.masters_map : local.vm_operator_endpoints[vm_name]
+    ]
+
+    worker_ips = [
+      for vm_name, vm in local.workers_map : local.vm_operator_endpoints[vm_name]
+    ]
+
+    vm_ips = [
+      for vm_name, vm in local.vms_map : local.vm_operator_endpoints[vm_name]
+    ]
+
     masters = [
       for vm_name, vm in local.masters_map : local.vm_operator_endpoints[vm_name]
     ]
@@ -97,13 +109,29 @@ output "cluster_nodes" {
       for vm_name, vm in local.workers_map : local.vm_operator_endpoints[vm_name]
     ]
 
-    ssh_first_master = local.write_local_artifacts ? "ssh -o StrictHostKeyChecking=no -i env/${var.infra_provider}/${terraform.workspace}/.key.private ${var.cluster.username}@${local.vm_operator_endpoints[local.first_master_name]}" : null
+    public_ips = concat(
+      [for vm_name, vm in local.masters_map : local.vm_operator_endpoints[vm_name]],
+      [for vm_name, vm in local.workers_map : local.vm_operator_endpoints[vm_name]],
+      [for vm_name, vm in local.vms_map : local.vm_operator_endpoints[vm_name]],
+    )
+
+    # Libvirt exposes one operator-reachable VM endpoint; for local NAT/bridge
+    # deployments the private and operator endpoints are intentionally the same.
+    private_ips = {
+      controllers = [for vm_name, vm in local.masters_map : local.vm_operator_endpoints[vm_name]]
+      workers     = [for vm_name, vm in local.workers_map : local.vm_operator_endpoints[vm_name]]
+      vms         = [for vm_name, vm in local.vms_map : local.vm_operator_endpoints[vm_name]]
+      all         = [for vm_name, vm in local.all_vms_map : local.vm_operator_endpoints[vm_name]]
+    }
+
+
+    ssh_first_master = local.write_local_artifacts && local.first_master_name != null ? "ssh -o StrictHostKeyChecking=no -i env/${var.infra_provider}/${terraform.workspace}/.key.private ${var.cluster.username}@${local.vm_operator_endpoints[local.first_master_name]}" : null
   }
 }
 
 output "kubeconfig_command" {
   value = local.write_local_artifacts ? (
-    contains(["k3s", "rke2"], var.cluster.cloud_init_selected) ? (<<-EOT
+    (local.k8s_master_user_data_enabled && local.first_master_name != null) ? (<<-EOT
 kubecm add -cf env/${var.infra_provider}/${terraform.workspace}/kubeconfig --context-name ${var.cluster.cloud_init_selected}-${var.infra_provider}-${terraform.workspace} --create
 # Or :
 export KUBECONFIG=env/${var.infra_provider}/${terraform.workspace}/kubeconfig

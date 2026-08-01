@@ -39,6 +39,12 @@ variable "cluster_token" {
   sensitive   = true
 }
 
+variable "package_upgrade_enabled" {
+  description = "Whether cloud-init runs package upgrade on first boot."
+  type        = bool
+  default     = false
+}
+
 ###################################
 # K3s specific variables
 ###################################
@@ -68,6 +74,19 @@ variable "rke2" {
     etcd_enabled           = optional(bool, true)
     ingress_nginx_enabled  = optional(bool, true)
     metrics_server_enabled = optional(bool, true)
+    cni                    = optional(string, null)
+    ingress_type           = optional(string, null)
+    kube_proxy_enabled     = optional(bool, null)
+    cilium = optional(object({
+      hubble_enabled    = optional(bool, false)
+      operator_replicas = optional(number, 1)
+      l2announcements = optional(object({
+        enabled           = optional(bool, false)
+        lb_pool_start     = optional(string, null)
+        lb_pool_end       = optional(string, null)
+        network_interface = optional(string, null)
+      }), {})
+    }), {})
   })
   default = {}
 }
@@ -97,7 +116,7 @@ variable "vms" {
     domain             = string
     node_role          = string
     is_first_master    = bool
-    first_master_ip    = string
+    first_master_ip    = optional(string, null)
     current_private_ip = optional(string, null)
     extra_disks        = list(object({
       wwn        = string
@@ -106,5 +125,7 @@ variable "vms" {
     }))
     k3s_tls_sans  = list(string)
     rke2_tls_sans = list(string)
+    # Per-VM override of the shared variant (e.g. standalone infra.vms use "default").
+    cloud_init_selected = optional(string, null)
   }))
 }

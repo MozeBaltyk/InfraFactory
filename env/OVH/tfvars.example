@@ -5,20 +5,23 @@ ovh_consumer_key       = "xxxxxxxxxxxxxxxx"
 ovh_project_service_name = "xxxxxxxxxxxxxxxx"
 
 cluster = {
-  id                  = "factory"
-  domain              = "lab"
-  timezone            = "Europe/Paris"
-  region              = "GRA9"
-  username            = "localadmin"
-  node_name_format    = "serial" # serial => factory-node01, role => factory-m01/factory-w01
-  cloud_init_selected = "k3s"
+  id                      = "factory"
+  domain                  = "lab"
+  timezone                = "Europe/Paris"
+  region                  = "GRA9"
+  username                = "localadmin"
+  node_name_format        = "serial" # serial => factory-node01, role => factory-m01/factory-w01
+  cloud_init_selected     = "k3s"
+  package_upgrade_enabled = "false" # Optional
 }
 
 infra = {
   masters = {
     count = 1 # Can be >1; set network.private_cidr for multi-master/private join
     # instance_size = "b2-7"
-    # disk_size     = 40 # custom root disk sizing not supported yet
+    # Advanced test switch only: set false to omit InfraFactory cloud-init user_data from masters.
+    # Disabling this skips generated user/SSH/base and k3s/rke2 bootstrap user_data.
+    # user_data_enabled = true
     # extra_disks = [    # not supported yet
     #   { size_gb = 20, mount_path = "/data", filesystem = "ext4", label = "data" }
     # ]
@@ -27,58 +30,117 @@ infra = {
   workers = {
     count = 0 # Workers are supported
     # instance_size = "b2-7"
-    # disk_size     = 40 # custom root disk sizing not supported yet
+    # Advanced test switch only: set false to omit InfraFactory cloud-init user_data from workers.
+    # Disabling this skips generated user/SSH/base and k3s/rke2 bootstrap user_data.
+    # user_data_enabled = true
     # extra_disks   = []  # not supported yet
   }
+
+  vms = {
+    count = 0 # Private-only standalone extra VMs; use shared default cloud-init without OVH netplan overlay
+    # instance_size = "b2-7"
+    # Advanced test switch only: set false to omit InfraFactory cloud-init user_data from extra infra.vms.
+    # When true, extra VMs receive only common default cloud-init user_data
+    # (user/SSH/base setup) and no InfraFactory OVH private-netplan write_files/runcmd.
+    # When false, no generated localadmin user/SSH key from InfraFactory is sent for these VMs;
+    # OVH ssh_key injection may still depend on image/cloud behavior.
+    # user_data_enabled = true
+  }
 }
+
+# VM-only deployment example:
+# cluster.cloud_init_selected = "default"
+# infra.masters.count = 0
+# infra.workers.count = 0
+# infra.vms.count = 2
+# infra.vms.ip_addresses = ["10.0.30.50", "10.0.30.51"]
+# network.private.mode = "existing"
+# network.private.vlan_id = 30
+# network.private.cidr = "10.0.30.0/24"
 
 os = {
   selected = "ubuntu24"
 }
 
 ###
-### Optional network configuration
-### 
+### Network configuration
+###
+### network.private.cidr is mandatory: every OVH instance is attached to the
+### private subnet, and the cluster join endpoint, kube-api load balancer
+### members, and k3s/rke2 node IPs all use the deterministic private IPs
+### computed from this CIDR.
+###
+### network.private.vlan_id is optional (default 0). Use a different VLAN ID
+### per cluster to deploy multiple clusters in the same OVH region.
+### Valid range: 0-4000.
+### network.private.mode = "managed" creates and owns the OVH private network
+### and subnet. mode = "existing" reuses the matching VLAN/CIDR and leaves
+### lifecycle ownership outside InfraFactory.
+###
+### Internet → Floating IP → Gateway → LB → masters:6443
+###
+### Security group note: the ovh/ovh provider used by this module does not
+### expose Public Cloud OpenStack security group rules, so this module cannot
+### explicitly manage/restrict TCP/22 without adding the OpenStack provider.
+###
 
-# Minimal
-# network = {}
-
-# With private network
+# Minimal (private network only, no load balancer; endpoint = first master public IP)
 # network = {
 #   private = {
-#     cidr = "10.0.0.0/24"
+#     cidr    = "10.0.0.0/24"
+#     mode    = "managed"
+#   }
+#
+#   kube_api = {
+#     endpoint = "public_ip"
 #   }
 # }
 
-# LB enabled
+# With load balancer for the Kubernetes API (endpoint = LB floating IP)
+# LB flavors: small, medium, large, xl
+# Gateway models: s (200 Mbps), m (500 Mbps), l (2 Gbps), xl (4 Gbps), 2xl (8 Gbps)
+#
 # network = {
 #   private = {
-#     cidr = "10.0.0.0/24"
+#     cidr    = "10.0.0.0/24"
+#     vlan_id = 0
 #   }
-# 
+#
 #   kube_api = {
+#     endpoint = "lb_ip"
+#
 #     load_balancer = {
-#       enabled = true
+#       enabled       = true
+#       flavor        = "small"
+#       gateway_model = "s"
+#       # Optional: expose SSH through the same LB to the first master only.
+#       # ssh_jump_enabled = true
+#       # ssh_jump_port    = 22
 #     }
 #   }
 # }
 
-# DNS mode activate
+# DNS mode (LB is still created but endpoint is set to an external DNS name)
 # network = {
 #   private = {
-#     cidr = "10.0.0.0/24"
+#     cidr    = "10.0.0.0/24"
+#     vlan_id = 0
 #   }
-# 
+#
 #   kube_api = {
 #     endpoint = "dns"
-# 
+#
 #     dns = {
 #       name = "kube.example.com"
 #     }
-# 
+#
 #     load_balancer = {
-#       enabled = true
-#       flavor  = "small"
+#       enabled       = true
+#       flavor        = "small"
+#       gateway_model = "s"
+#       # Optional: expose SSH through the same LB to the first master only.
+#       # ssh_jump_enabled = true
+#       # ssh_jump_port    = 22
 #     }
 #   }
 # }
@@ -108,12 +170,25 @@ os = {
 
 # if cloud_init_selected=rke2
 # rke2 = {
-#   version                = "v1.35.1+rke2r1"
+#   version                = "v1.35.4+rke2r1"
 #   token                  = "shared-token"
 #   tls_sans               = ["api.factory.lab"]
 #   etcd_enabled           = true
 #   ingress_nginx_enabled  = true
 #   metrics_server_enabled = true
+#   cni                    = "cilium"    # Optional: "calico", "canal", "cilium", "none" (null = RKE2 default)
+#   ingress_type           = "traefik"   # Optional: "ingress-nginx", "traefik", "cilium", "none" (null = RKE2 default)
+#   kube_proxy_enabled     = true        # Optional (default: true; required false when cilium.l2announcements.enabled=true)
+#   cilium = {
+#     hubble_enabled    = true           # Optional: Hubble observability (default: false, only with cni="cilium")
+#     operator_replicas = 1              # Optional: Cilium operator replicas when kube_proxy_enabled=false
+#     l2announcements = {
+#       enabled           = false        # Optional: requires cni="cilium" and kube_proxy_enabled=false when true
+#       lb_pool_start     = "10.0.0.200" # Required when enabled=true
+#       lb_pool_end       = "10.0.0.220" # Required when enabled=true
+#       network_interface = "ens4"       # Required when enabled=true
+#     }
+#   }
 # }
 
 # ansible = {

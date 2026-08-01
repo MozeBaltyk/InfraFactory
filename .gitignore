@@ -10,6 +10,6 @@ ansible.cfg
 kubeconfig
 .token
 .local
-
 env/.cache/
 talosconfig
+__pycache__/
