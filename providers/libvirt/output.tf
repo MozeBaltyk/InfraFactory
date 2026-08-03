@@ -125,7 +125,7 @@ output "cluster_nodes" {
     }
 
 
-    ssh_first_master = local.write_local_artifacts && local.first_master_name != null ? "ssh -o StrictHostKeyChecking=no -i env/${var.infra_provider}/${terraform.workspace}/.key.private ${var.cluster.username}@${local.vm_operator_endpoints[local.first_master_name]}" : null
+    ssh_first_master = local.write_local_artifacts && !local.is_talos && local.first_master_name != null ? "ssh -o StrictHostKeyChecking=no -i env/${var.infra_provider}/${terraform.workspace}/.key.private ${var.cluster.username}@${local.vm_operator_endpoints[local.first_master_name]}" : null
   }
 }
 

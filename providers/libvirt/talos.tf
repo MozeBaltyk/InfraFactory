@@ -50,7 +50,6 @@ module "talos_cluster" {
   write_local_artifacts = local.write_local_artifacts
 
   depends_on = [
-    libvirt_domain.vms,
-    module.ssh_keys
+    libvirt_domain.vms
   ]
 }
