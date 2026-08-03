@@ -6,7 +6,7 @@
   # Roll through controllers one at a time so HA clusters keep a quorum
   # while each kube-apiserver is briefly restarted with the new SAN.
   serial: 1
-  # The play stops one host early via end_play when the endpoint is
+  # The play stops one host early via end_host when the endpoint is
   # already present; that is per-host, not cluster-wide.
   any_errors_fatal: true
 
@@ -69,7 +69,7 @@
           }}
 
     - name: Endpoint already present — nothing to do
-      ansible.builtin.meta: end_play
+      ansible.builtin.meta: end_host
       when: endpoint_already_present
 
     - name: Ensure tls-san key exists in config
@@ -105,6 +105,7 @@
       ansible.builtin.systemd:
         name: "{{ service_name }}"
         state: started
+        no_block: true
 
     - name: Wait for kube-apiserver port 6443
       ansible.builtin.wait_for:
