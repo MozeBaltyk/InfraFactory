@@ -51,14 +51,15 @@ variable "package_upgrade_enabled" {
 variable "k3s" {
   description = "K3s cluster configuration."
   type = object({
-    version          = optional(string, "latest")
-    tls_sans         = optional(list(string), [])
-    etcd_enabled     = optional(bool, true)
-    traefik_enabled  = optional(bool, true)
-    servicelb_enabled = optional(bool, true)
-    local_storage_enabled = optional(bool, true)
+    version                = optional(string, "latest")
+    data_dir               = optional(string, null)
+    tls_sans               = optional(list(string), [])
+    etcd_enabled           = optional(bool, true)
+    traefik_enabled        = optional(bool, true)
+    servicelb_enabled      = optional(bool, true)
+    local_storage_enabled  = optional(bool, true)
     metrics_server_enabled = optional(bool, true)
-    flannel_enabled  = optional(bool, true)
+    flannel_enabled        = optional(bool, true)
   })
   default = {}
 }
@@ -70,6 +71,7 @@ variable "rke2" {
   description = "RKE2 cluster configuration."
   type = object({
     version                = optional(string, "latest")
+    data_dir               = optional(string, null)
     tls_sans               = optional(list(string), [])
     etcd_enabled           = optional(bool, true)
     ingress_nginx_enabled  = optional(bool, true)
@@ -118,7 +120,7 @@ variable "vms" {
     is_first_master    = bool
     first_master_ip    = optional(string, null)
     current_private_ip = optional(string, null)
-    extra_disks        = list(object({
+    extra_disks = list(object({
       wwn        = string
       mount_path = string
       filesystem = string

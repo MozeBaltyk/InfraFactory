@@ -4,7 +4,7 @@ cluster = {
   timezone            = "Europe/Paris"
   username            = "localadmin"
   node_name_format    = "serial" # serial => factory-node01, role => factory-m01/factory-w01
-  cloud_init_selected = "k3s"
+  cloud_init_selected = "k3s" # k3s or rke2 or talos
   factory_root_path   = "/srv"
   package_upgrade_enabled = "false" # Optional
 }
@@ -68,26 +68,8 @@ network = {
 #}
 
 os = {
-  selected = "ubuntu24"
+  selected = "ubuntu24" # or talos
 }
-
-# Experimental: Talos Linux cluster (replaces cloud-init + Ansible)
-#os = {
-#  selected = "talos"
-#}
-#talos = {
-#  version      = "v1.13.7" # Optional
-#  schematic_id = "3765679..." # Optional; vanilla Talos by default (see providers/libvirt/vars_extra.tf)
-#}
-#cluster = {
-#  id                  = "factory"
-#  domain              = "lab"
-#  timezone            = "Europe/Paris"
-#  username            = "localadmin"
-#  node_name_format    = "serial"
-#  cloud_init_selected = "talos"
-#  factory_root_path   = "/srv"
-#}
 
 # Libvirt connexion
 #libvirt = {
@@ -113,6 +95,7 @@ os = {
 # if cloud_init_selected=k3s
 #k3s = {
 #  version           = "v1.34.5+k3s1" # Optional
+#  data_dir          = "/data/k3s"    # Optional; mount an extra disk there first if desired
 #  token             = "shared-token" # Optional
 #  tls_sans          = ["dns1", "ip1"] # Optional
 #  etcd_enabled      = true           # Optional
@@ -126,6 +109,7 @@ os = {
 # if cloud_init_selected=rke2
 #rke2 = {
 #  version                = "v1.35.4+rke2r1"  # Optional
+#  data_dir               = "/data/rke2"      # Optional; mount an extra disk there first if desired
 #  token                  = "shared-token"    # Optional
 #  tls_sans               = ["dns1", "ip1"]   # Optional
 #  etcd_enabled           = true              # Optional
@@ -145,6 +129,31 @@ os = {
 #    }
 #  }
 #}
+
+# if os.selected = "talos" and cloud_init_selected="talos"
+#talos = {
+#  version                              = "v1.13.7" # Optional
+#  kubernetes_version                   = "v1.36.0" # Optional
+#  schematic_id                         = "3765679..." # Optional; vanilla Talos by default (see providers/libvirt/vars_extra.tf)
+#  cni                                  = "flannel" # Optional: "flannel", "none" (null = Talos default)
+#  allow_scheduling_on_control_planes   = false # Optional
+#  controlplane_config_patches          = [] # Optional; YAML strings applied only to control-plane nodes
+#  worker_config_patches                = [] # Optional; YAML strings applied only to worker nodes
+### config_patches                      = [] # Optional; YAML strings applied to every Talos node
+#  config_patches = [
+#     <<-EOT
+#     apiVersion: v1alpha1
+#     kind: TimeSyncConfig
+#     ntp:
+#       servers:
+#         - time.cloudflare.com
+#         - pool.ntp.org
+#     EOT
+#   ]
+####
+#}
+# Talos extra disks use infra.masters.extra_disks / infra.workers.extra_disks too,
+# but Talos mounts them as UserVolumeConfig at /var/mnt/<label>; mount_path is ignored.
 
 #ansible = {
 #  pull = {

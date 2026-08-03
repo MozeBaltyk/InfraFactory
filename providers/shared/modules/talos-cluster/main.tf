@@ -2,6 +2,60 @@ locals {
   controlplane_nodes = [for node in var.nodes : node.endpoint if node.role == "master"]
   worker_nodes       = [for node in var.nodes : node.endpoint if node.role == "worker"]
   all_node_endpoints = [for node in var.nodes : node.endpoint]
+
+  cni_patches = var.cni == null ? [] : [yamlencode({
+    cluster = {
+      network = {
+        cni = {
+          name = var.cni
+        }
+      }
+    }
+  })]
+
+  scheduling_patches = var.allow_scheduling_on_control_planes == null ? [] : [yamlencode({
+    cluster = {
+      allowSchedulingOnControlPlanes = var.allow_scheduling_on_control_planes
+    }
+  })]
+
+  extra_disk_patches = {
+    for name, node in var.nodes : name => [
+      for disk in node.extra_disks : yamlencode({
+        apiVersion = "v1alpha1"
+        kind       = "UserVolumeConfig"
+        name       = disk.label
+        volumeType = "disk"
+        provisioning = {
+          diskSelector = {
+            match = "'/dev/disk/by-id/wwn-${disk.wwn}' in disk.symlinks"
+          }
+        }
+        filesystem = {
+          type = disk.filesystem
+        }
+      })
+    ]
+  }
+
+  machine_config_patches = {
+    for name, node in var.nodes : name => concat(
+      var.config_patches,
+      local.cni_patches,
+      local.scheduling_patches,
+      local.extra_disk_patches[name],
+      node.role == "master" ? var.controlplane_config_patches : var.worker_config_patches,
+    )
+  }
+
+  node_config_patches = {
+    for name, node in var.nodes : name => [yamlencode({
+      apiVersion = "v1alpha1"
+      kind       = "HostnameConfig"
+      hostname   = coalesce(node.hostname, name)
+      auto       = "off"
+    })]
+  }
 }
 
 # Cluster identity and TLS bootstrap secrets
@@ -17,17 +71,18 @@ data "talos_client_configuration" "this" {
   nodes                = local.all_node_endpoints
 }
 
-# Per-role machine configuration (controlplane / worker)
+# Per-node machine configuration (role config + stable hostname)
 data "talos_machine_configuration" "this" {
-  for_each = toset(["controlplane", "worker"])
+  for_each = var.nodes
 
-  cluster_name     = var.cluster_name
-  cluster_endpoint = "https://${var.kube_api_endpoint}:6443"
-  machine_type     = each.value
-  machine_secrets  = talos_machine_secrets.this.machine_secrets
-  talos_version    = var.talos_version
+  cluster_name       = var.cluster_name
+  cluster_endpoint   = "https://${var.kube_api_endpoint}:6443"
+  machine_type       = each.value.role == "master" ? "controlplane" : "worker"
+  machine_secrets    = talos_machine_secrets.this.machine_secrets
+  talos_version      = var.talos_version
+  kubernetes_version = var.kubernetes_version
 
-  config_patches = var.config_patches
+  config_patches = local.machine_config_patches[each.key]
 }
 
 # Apply the machine configuration to each node (installs Talos and joins the cluster)
@@ -37,7 +92,8 @@ resource "talos_machine_configuration_apply" "this" {
   node                        = each.value.endpoint
   endpoint                    = each.value.endpoint
   client_configuration        = talos_machine_secrets.this.client_configuration
-  machine_configuration_input = data.talos_machine_configuration.this[each.value.role == "master" ? "controlplane" : "worker"].machine_configuration
+  machine_configuration_input = data.talos_machine_configuration.this[each.key].machine_configuration
+  config_patches              = local.node_config_patches[each.key]
 }
 
 # Bootstrap the etcd cluster on the first master

@@ -15,6 +15,7 @@ variable "k3s" {
 
   type = object({
     version                = optional(string, "latest") #"v1.34.5+k3s1"
+    data_dir               = optional(string)
     token                  = optional(string)
     tls_sans               = optional(list(string), [])
     etcd_enabled           = optional(bool, true)
@@ -36,6 +37,7 @@ variable "rke2" {
 
   type = object({
     version                = optional(string, "latest") #"v1.35.1+rke2r1"
+    data_dir               = optional(string)
     token                  = optional(string)
     tls_sans               = optional(list(string), [])
     etcd_enabled           = optional(bool, true)
@@ -105,13 +107,25 @@ variable "talos" {
   description = "Talos Linux cluster configuration"
 
   type = object({
-    version = optional(string, "v1.13.7")
+    version            = optional(string, "v1.13.7")
+    kubernetes_version = optional(string)
     # Talos Factory schematic ID; vanilla Talos by default. Custom kernels/modules
     # require a custom schematic (see factory.talos.dev).
-    schematic_id = optional(string, "376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba")
+    schematic_id                       = optional(string, "376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba")
+    cni                                = optional(string)
+    allow_scheduling_on_control_planes = optional(bool)
+    # Extra Talos machine config patches applied to every node.
+    config_patches              = optional(list(string), [])
+    controlplane_config_patches = optional(list(string), [])
+    worker_config_patches       = optional(list(string), [])
   })
 
   default = {}
+
+  validation {
+    condition     = var.talos.cni == null ? true : contains(["flannel", "none"], var.talos.cni)
+    error_message = "Talos cni must be one of: \"flannel\", \"none\", or null (for Talos default)."
+  }
 }
 
 ###################################

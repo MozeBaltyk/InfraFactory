@@ -15,6 +15,7 @@ variable "k3s" {
 
   type = object({
     version                = optional(string, "latest")
+    data_dir               = optional(string)
     token                  = optional(string)
     tls_sans               = optional(list(string), [])
     etcd_enabled           = optional(bool, true)
@@ -36,6 +37,7 @@ variable "rke2" {
 
   type = object({
     version                = optional(string, "latest") #"v1.35.1+rke2r1"
+    data_dir               = optional(string)
     token                  = optional(string)
     tls_sans               = optional(list(string), [])
     etcd_enabled           = optional(bool, true)

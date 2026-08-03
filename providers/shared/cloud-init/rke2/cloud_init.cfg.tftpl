@@ -59,6 +59,9 @@ write_files:
       server: "https://${first_master_ip}:9345"
 %{ endif ~}
       token: "${rke2_token}"
+%{ if rke2_data_dir != null && rke2_data_dir != "" ~}
+      data-dir: "${rke2_data_dir}"
+%{ endif ~}
 %{ if current_private_ip != null && current_private_ip != "" ~}
       node-ip: ${current_private_ip}
 %{ if node_role == "master" ~}
