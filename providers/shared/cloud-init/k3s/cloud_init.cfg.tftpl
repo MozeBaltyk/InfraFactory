@@ -250,6 +250,7 @@ runcmd:
 %{ if length(extra_disks) > 0 ~}
   - [ /usr/local/bin/disk-setup.sh ]
 %{ endif ~}
+  - [ sysctl, --system ]
   - [ systemctl, daemon-reload ]
   - [ systemctl, enable, qemu-guest-agent.service ]
   - [ systemctl, start, --no-block, qemu-guest-agent.service ]
