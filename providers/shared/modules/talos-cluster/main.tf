@@ -1,6 +1,7 @@
 locals {
-  controlplane_nodes = [for endpoint, role in var.nodes : endpoint if role == "master"]
-  worker_nodes       = [for endpoint, role in var.nodes : endpoint if role == "worker"]
+  controlplane_nodes = [for node in var.nodes : node.endpoint if node.role == "master"]
+  worker_nodes       = [for node in var.nodes : node.endpoint if node.role == "worker"]
+  all_node_endpoints = [for node in var.nodes : node.endpoint]
 }
 
 # Cluster identity and TLS bootstrap secrets
@@ -13,7 +14,7 @@ data "talos_client_configuration" "this" {
   cluster_name         = var.cluster_name
   client_configuration = talos_machine_secrets.this.client_configuration
   endpoints            = local.controlplane_nodes
-  nodes                = keys(var.nodes)
+  nodes                = local.all_node_endpoints
 }
 
 # Per-role machine configuration (controlplane / worker)
@@ -33,10 +34,10 @@ data "talos_machine_configuration" "this" {
 resource "talos_machine_configuration_apply" "this" {
   for_each = var.nodes
 
-  node                        = each.key
-  endpoint                    = each.key
+  node                        = each.value.endpoint
+  endpoint                    = each.value.endpoint
   client_configuration        = talos_machine_secrets.this.client_configuration
-  machine_configuration_input = data.talos_machine_configuration.this[each.value == "master" ? "controlplane" : "worker"].machine_configuration
+  machine_configuration_input = data.talos_machine_configuration.this[each.value.role == "master" ? "controlplane" : "worker"].machine_configuration
 }
 
 # Bootstrap the etcd cluster on the first master

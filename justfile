@@ -66,9 +66,10 @@ env:
       printf '\n%s%s%s\n' "$blue" 'Generated files' "$reset"; \
       status_path 'Env dir' "$env_dir"; \
       if test "$cloud_init_selected" = 'talos'; then \
+        status_path 'Talosconfig' "$env_dir/talosconfig"; \
+        status_path 'Kubeconfig' "$env_dir/kubeconfig"; \
         status_na 'Inventory' 'Talos mode (Ansible skipped)'; \
         status_na 'Ansible cfg' 'Talos mode (Ansible skipped)'; \
-        status_na 'Kubeconfig' "$env_dir/kubeconfig"; \
         status_na 'SSH key' "$env_dir/.key.private"; \
       else \
         status_path 'Inventory' "$env_dir/hosts.ini"; \

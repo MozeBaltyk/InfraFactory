@@ -27,7 +27,10 @@ module "talos_cluster" {
 
   nodes = {
     for vm_name, vm in local.all_vms_map :
-    local.vm_operator_endpoints[vm_name] => vm.role
+    vm_name => {
+      endpoint = local.vm_operator_endpoints[vm_name]
+      role     = vm.role
+    }
   }
 
   first_master_node = local.vm_operator_endpoints[local.first_master_name]

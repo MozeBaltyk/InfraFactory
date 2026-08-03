@@ -26,8 +26,16 @@ variable "kube_api_endpoint" {
 }
 
 variable "nodes" {
-  description = "Map of operator endpoint to role (\"master\" or \"worker\")."
-  type        = map(string)
+  description = "Map of stable node name to node settings. Endpoint may be known only after apply."
+  type = map(object({
+    endpoint = string
+    role     = string
+  }))
+
+  validation {
+    condition     = alltrue([for node in var.nodes : contains(["master", "worker"], node.role)])
+    error_message = "Node role must be either \"master\" or \"worker\"."
+  }
 }
 
 variable "first_master_node" {
