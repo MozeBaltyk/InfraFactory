@@ -68,7 +68,7 @@ locals {
 resource "terraform_data" "validate_image" {
   lifecycle {
     precondition {
-      condition = local.selected_image != null
+      condition = local.is_talos || local.selected_image != null
       error_message = format(
         "No OVH image matching patterns [%s] found in region '%s'.",
         join(", ", local.os.image.search_patterns),
@@ -103,10 +103,10 @@ resource "ovh_cloud_project_instance" "vms" {
   billing_period = "hourly"
 
   name      = each.value.name
-  user_data = each.value.user_data_enabled ? local.cloudinit_user_data[each.key] : null
+  user_data = local.is_talos ? null : (each.value.user_data_enabled ? local.cloudinit_user_data[each.key] : null)
 
   boot_from {
-    image_id = local.selected_image.id
+    image_id = local.is_talos ? module.talos_image[0].id : local.selected_image.id
   }
 
   flavor {

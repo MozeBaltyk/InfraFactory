@@ -34,6 +34,28 @@ variable "ovh_project_service_name" {
   type        = string
 }
 
+variable "openstack" {
+  description = "Optional OpenStack/OpenRC credentials for Talos image upload. If unset, OS_* environment variables or OS_CLOUD are used."
+  sensitive   = true
+
+  type = object({
+    cloud                         = optional(string)
+    auth_url                      = optional(string)
+    user_name                     = optional(string)
+    password                      = optional(string)
+    tenant_name                   = optional(string)
+    tenant_id                     = optional(string)
+    user_domain_name              = optional(string)
+    project_domain_name           = optional(string)
+    application_credential_id     = optional(string)
+    application_credential_name   = optional(string)
+    application_credential_secret = optional(string)
+    region                        = optional(string)
+  })
+
+  default = {}
+}
+
 # Version Mapping
 variable "os_catalog" {
   description = "OS image catalog"
@@ -70,6 +92,16 @@ variable "os_catalog" {
           "ubuntu",
           "22.04"
         ]
+      }
+
+      default_instance_size = "b2-7"
+    }
+
+    talos = {
+      os_name = "talos"
+
+      image = {
+        search_patterns = ["talos"]
       }
 
       default_instance_size = "b2-7"
@@ -118,8 +150,8 @@ variable "cluster" {
   }
 
   validation {
-    condition     = contains(["default", "k3s", "rke2"], var.cluster.cloud_init_selected)
-    error_message = "cluster.cloud_init_selected must be one of: default, k3s, rke2."
+    condition     = contains(["default", "k3s", "rke2", "talos"], var.cluster.cloud_init_selected)
+    error_message = "cluster.cloud_init_selected must be one of: default, k3s, rke2, talos."
   }
 }
 
@@ -210,6 +242,8 @@ variable "network" {
     })
     kube_api = optional(object({
       endpoint = optional(string, "public_ip")
+      # Public CIDRs allowed to reach Kubernetes API (6443) and Talos API (50000) in Talos mode.
+      ingress_cidrs = optional(list(string), ["0.0.0.0/0"])
 
       dns = optional(object({
         name = string
@@ -235,6 +269,13 @@ variable "network" {
     condition     = contains(["managed", "existing"], var.network.private.mode)
     error_message = "network.private.mode must be either \"managed\" or \"existing\"."
   }
+
+  validation {
+    condition = alltrue([
+      for cidr in try(var.network.kube_api.ingress_cidrs, []) : can(cidrnetmask(cidr))
+    ])
+    error_message = "network.kube_api.ingress_cidrs must contain valid IPv4 CIDR blocks."
+  }
 }
 
 locals {
@@ -245,7 +286,8 @@ locals {
 
   subdomain = "${var.cluster.id}.${var.cluster.domain}"
 
-  kubernetes_enabled = contains(["k3s", "rke2"], var.cluster.cloud_init_selected)
+  is_talos           = var.cluster.cloud_init_selected == "talos"
+  kubernetes_enabled = contains(["k3s", "rke2", "talos"], var.cluster.cloud_init_selected)
 
   ## Private handling
   private_network_mode     = var.network.private.mode
@@ -285,6 +327,7 @@ locals {
   lb_ssh_jump_enabled    = local.lb_enabled && try(var.network.kube_api.load_balancer.ssh_jump_enabled, false)
   lb_ssh_jump_port       = try(var.network.kube_api.load_balancer.ssh_jump_port, 22)
   lb_floating_ip_address = try(ovh_cloud_project_loadbalancer.kube_api[0].floating_ip.ip, null)
+  kube_api_ingress_cidrs = try(var.network.kube_api.ingress_cidrs, ["0.0.0.0/0"])
   lb_flavor_id = local.lb_enabled ? one([
     for f in data.ovh_cloud_project_loadbalancer_flavors.lb[0].flavors :
     f.id if f.name == var.network.kube_api.load_balancer.flavor

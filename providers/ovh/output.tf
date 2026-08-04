@@ -9,7 +9,7 @@ output "cluster_nodes" {
     worker_ips     = compact([for vm in local.worker_details : local.vm_public_ipv4_addresses[vm.name]])
     vm_ips         = compact([for vm in local.vm_details : local.vm_public_ipv4_addresses[vm.name]])
 
-    ssh_first_master = local.first_master_name != null ? try(
+    ssh_first_master = !local.is_talos && local.first_master_name != null ? try(
       format(
         "ssh -o StrictHostKeyChecking=no -i env/%s/%s/.key.private %s@%s",
         var.infra_provider,
@@ -80,5 +80,12 @@ export KUBECONFIG=env/${var.infra_provider}/${terraform.workspace}/kubeconfig
 # Then :
 kubectl get nodes
 EOT
-  ) : ""
+    ) : (local.is_talos ? (<<-EOT
+export KUBECONFIG=env/${var.infra_provider}/${terraform.workspace}/kubeconfig
+# Or :
+kubecm add -cf env/${var.infra_provider}/${terraform.workspace}/kubeconfig --context-name talos-${var.infra_provider}-${terraform.workspace} --create
+# Then :
+kubectl get nodes
+EOT
+  ) : "")
 }

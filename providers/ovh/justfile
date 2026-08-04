@@ -4,6 +4,20 @@ ENV := env_var_or_default("ENV", "lab")
 ENV_TFVARS_PATH := "../../env/OVH/" + ENV + ".tfvars"
 
 [private]
+_source-openrc:
+    @is_talos=0; \
+      if test -f {{ ENV_TFVARS_PATH }}; then \
+        while IFS= read -r line; do \
+          case "$line" in *cloud_init_selected*'='*'"talos"'*) is_talos=1; break ;; esac; \
+        done < {{ ENV_TFVARS_PATH }}; \
+      fi; \
+      if test "$is_talos" = 0; then exit 0; fi; \
+      for openrc in "${OPENRC:-}" ../../env/OVH/{{ ENV }}.openrc.local ../../env/OVH/{{ ENV }}.openrc ../../env/OVH/openrc.sh; do \
+        if test -n "$openrc" && test -f "$openrc"; then printf '%s\n' "$openrc"; exit 0; fi; \
+      done; \
+      exit 0
+
+[private]
 _workspace:
     @tofu workspace select {{ ENV }} || tofu workspace new {{ ENV }}
 
@@ -14,7 +28,9 @@ validate:
 plan NAME='':
     @tofu init
     @just _workspace
-    @name="{{ NAME }}"; \
+    @openrc="$(just _source-openrc)"; \
+      if test -z "${OS_AUTH_URL:-}${OS_CLOUD:-}" && test -n "$openrc"; then set -a; . "$openrc"; set +a; fi; \
+      name="{{ NAME }}"; \
       target_args=(); \
       if test -n "$name"; then \
         case "$name" in \
@@ -27,7 +43,9 @@ plan NAME='':
 deploy NAME='':
     @tofu init
     @just _workspace
-    @name="{{ NAME }}"; \
+    @openrc="$(just _source-openrc)"; \
+      if test -z "${OS_AUTH_URL:-}${OS_CLOUD:-}" && test -n "$openrc"; then set -a; . "$openrc"; set +a; fi; \
+      name="{{ NAME }}"; \
       target_args=(); \
       if test -n "$name"; then \
         case "$name" in \
@@ -50,7 +68,9 @@ replace NAME:
 destroy:
     @tofu init
     @just _workspace
-    @OVH_APPLICATION_KEY="$(sed -n 's/^[[:space:]]*ovh_application_key[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' {{ ENV_TFVARS_PATH }})" \
+    @openrc="$(just _source-openrc)"; \
+      if test -z "${OS_AUTH_URL:-}${OS_CLOUD:-}" && test -n "$openrc"; then set -a; . "$openrc"; set +a; fi; \
+      OVH_APPLICATION_KEY="$(sed -n 's/^[[:space:]]*ovh_application_key[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' {{ ENV_TFVARS_PATH }})" \
       OVH_APPLICATION_SECRET="$(sed -n 's/^[[:space:]]*ovh_application_secret[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' {{ ENV_TFVARS_PATH }})" \
       OVH_CONSUMER_KEY="$(sed -n 's/^[[:space:]]*ovh_consumer_key[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' {{ ENV_TFVARS_PATH }})" \
       tofu destroy -auto-approve -var-file={{ ENV_TFVARS_PATH }}

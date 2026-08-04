@@ -63,6 +63,56 @@ resource "terraform_data" "validate_existing_private_network" {
   }
 }
 
+###
+### OpenStack security group rules for public Kubernetes/Talos access
+###
+
+data "openstack_networking_secgroup_v2" "default" {
+  count  = local.is_talos ? 1 : 0
+  name   = "default"
+  region = var.cluster.region
+}
+
+locals {
+  talos_public_ingress_rules = local.is_talos ? merge(
+    {
+      for cidr in local.kube_api_ingress_cidrs : "talos-${cidr}" => {
+        port = 50000
+        cidr = cidr
+      }
+    },
+    {
+      for cidr in local.kube_api_ingress_cidrs : "kube-api-${cidr}" => {
+        port = 6443
+        cidr = cidr
+      }
+    }
+  ) : {}
+}
+
+resource "openstack_networking_secgroup_rule_v2" "talos_public_ingress" {
+  for_each = local.talos_public_ingress_rules
+
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = each.value.port
+  port_range_max    = each.value.port
+  remote_ip_prefix  = each.value.cidr
+  security_group_id = data.openstack_networking_secgroup_v2.default[0].id
+  region            = var.cluster.region
+}
+
+resource "openstack_networking_secgroup_rule_v2" "talos_private_ingress" {
+  count = local.is_talos ? 1 : 0
+
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  remote_ip_prefix  = local.private_cidr
+  security_group_id = data.openstack_networking_secgroup_v2.default[0].id
+  region            = var.cluster.region
+}
+
 # The OVH provider's LB Delete does NOT cascade delete the gateway created by
 # gateway_create. The gateway survives with its port on the subnet, blocking
 # subnet deletion. This resource explicitly cleans up the gateway before the

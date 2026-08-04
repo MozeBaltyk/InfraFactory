@@ -9,29 +9,29 @@ locals {
 module "cloudinit" {
   source = "../shared/modules/cloudinit-renderer"
 
-  cloud_init_selected = var.cluster.cloud_init_selected
-  node_username       = var.cluster.username
-  timezone            = var.cluster.timezone
-  extra_packages      = var.extra_packages
-  public_key          = module.ssh_keys.public_key_openssh
-  cluster_token       = module.ssh_keys.cluster_token
-  k3s                 = var.k3s
-  rke2                = var.rke2
-  ansible             = var.ansible
+  cloud_init_selected     = var.cluster.cloud_init_selected
+  node_username           = var.cluster.username
+  timezone                = var.cluster.timezone
+  extra_packages          = var.extra_packages
+  public_key              = module.ssh_keys.public_key_openssh
+  cluster_token           = module.ssh_keys.cluster_token
+  k3s                     = var.k3s
+  rke2                    = var.rke2
+  ansible                 = var.ansible
   package_upgrade_enabled = var.cluster.package_upgrade_enabled
 
-  vms = {
+  vms = local.is_talos ? {} : {
     for vm in local.all_vms_map :
     vm.name => {
-      hostname           = vm.name
-      fqdn               = "${vm.name}.${local.subdomain}"
-      domain             = local.subdomain
-      node_role          = vm.role
+      hostname            = vm.name
+      fqdn                = "${vm.name}.${local.subdomain}"
+      domain              = local.subdomain
+      node_role           = vm.role
       cloud_init_selected = vm.role == "vm" ? "default" : null
-      is_first_master    = vm.role == "master" && vm.name == local.first_master_name
-      first_master_ip    = local.kube_api_bootstrap_endpoint
-      current_private_ip = vm.private_ip
-      extra_disks        = try(local.vm_disks[vm.name], [])
+      is_first_master     = vm.role == "master" && vm.name == local.first_master_name
+      first_master_ip     = local.kube_api_bootstrap_endpoint
+      current_private_ip  = vm.private_ip
+      extra_disks         = try(local.vm_disks[vm.name], [])
       k3s_tls_sans = distinct(compact(concat(
         var.k3s.tls_sans,
         [local.kube_api_bootstrap_endpoint],
@@ -52,7 +52,7 @@ locals {
     name => yamldecode(body)
   }
 
-  ovh_private_netplan = {
+  ovh_private_netplan = local.is_talos ? {} : {
     for name, vm in local.all_vms_map :
     name => templatefile(
       "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
@@ -78,7 +78,7 @@ locals {
     )
   }
 
-  ovh_private_netplan_write_files = {
+  ovh_private_netplan_write_files = local.is_talos ? {} : {
     for name, vm in local.all_vms_map :
     name => [
       {
@@ -149,7 +149,7 @@ locals {
     ]
   }
 
-  ovh_private_netplan_runcmd = {
+  ovh_private_netplan_runcmd = local.is_talos ? {} : {
     for name, vm in local.all_vms_map :
     name => [
       ["systemctl", "daemon-reload"],
