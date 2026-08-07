@@ -99,6 +99,8 @@ write_files:
 %{ if !k3s_flannel_enabled ~}
       # Options: flannel (default), calico, canal, cilium, none
       flannel-backend: none
+      # k3s network policy controller only applies to the default flannel backend
+      disable-network-policy: true
 %{ endif ~}
       # Security
       secrets-encryption: true
