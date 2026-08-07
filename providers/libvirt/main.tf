@@ -5,6 +5,22 @@ resource "libvirt_pool" "factory_pool" {
   path = local.factory_pool_path
 }
 
+# Safeguard: libvirt provider may leave an existing dir pool inactive on refresh.
+resource "null_resource" "pool_start" {
+  triggers = {
+    pool = libvirt_pool.factory_pool.name
+    uri  = local.libvirt_uri
+  }
+
+  provisioner "local-exec" {
+    command = <<EOT
+if ! virsh --connect "${local.libvirt_uri}" pool-info "${libvirt_pool.factory_pool.name}" | grep -q "State:.*running"; then
+  virsh --connect "${local.libvirt_uri}" pool-start "${libvirt_pool.factory_pool.name}"
+fi
+EOT
+  }
+}
+
 ### Disks
 
 # Talos image is a raw .xz: download, decompress and convert to qcow2.
@@ -44,7 +60,7 @@ resource "libvirt_volume" "os_image" {
   source = local.is_talos ? "${local.talos_image_cache}/talos-metal-${var.talos.version}.qcow2" : local.os.os_URL
   format = "qcow2"
 
-  depends_on = [null_resource.talos_image]
+  depends_on = [null_resource.pool_start, null_resource.talos_image]
 }
 
 resource "libvirt_volume" "resized_os_image" {
@@ -65,6 +81,8 @@ resource "libvirt_volume" "extra_disks" {
   name = "${each.value.vm_name}-disk0${each.value.index + 2}.qcow2"
   pool = libvirt_pool.factory_pool.name
   size = each.value.size_gb * 1024 * 1024 * 1024
+
+  depends_on = [libvirt_volume.os_image]
 }
 
 ### Network
@@ -143,7 +161,7 @@ resource "libvirt_domain" "vms" {
 
   cloudinit = local.is_talos ? null : libvirt_cloudinit_disk.commoninit[each.key].id
 
-  cpu = {
+  cpu {
     mode = "host-passthrough"
   }
 
@@ -157,32 +175,5 @@ resource "libvirt_domain" "vms" {
     type        = "vnc"
     listen_type = "address"
     autoport    = true
-  }
-}
-
-resource "null_resource" "wait_cloudinit" {
-  for_each = local.is_talos ? {} : {
-    for name, vm in local.all_vms_map : name => vm
-    if vm.user_data_enabled
-  }
-
-  triggers = {
-    domain_id = libvirt_domain.vms[each.key].id
-    host      = local.vm_operator_endpoints[each.key]
-  }
-
-  provisioner "remote-exec" {
-    inline = [
-      "echo 'Waiting for cloud-init to complete...'",
-      "cloud-init status --wait > /dev/null",
-      "echo 'Completed cloud-init!'"
-    ]
-
-    connection {
-      type        = "ssh"
-      host        = self.triggers.host
-      user        = var.cluster.username
-      private_key = module.ssh_keys.private_key_pem
-    }
   }
 }

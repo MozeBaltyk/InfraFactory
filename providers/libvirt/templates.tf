@@ -74,6 +74,8 @@ resource "libvirt_cloudinit_disk" "commoninit" {
 
   pool = libvirt_pool.factory_pool.name
 
+  depends_on = [libvirt_volume.os_image]
+
   lifecycle {
     ignore_changes = []
   }

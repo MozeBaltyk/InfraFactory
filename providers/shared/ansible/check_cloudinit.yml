@@ -30,13 +30,13 @@
 
     - name: Verify cloud-init completed successfully
       ansible.builtin.command:
-        cmd: cloud-init status
+        cmd: timeout 900 cloud-init status --wait
       register: cloudinit_result
       changed_when: false
       until:
         - cloudinit_result is succeeded
         - cloudinit_result.stdout is search("status: done")
-      retries: 30
+      retries: 3
       delay: 10
 
     - name: Report cloud-init status

@@ -40,7 +40,6 @@ module "ansible" {
 
   depends_on = [
     libvirt_domain.vms,
-    null_resource.wait_cloudinit,
     null_resource.sleep_before_inventory,
     module.ssh_keys
   ]
