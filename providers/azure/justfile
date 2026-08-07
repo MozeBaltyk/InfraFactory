@@ -47,7 +47,11 @@ replace NAME:
       just _workspace; \
       tofu apply -var-file={{ ENV_TFVARS_PATH }} -target="azurerm_linux_virtual_machine.vms[\"$name\"]" -replace="azurerm_linux_virtual_machine.vms[\"$name\"]"
 
-destroy:
+# Destroy on the provider. Pass STALE=true to skip the refresh phase
+# (use when machines are broken/stale and refresh hangs on dead nodes).
+destroy STALE='':
     @tofu init
     @just _workspace
-    @tofu destroy -auto-approve -var-file={{ ENV_TFVARS_PATH }}
+    @refresh=""; \
+      if test -n "{{ STALE }}"; then refresh="-refresh=false"; fi; \
+      tofu destroy -auto-approve $refresh -var-file={{ ENV_TFVARS_PATH }}

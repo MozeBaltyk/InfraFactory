@@ -106,9 +106,9 @@ deploy NAME='':
 replace NAME:
     @ENV={{ ENV }} just $(just _provider-module)::replace {{ NAME }}
 
-# Destroy on Provider specified in PROVIDER env variable (default: KVM)
-destroy:
-    @just $(just _provider-module)::destroy
+# Destroy on Provider specified in PROVIDER env variable (default: KVM). Pass STALE=true to skip refresh (dead/broken machines)
+destroy STALE='':
+    @just $(just _provider-module)::destroy {{ STALE }}
 
 # Check Kubernetes cluster on Provider specified in PROVIDER env variable (default: KVM)
 check:
