@@ -13,6 +13,7 @@ Every provider module MUST implement all of the following:
 ### SSH & Secrets
 - Generate RSA 4096-bit SSH key pair
 - Write keys to `env/<PROVIDER>/<workspace>/`
+- Talos mode does not generate SSH keys or k3s/rke2 tokens
 
 ### Compute Topology
 - N masters, N workers, and N standalone VMs, independently configurable where supported by the provider
@@ -26,7 +27,7 @@ Every provider module MUST implement all of the following:
 
 ### Cloud-Init
 - Selectable cloud-init variant via `cluster.cloud_init_selected`:
-  - `default`, `k3s`, `rke2`
+  - `default`, `k3s`, `rke2`; Talos replaces cloud-init and Ansible where supported
 - Cloud-init source paths MUST reference `providers/shared/cloud-init/$type/`
 - Inject username + SSH public key
 - Optional OS upgrade control via `cluster.package_upgrade_enabled`
@@ -114,6 +115,7 @@ Every provider module MUST implement all of the following:
 | Capability | Details |
 |---|---|
 | **Credentials** | `ovh_endpoint`, `ovh_application_key`, `ovh_application_secret`, `ovh_consumer_key`, `ovh_project_service_name` |
+| **Authentication** | OVH keys use `OVH_APPLICATION_KEY`, `OVH_APPLICATION_SECRET`, and `OVH_CONSUMER_KEY`. Kubernetes modes require standard OpenStack `OS_*` or `clouds.yaml`/`OS_CLOUD` auth for security groups; Talos also uploads its Glance image through OpenStack. |
 | **Region** | `cluster.region` (e.g. `GRA9`) |
 | **Private network** | `network.private.cidr` (required) + `network.private.vlan_id` (optional, default `0`). Creates `ovh_cloud_project_network_private` + subnet. VLAN ID allows multiple clusters in the same region (valid range: 0–4000). |
 | **Deterministic private IPs** | Computed from `cidrhost(local.private_cidr, offset)` |
@@ -127,18 +129,20 @@ Every provider module MUST implement all of the following:
 | | - `ssh_jump_port` (number, default `22`) |
 | | - TCP listener on port 6443 with health monitor |
 | | - Backend pool members: all master private IPs on port 6443 |
-| | - Floating IP created via `floating_ip_create` |
-| | - Gateway created via `gateway_create` |
+| | - Floating IP managed by `ovh_cloud_floating_ip` |
+| | - Gateway managed by `ovh_cloud_gateway` |
 | **SSH jump output** | `master_ssh_jump` is emitted when load balancer SSH jump is enabled and includes the floating IP endpoint, port, target master, and example SSH commands |
 | **API endpoint** | `network.kube_api.endpoint` — resolution priority: LB floating IP > literal value > DNS name > first master public IP > first master private IP |
 | **Image discovery** | Search patterns matching image names in region (filters nvidia, prefers non-UEFI) |
 | **Flavor discovery** | Flavor IDs looked up by name from `data.ovh_cloud_project_flavors` |
 | **Public IP validation** | Validates all public-attached VMs received public IPv4 addresses |
 | **Standalone VMs** | Optional `infra.vms` block provisions non-cluster VMs with public and private attachment in current code. OVH supports VM-only deployments with `cloud_init_selected = "default"`, `masters.count = 0`, `workers.count = 0`, and `vms.count > 0`. In `network.private.mode = "existing"`, the provider discovers exactly one private network by `vlan_id + region` and one subnet by `cidr`; static `infra.vms.ip_addresses` are required. |
-| **Gateway cleanup** | `cleanup_gateway.py` — removes LB gateway + orphan floating IP on destroy (prevents subnet deletion blocking) |
+| **Gateway/FIP lifecycle** | Native OVH resources are associated to the load balancer. OpenTofu orders load-balancer deletion before gateway/FIP deletion and gateway deletion before the managed subnet; FIP and subnet deletion are not ordered relative to each other. |
 | **Ansible inventory** | Public IP based |
+| **Security group** | Kubernetes master/worker ports own and attach a dedicated OpenStack security group: private-CIDR intra-cluster ingress, restricted 6443, restricted SSH for k3s/rke2, and restricted 50000 for Talos. `network.kube_api.ingress_cidrs` is required and has no public-open default. OVH load-balancer API and SSH-jump listeners use the same allowed CIDRs. Standalone VMs are excluded. |
+| **Talos** | Uploads the Talos Factory OpenStack image to Glance, skips SSH/cloud-init/Ansible, and writes 0600 kubeconfig/talosconfig artifacts. |
 | **Deploy-time checks** | `checks.tf`: multi-master requires private CIDR, LB requires private CIDR, LB flavor exists, CIDR provides enough IPs |
-| **Targeted replace** | Root `just replace NAME` delegates to OVH and applies `-replace="ovh_cloud_project_instance.vms[\"NAME\"]"` after name validation |
+| **Full-graph replace** | Root `just replace NAME` applies `-replace="ovh_cloud_project_instance.vms[\"NAME\"]"` with dependent networking included |
 
 ---
 
@@ -162,8 +166,10 @@ Every provider module MUST implement all of the following:
 - Inventory remains public-IP based even when private network exists; standalone `infra.vms` are emitted in `[VMS]`
 - Standalone `infra.vms` are public-attached and private-attached in current code; do not assume private-only VMs
 - `network.private.mode = "existing"` is limited to VM-only default deployments with static `infra.vms.ip_addresses`
-- Provider version not pinned in `providers.tf`
-- `required_version` constraint commented out in `providers.tf`
+- Extra/root disk support remains unavailable because the OVH instance resource does not expose a complete native create/attach/resize lifecycle; Talos extra disks are therefore unsupported too
+
+### State security
+- Local OpenTofu state contains generated private keys, cluster tokens, provider data, and Talos machine secrets. Production/team deployments require a user-selected encrypted remote backend with state locking; no backend is prescribed by this repository.
 
 ---
 
@@ -188,6 +194,7 @@ Baseline scenarios to preserve or validate for provider-affecting changes:
 | OVH | `3 masters / 2 workers` | `k3s` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
 | OVH | `1 master` | `rke2` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
 | OVH | `3 masters / 2 workers` | `rke2` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| OVH | `1 master / 1 worker` | `talos` | Glance image upload, Talos bootstrap/health gate, kubeconfig + talosconfig; no SSH/Ansible artifacts |
 
 Generated inventory and kubeconfig artifacts are expected under `env/<PROVIDER>/<workspace>/` when applicable.
 Kubeconfig artifacts are only expected for Kubernetes-enabled deployments with enabled master user data.

@@ -1,22 +1,9 @@
 ovh_endpoint           = "ovh-eu"
-ovh_application_key    = "xxxxxxxxxxxxxxxx"
-ovh_application_secret = "xxxxxxxxxxxxxxxx"
-ovh_consumer_key       = "xxxxxxxxxxxxxxxx"
 ovh_project_service_name = "xxxxxxxxxxxxxxxx"
 
-# Optional: Talos image upload can read OpenStack auth from this block instead
-# of an OpenRC file / OS_* environment. These are OpenStack credentials, not
-# OVH API keys. Prefer downloading an OpenRC from OVH and either saving it as
-# ignored `env/OVH/talos.openrc` or passing `OPENRC=/path/to/openrc.sh`.
-# openstack = {
-#   auth_url            = "https://auth.cloud.ovh.net/v3"
-#   user_name           = "user-..."
-#   password            = "..."
-#   tenant_id           = "..." # often the OVH Public Cloud project/service id
-#   user_domain_name    = "Default"
-#   project_domain_name = "Default"
-#   # cloud             = "ovh" # alternative when using clouds.yaml / OS_CLOUD
-# }
+# Export OVH_APPLICATION_KEY, OVH_APPLICATION_SECRET, and OVH_CONSUMER_KEY.
+# OpenStack-backed networking in Kubernetes modes also requires OS_* variables
+# or clouds.yaml/OS_CLOUD. Talos additionally uses OpenStack for its Glance image.
 
 cluster = {
   id                      = "factory"
@@ -26,7 +13,7 @@ cluster = {
   username                = "localadmin"
   node_name_format        = "serial" # serial => factory-node01, role => factory-m01/factory-w01
   cloud_init_selected     = "k3s"  # or rke2 or talos
-  package_upgrade_enabled = "false" # Optional
+  package_upgrade_enabled = false # Optional
 }
 
 infra = {
@@ -92,10 +79,11 @@ os = {
 ### lifecycle ownership outside InfraFactory.
 ###
 ### Internet → Floating IP → Gateway → LB → masters:6443
+### The gateway and floating IP are explicit OVH resources owned by OpenTofu.
 ###
-### Security group note: the ovh/ovh provider used by this module does not
-### expose Public Cloud OpenStack security group rules, so this module cannot
-### explicitly manage/restrict TCP/22 without adding the OpenStack provider.
+### Kubernetes modes create a dedicated OpenStack security group. It permits
+### private intra-cluster traffic, 6443 for all modes, SSH for k3s/rke2, and
+### Talos API 50000 only for Talos, restricted to ingress_cidrs.
 ###
 
 # Minimal (private network only, no load balancer; endpoint = first master public IP)
@@ -107,9 +95,8 @@ os = {
 #
 #   kube_api = {
 #     endpoint = "public_ip"
-#     # Restrict this to your admin public IP when possible, e.g. ["203.0.113.10/32"].
-#     # Talos mode opens TCP 50000 (Talos API) and 6443 (Kubernetes API) to these CIDRs.
-#     ingress_cidrs = ["0.0.0.0/0"]
+#     # Required: operator/VPN public CIDRs; there is no public-open default.
+#     ingress_cidrs = ["203.0.113.10/32"]
 #   }
 # }
 
@@ -125,6 +112,7 @@ os = {
 #
 #   kube_api = {
 #     endpoint = "lb_ip"
+#     ingress_cidrs = ["203.0.113.10/32"]
 #
 #     load_balancer = {
 #       enabled       = true
@@ -176,7 +164,7 @@ os = {
 # if cloud_init_selected=k3s
 # k3s = {
 #   version                = "v1.35.2+k3s1"
-#   data_dir               = "/data/k3s" # Optional; mount an extra disk there first if desired
+#   data_dir               = "/var/lib/rancher/k3s-custom" # Optional path on root disk; OVH extra disks are unsupported
 #   token                  = "shared-token"
 #   etcd_enabled           = true
 #   traefik_enabled        = true
@@ -189,7 +177,7 @@ os = {
 # if cloud_init_selected=rke2
 # rke2 = {
 #   version                = "v1.35.4+rke2r1"
-#   data_dir               = "/data/rke2" # Optional; mount an extra disk there first if desired
+#   data_dir               = "/var/lib/rancher/rke2-custom" # Optional path on root disk; OVH extra disks are unsupported
 #   token                  = "shared-token"
 #   tls_sans               = ["api.factory.lab"]
 #   etcd_enabled           = true
@@ -211,17 +199,16 @@ os = {
 # }
 
 # if os.selected = "talos" and cloud_init_selected="talos"
-#talos = {
-#  version                              = "v1.13.7" # Optional
-#  kubernetes_version                   = "v1.36.0" # Optional
-#  schematic_id                         = "3765679..." # Optional; vanilla Talos by default (see providers/libvirt/vars_extra.tf)
-#  image_name                           = "talos-v1.13.7" # Optional; OpenStack Glance image name
-#  cni                                  = "flannel" # Optional: "flannel", "none" (null = Talos default)
-#  allow_scheduling_on_control_planes   = false # Optional
-#  controlplane_config_patches          = [] # Optional; YAML strings applied only to control-plane nodes
-#  worker_config_patches                = [] # Optional; YAML strings applied only to worker nodes
-### config_patches                      = [] # Optional; YAML strings applied to every Talos node
-#  config_patches = [
+# talos = {
+#   version                            = "v1.13.7"
+#   kubernetes_version                 = "v1.36.0"
+#   schematic_id                       = "3765679..." # Vanilla Talos default is declared in providers/ovh/vars_extra.tf
+#   image_name                         = "talos-v1.13.7" # OpenStack Glance image name
+#   cni                                = "flannel" # "flannel", "none", or null
+#   allow_scheduling_on_control_planes = false
+#   controlplane_config_patches        = []
+#   worker_config_patches              = []
+#   config_patches = [
 #     <<-EOT
 #     apiVersion: v1alpha1
 #     kind: TimeSyncConfig
@@ -231,10 +218,8 @@ os = {
 #         - pool.ntp.org
 #     EOT
 #   ]
-####
-#}
-# Talos extra disks use infra.masters.extra_disks / infra.workers.extra_disks too,
-# but Talos mounts them as UserVolumeConfig at /var/mnt/<label>; mount_path is ignored.
+# }
+# OVH extra disks (including Talos UserVolumeConfig disks) are not supported.
 
 
 # ansible = {

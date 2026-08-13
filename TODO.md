@@ -15,7 +15,7 @@ OVH now includes:
 - separate masters and workers
 - multi-master clusters when `network.private_cidr` is set
 - kube-api load-balancer exposure
-- an exact-match floating-IP cleanup helper and subnet port drain for destroy leftovers
+- native OVH-managed gateway and floating-IP lifecycle for load-balanced clusters
 - OVH private NIC netplan override with explicit empty routes, strict permissions, and route cleanup without overriding public cloud networking
 - Ansible-based cloud-init readiness check
 - Ansible-based TLS SAN reconciliation (adds public IP to kube-apiserver cert)
@@ -23,7 +23,9 @@ OVH now includes:
 - standalone extra VMs via `infra.vms`, including VM-only default cloud-init deployments
 - OVH extra VMs receive common default cloud-init plus the OVH private-netplan overlay
 - optional master SSH jump listener on the kube-api load balancer, targeting only the first master
-- explicit `just` recipes for planning and applying targeted OVH VM replacement
+- explicit `just` recipes for full-graph OVH VM replacement
+- Talos bootstrap through OpenStack Glance plus a cluster-owned OpenStack security group for k3s/rke2/Talos
+- environment-native OVH/OpenStack authentication and restrictive operator ingress CIDRs
 
 Libvirt has been realigned with the recent OVH baseline for standalone `infra.vms`, per-role `user_data_enabled`, shared default cloud-init on standalone VMs, inventory VM groups, and normalized controller/worker/VM IP outputs.
 
@@ -71,7 +73,8 @@ Azure has been realigned with the recent OVH/Libvirt baseline for standalone `in
 - [X] Implement templates.tf for ovh
 - [X] Implement outputs.tf for ovh
 - [X] Test ovh provider end-to-end
-- [X] Add explicit plan/apply recipes for targeted OVH VM replacement
+- [X] Add explicit recipes for full-graph OVH VM replacement
+- [X] Remediate OVH Talos/K3s/RKE2 audit findings (credentials, security-group ownership, artifact permissions, Talos key cleanup, constraints, limitations/docs)
 
 ### Phase 5: Ansible Integration
 - [X] Create shared ansible playbook: `check_cloudinit.yml` — wait for cloud-init to finish on all nodes

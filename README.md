@@ -146,7 +146,7 @@ Available commands:
 | `just ping` | Ping VMs with ansible |
 | `just check` | Check k8s access |
 | `just play` | Run an Ansible playbook against the cluster |
-| `just replace NAME` | Replace one OVH VM instance by name (`PROVIDER=OVH` only) |
+| `just replace NAME` | Replace a named VM; OVH applies the full dependency graph, while AZ/KVM remain target-scoped |
 
 
 
@@ -347,7 +347,7 @@ In this context, GitOps bootstrap is different from cloud-init bootstrap:
 |----------|--------|-------|
 | Libvirt | ✅ Implemented | Core functionality complete, tested |
 | Azure | ✅ Implemented | Full implementation with NSG, DNS, and cloud-init |
-| OVH | ✅ Implemented | Public-IP-based operator access, deterministic private IP assignment, standalone VMs, VM-only default deployments, kube-api load balancer with optional SSH jump, targeted VM replace, floating-IP cleanup helper, Ansible-based cloud-init check, TLS SAN reconciliation, and kubeconfig fetch |
+| OVH | ✅ Implemented | Public-IP-based operator access, deterministic private IP assignment, standalone VMs, VM-only default deployments, kube-api load balancer with native gateway/floating-IP lifecycle and optional SSH jump, full-graph VM replacement, Ansible-based cloud-init check, TLS SAN reconciliation, and kubeconfig fetch |
 
 ---
 
