@@ -25,16 +25,18 @@ EOT
 resource "local_file" "ansible_config" {
   count = var.write_local_artifacts ? 1 : 0
 
-  filename = "${var.env_path}/ansible.cfg"
-  content  = local.rendered_ansible_config
+  filename        = "${var.env_path}/ansible.cfg"
+  content         = local.rendered_ansible_config
+  file_permission = "0644"
 }
 
 # Generate environment-specific hosts.ini
 resource "local_file" "ansible_inventory" {
   count = var.write_local_artifacts ? 1 : 0
 
-  content  = local.rendered_ansible_inventory
-  filename = "${var.env_path}/hosts.ini"
+  content         = local.rendered_ansible_inventory
+  filename        = "${var.env_path}/hosts.ini"
+  file_permission = "0644"
 }
 
 ###
@@ -45,7 +47,8 @@ resource "null_resource" "check_cloudinit" {
   count = var.cloudinit_check_enabled ? 1 : 0
 
   triggers = {
-    abs_env_path = local.abs_env_path
+    abs_env_path     = local.abs_env_path
+    inventory_sha256 = sha256(local.rendered_ansible_inventory)
   }
 
   provisioner "local-exec" {

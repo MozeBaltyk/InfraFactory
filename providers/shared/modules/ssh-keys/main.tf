@@ -17,8 +17,9 @@ resource "tls_private_key" "global_key" {
 resource "local_file" "ssh_public_key" {
   count = var.write_local_artifacts ? 1 : 0
 
-  filename = "${var.env_path}/.key.pub"
-  content  = tls_private_key.global_key.public_key_openssh
+  filename        = "${var.env_path}/.key.pub"
+  content         = tls_private_key.global_key.public_key_openssh
+  file_permission = "0644"
 
   depends_on = [null_resource.env_directory]
 }
