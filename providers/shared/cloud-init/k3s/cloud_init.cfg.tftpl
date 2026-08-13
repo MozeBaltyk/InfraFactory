@@ -115,7 +115,7 @@ write_files:
     permissions: "0750"
     content: |
       #!/bin/bash
-      set -e
+      set -eo pipefail
 
       K3S_INSTALL_URL="https://get.k3s.io"
       K3S_VERSION="${k3s_version}"
@@ -124,6 +124,21 @@ write_files:
         export INSTALL_K3S_VERSION="$K3S_VERSION"
         # Will attempt to download from the stable channel if not specified.
       fi
+
+      install_k3s() {
+        role="$1"
+        for attempt in 1 2 3 4 5; do
+          echo "K3s $role install attempt $attempt of 5"
+          if curl --connect-timeout 5 --max-time 30 --retry 3 --retry-delay 2 --retry-all-errors -sfL "$K3S_INSTALL_URL" | INSTALL_K3S_EXEC="$role" sh -s -; then
+            return 0
+          fi
+          if [[ "$attempt" -eq 5 ]]; then
+            echo "K3s $role install failed after 5 attempts" >&2
+            return 1
+          fi
+          sleep 10
+        done
+      }
 
       echo "Test if URL install is reachable: $K3S_INSTALL_URL"
       if ! curl --connect-timeout 5 --max-time 10 -fsSLI "$K3S_INSTALL_URL" >/dev/null 2>curl_error.log; then
@@ -154,10 +169,10 @@ write_files:
       fi
 %{ endif ~}
       echo "Joining additional master"
-      curl -sfL $K3S_INSTALL_URL | INSTALL_K3S_EXEC="server" sh -s - 
+      install_k3s server
 %{ else }
       echo "Joining worker node"
-      curl -sfL $K3S_INSTALL_URL | INSTALL_K3S_EXEC="agent" sh -s - 
+      install_k3s agent
 %{ endif }
 
 # --- Ansible Pull setup ---
