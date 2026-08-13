@@ -163,7 +163,31 @@ else
   status_path 'SSH key' "$env_dir/.key.private"
 fi
 
-[[ $provider == OVH ]] && print_openstack_auth
+print_operator_ip() {
+  printf '\n%s%s%s\n' "$blue" 'Operator access (ingress whitelist)' "$reset"
+  local ip= cidrs=
+  ip=$(timeout 4 curl -s https://ipinfo.io/ip 2>/dev/null) || ip=
+  if [[ -n $ip ]]; then
+    printf '  %-32s %s/32\n' 'Current public IP (egress)' "$ip"
+  else
+    printf '  %-32s %s[unknown]%s (no internet or ipinfo.io blocked)\n' 'Current public IP (egress)' "$yellow" "$reset"
+  fi
+  if [[ -f $tfvars ]]; then
+    cidrs=$(grep -E '^\s*ingress_cidrs' "$tfvars" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/(3[0-2]|[12]?[0-9])' | paste -sd ', ' -)
+  fi
+  if [[ -n $cidrs ]]; then
+    printf '  %-32s %s\n' 'network.kube_api.ingress_cidrs' "$cidrs"
+    if [[ -n $ip ]] && grep -qE "(^|[[:space:],])$ip/" <<<"$cidrs"; then
+      printf '  %sMatch:%s current IP is whitelisted.\n' "$green" "$reset"
+    else
+      printf '  %sWarning:%s current IP is NOT in ingress_cidrs - SSH/kube-api would be unreachable.\n' "$red" "$reset"
+    fi
+  else
+    printf '  %-32s %s[none]%s   add network.kube_api.ingress_cidrs for Kubernetes deploys\n' 'network.kube_api.ingress_cidrs' "$yellow" "$reset"
+  fi
+}
+
+[[ $provider == OVH ]] && { print_openstack_auth; print_operator_ip; }
 
 printf '\n%s%s%s\n' "$blue" 'Useful commands' "$reset"
 printf '  %-16s PROVIDER=%s ENV=%s just %s\n' 'Validate' "$provider" "$environment" 'validate'
