@@ -115,34 +115,33 @@ Every provider module MUST implement all of the following:
 | Capability | Details |
 |---|---|
 | **Credentials** | `ovh_endpoint`, `ovh_application_key`, `ovh_application_secret`, `ovh_consumer_key`, `ovh_project_service_name` |
-| **Authentication** | OVH keys use `OVH_APPLICATION_KEY`, `OVH_APPLICATION_SECRET`, and `OVH_CONSUMER_KEY`. Kubernetes modes require standard OpenStack `OS_*` or `clouds.yaml`/`OS_CLOUD` auth for security groups; Talos also uploads its Glance image through OpenStack. |
+| **Authentication** | OVH keys use `OVH_APPLICATION_KEY`, `OVH_APPLICATION_SECRET`, and `OVH_CONSUMER_KEY`. Kubernetes modes require standard OpenStack `OS_*` or `clouds.yaml`/`OS_CLOUD` auth for security groups; Talos also uploads its Glance image through OpenStack. OVH `just replace` also requires `jq` for safe topology lookup. |
 | **Region** | `cluster.region` (e.g. `GRA9`) |
 | **Private network** | `network.private.cidr` (required) + `network.private.vlan_id` (optional, default `0`). Creates `ovh_cloud_project_network_private` + subnet. VLAN ID allows multiple clusters in the same region (valid range: 0–4000). |
 | **Deterministic private IPs** | Computed from `cidrhost(local.private_cidr, offset)` |
-| **Dual NICs** | Public (`ens3`) + private (`ens4`). Private NIC netplan override written via cloud-init to prevent competing default routes. |
+| **NIC topology** | Normal mode: masters/workers are public (`ens3`) + private (`ens4`). Dedicated-bastion mode: one public+private bastion, while masters/workers are private-only (`ens3`) with their default route through the OVH subnet gateway and DNS `213.186.33.99`. Standalone VMs remain dual-NIC. |
 | **Gateway IP (subnet)** | `enable_gateway_ip` set to `local.lb_enabled` — only reserves a gateway IP on the subnet when a load balancer is present. Eliminates unnecessary DHCP default route on `ens4` when no LB is needed. |
 | **Load balancer** | `network.kube_api.load_balancer` — creates OVH Public Cloud Load Balancer (Octavia-based) with: |
 | | - `enabled` (bool, default `false`) |
 | | - `flavor` (string: `small`, `medium`, `large`, `xl`) |
 | | - `gateway_model` (string: `s`, `m`, `l`, `xl`, `2xl` — default `s`) |
 | | - `ssh_jump_enabled` (bool, default `false`) |
-| | - `ssh_jump_port` (number, default `22`) |
 | | - TCP listener on port 6443 with health monitor |
 | | - Backend pool members: all master private IPs on port 6443 |
 | | - Floating IP managed by `ovh_cloud_floating_ip` |
 | | - Gateway managed by `ovh_cloud_gateway` |
-| **SSH jump output** | `master_ssh_jump` is emitted when load balancer SSH jump is enabled and includes the floating IP endpoint, port, target master, and example SSH commands |
+| **Dedicated bastion** | `ssh_jump_enabled=true` creates one deterministic smallest compatible available hourly Ubuntu 24.04 bastion flavor (vCPU/RAM/disk/name/ID order). The LB remains TCP/6443-only. `bastion` output includes public/private IPs and `ssh -F env/OVH/<workspace>/ssh_config <alias>` commands. Talos+jump is rejected. |
 | **API endpoint** | `network.kube_api.endpoint` — resolution priority: LB floating IP > literal value > DNS name > first master public IP > first master private IP |
 | **Image discovery** | Search patterns matching image names in region (filters nvidia, prefers non-UEFI) |
 | **Flavor discovery** | Flavor IDs looked up by name from `data.ovh_cloud_project_flavors` |
 | **Public IP validation** | Validates all public-attached VMs received public IPv4 addresses |
 | **Standalone VMs** | Optional `infra.vms` block provisions non-cluster VMs with public and private attachment in current code. OVH supports VM-only deployments with `cloud_init_selected = "default"`, `masters.count = 0`, `workers.count = 0`, and `vms.count > 0`. In `network.private.mode = "existing"`, the provider discovers exactly one private network by `vlan_id + region` and one subnet by `cidr`; static `infra.vms.ip_addresses` are required. |
 | **Gateway/FIP lifecycle** | Native OVH resources are associated to the load balancer. OpenTofu orders load-balancer deletion before gateway/FIP deletion and gateway deletion before the managed subnet; FIP and subnet deletion are not ordered relative to each other. |
-| **Ansible inventory** | Public IP based |
-| **Security group** | Kubernetes master/worker ports own and attach a dedicated OpenStack security group: private-CIDR intra-cluster ingress, restricted 6443, restricted SSH for k3s/rke2, and restricted 50000 for Talos. `network.kube_api.ingress_cidrs` is required and has no public-open default. OVH load-balancer API and SSH-jump listeners use the same allowed CIDRs. Standalone VMs are excluded. |
+| **Ansible inventory** | Public IP based normally; dedicated-bastion mode uses stable private-node aliases through the generated 0600 `ssh_config`, while `[VMS]` remains direct-public. The config applies the generated identity, `IdentitiesOnly=yes`, and disables host-key verification (`StrictHostKeyChecking no`, `UserKnownHostsFile /dev/null`). |
+| **Security group** | Normal mode is unchanged. Jump mode uses a separate bastion SG (TCP/22 from operator CIDRs) and a private cluster SG with TCP/22 only from the bastion SG, east-west TCP except 22, UDP, ICMP, and LB/backend TCP/6443. Standalone VMs are excluded. |
 | **Talos** | Uploads the Talos Factory OpenStack image to Glance, skips SSH/cloud-init/Ansible, and writes 0600 kubeconfig/talosconfig artifacts. |
 | **Deploy-time checks** | `checks.tf`: multi-master requires private CIDR, LB requires private CIDR, LB flavor exists, CIDR provides enough IPs |
-| **Full-graph replace** | Root `just replace NAME` applies `-replace="ovh_cloud_project_instance.vms[\"NAME\"]"` with dependent networking included |
+| **Full-graph replace** | Root `just replace NAME` resolves normal `vms`, jump-mode `private_cluster`, or the explicit `bastion` name and applies an un-targeted `-replace` so dependent lifecycle remains included. The first K3s/RKE2 controller is rejected because automatic datastore rejoin is unsafe. |
 
 ---
 
@@ -163,10 +162,15 @@ Every provider module MUST implement all of the following:
 ### OVH
 - Extra disks: blocked by validation (must be empty)
 - Custom root disk sizing: blocked at 40 GB
-- Inventory remains public-IP based even when private network exists; standalone `infra.vms` are emitted in `[VMS]`
+- Inventory is public-IP based unless dedicated-bastion mode is enabled; standalone `infra.vms` are always emitted in `[VMS]` with direct public access
 - Standalone `infra.vms` are public-attached and private-attached in current code; do not assume private-only VMs
 - `network.private.mode = "existing"` is limited to VM-only default deployments with static `infra.vms.ip_addresses`
 - Extra/root disk support remains unavailable because the OVH instance resource does not expose a complete native create/attach/resize lifecycle; Talos extra disks are therefore unsupported too
+- Enabling or disabling `ssh_jump_enabled` on an existing cluster is a disruptive rebuild: back up etcd/workloads first, schedule downtime, save/review the full authenticated plan, then apply. Root disks and node public IPs are replaced; blue/green migration is required when downtime is unacceptable.
+- Bastion recovery: use `PROVIDER=OVH ENV=<env> just replace bastion` (the generated `<cluster-id>-bastion` name also resolves). Replace non-bootstrap private nodes by their generated name. The generated `ssh_config` disables host-key verification, so replacement needs no known-hosts cleanup; reconnect with `ssh -F env/OVH/<env>/ssh_config <alias>`. Host-key verification is deliberately disabled for jump-mode SSH (option B): connections trust the operator network and OVH SG/ingress controls instead of a TOFU host-key anchor.
+- Bootstrap-controller recovery: `just replace` refuses the first K3s/RKE2 controller. Before losing/rebuilding it, take and verify an etcd snapshot and follow the distribution restore procedure: [K3s backup/restore](https://docs.k3s.io/datastore/backup-restore) or [RKE2 backup/restore](https://docs.rke2.io/datastore/backup_restore). Automatic etcd membership/rejoin is not implemented.
+- Dedicated-bastion mode remains plan-validated only until paid live K3s and RKE2 first-boot, ProxyJump, replacement, and destroy/orphan tests pass.
+- If CIDR or bastion failure prevents SSH, use the OVH Control Panel instance console/rescue mode with scoped OVH/OpenStack credentials to repair ingress or replace the bastion. Do not add a direct-node public NIC, LB TCP/22 listener, or static password as a backdoor.
 
 ### State security
 - Local OpenTofu state contains generated private keys, cluster tokens, provider data, and Talos machine secrets. Production/team deployments require a user-selected encrypted remote backend with state locking; no backend is prescribed by this repository.
@@ -194,6 +198,8 @@ Baseline scenarios to preserve or validate for provider-affecting changes:
 | OVH | `3 masters / 2 workers` | `k3s` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
 | OVH | `1 master` | `rke2` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
 | OVH | `3 masters / 2 workers` | `rke2` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| OVH bastion | `3 private masters / 1 private worker` | `k3s` | Plan-validated only; live gateway egress, ProxyJump, non-bootstrap replacement, bastion replacement, and destroy proof pending |
+| OVH bastion | `3 private masters / 1 private worker` | `rke2` | Plan-validated only; live gateway egress, ProxyJump, non-bootstrap replacement, bastion replacement, and destroy proof pending |
 | OVH | `1 master / 1 worker` | `talos` | Glance image upload, Talos bootstrap/health gate, kubeconfig + talosconfig; no SSH/Ansible artifacts |
 
 Generated inventory and kubeconfig artifacts are expected under `env/<PROVIDER>/<workspace>/` when applicable.

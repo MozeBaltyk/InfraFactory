@@ -22,7 +22,8 @@ OVH now includes:
 - Ansible-based kubeconfig fetch with public IP endpoint
 - standalone extra VMs via `infra.vms`, including VM-only default cloud-init deployments
 - OVH extra VMs receive common default cloud-init plus the OVH private-netplan overlay
-- optional master SSH jump listener on the kube-api load balancer, targeting only the first master
+- optional dedicated hardened OVH bastion with private-only K3s/RKE2 nodes and kube-api-only load balancer
+- generated two-hop SSH config with host-key verification disabled and full-graph bastion/non-bootstrap private-node replacement recovery; first-controller replacement is refused pending etcd restore support
 - explicit `just` recipes for full-graph OVH VM replacement
 - Talos bootstrap through OpenStack Glance plus a cluster-owned OpenStack security group for k3s/rke2/Talos
 - environment-native OVH/OpenStack authentication and restrictive operator ingress CIDRs
@@ -75,6 +76,8 @@ Azure has been realigned with the recent OVH/Libvirt baseline for standalone `in
 - [X] Test ovh provider end-to-end
 - [X] Add explicit recipes for full-graph OVH VM replacement
 - [X] Remediate OVH Talos/K3s/RKE2 audit findings (credentials, security-group ownership, artifact permissions, Talos key cleanup, constraints, limitations/docs)
+- [ ] Live-validate dedicated-bastion K3s and RKE2 first boot, ProxyJump, non-bootstrap/bastion replacement, and destroy/orphan lifecycle
+- [ ] Define and test first-controller etcd backup/restore recovery; automatic `just replace` remains blocked
 
 ### Phase 5: Ansible Integration
 - [X] Create shared ansible playbook: `check_cloudinit.yml` — wait for cloud-init to finish on all nodes

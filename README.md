@@ -152,6 +152,19 @@ Available commands:
 
 ### Configuration Files
 
+OVH dedicated-bastion migration is intentionally disruptive. Before changing
+`ssh_jump_enabled` on an existing cluster, back up etcd and workloads, schedule
+downtime, and save/review the authenticated full plan. Use `just replace bastion`
+for bastion recovery. `just replace` refuses the first K3s/RKE2 controller:
+replacing that bootstrap node safely requires a verified etcd snapshot and the
+distribution recovery procedure ([K3s](https://docs.k3s.io/datastore/backup-restore) or
+[RKE2](https://docs.rke2.io/datastore/backup_restore)); automatic datastore
+membership recovery is not implemented. The generated `env/OVH/<env>/ssh_config` provides
+stable aliases and disables host-key verification (`StrictHostKeyChecking no`); the
+bastion and private nodes are never directly exposed.
+If SSH is unavailable, use OVH console/rescue with scoped cloud credentials to
+repair ingress or replace the bastion; do not expose private nodes or LB TCP/22.
+
 Each environment is defined by a `.tfvars` file in `env/<PROVIDER>/`:
 
 **Example: `env/KVM/lab.tfvars`**
@@ -347,7 +360,7 @@ In this context, GitOps bootstrap is different from cloud-init bootstrap:
 |----------|--------|-------|
 | Libvirt | ✅ Implemented | Core functionality complete, tested |
 | Azure | ✅ Implemented | Full implementation with NSG, DNS, and cloud-init |
-| OVH | ✅ Implemented | Public-IP-based operator access, deterministic private IP assignment, standalone VMs, VM-only default deployments, kube-api load balancer with native gateway/floating-IP lifecycle and optional SSH jump, full-graph VM replacement, Ansible-based cloud-init check, TLS SAN reconciliation, and kubeconfig fetch |
+| OVH | ✅ Implemented; bastion live validation pending | Public-IP-based normal mode plus plan-validated dedicated bastion/private-only Kubernetes nodes, deterministic private IP assignment, standalone VMs, kube-api-only load balancer with native gateway/floating-IP lifecycle, guarded full-graph VM replacement, Ansible cloud-init check, TLS SAN reconciliation, and kubeconfig fetch |
 
 ---
 
@@ -366,7 +379,9 @@ See [AGENTS.md](AGENTS.md) for AI assistant context and full governance rules.
 
 ## Known Limitations
 
-- OVH uses public-IP-based operator access even when a private network exists
+- OVH uses public-IP-based operator access normally; `ssh_jump_enabled=true` uses a dedicated bastion and private Kubernetes node IPs (K3s/RKE2 only)
+- OVH dedicated-bastion mode is plan-validated only; live K3s/RKE2 first boot, replacement, and destroy proofs remain pending
+- OVH refuses `just replace` for the first K3s/RKE2 controller; use a verified etcd snapshot and the distribution restore procedure instead
 - OVH standalone `infra.vms` are public-attached and private-attached in current code
 - OVH custom root disk sizing and extra disks are not supported yet
 - IPv6 support requires additional configuration

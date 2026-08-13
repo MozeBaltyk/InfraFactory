@@ -118,9 +118,14 @@ os = {
 #       enabled       = true
 #       flavor        = "small"
 #       gateway_model = "s"
-#       # Optional: expose SSH through the same LB to the first master only.
+#       # Optional: create one hardened dual-NIC Ubuntu bastion. Masters/workers
+#       # become private-only and Ansible reaches them through ProxyJump. The LB
+#       # still exposes only TCP/6443. This mode is rejected for Talos.
+#       # Toggling this on an existing cluster replaces masters/workers: back up
+#       # etcd/workloads, schedule downtime, and review a saved full plan first.
+#       # `just replace` refuses the first controller; recover it only through a
+#       # verified K3s/RKE2 etcd snapshot and the distribution restore procedure.
 #       # ssh_jump_enabled = true
-#       # ssh_jump_port    = 22
 #     }
 #   }
 # }
@@ -143,9 +148,8 @@ os = {
 #       enabled       = true
 #       flavor        = "small"
 #       gateway_model = "s"
-#       # Optional: expose SSH through the same LB to the first master only.
+#       # Optional dedicated bastion/private-node mode; not an LB SSH listener.
 #       # ssh_jump_enabled = true
-#       # ssh_jump_port    = 22
 #     }
 #   }
 # }
