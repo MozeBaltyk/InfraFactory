@@ -15,45 +15,29 @@ variable "ovh_application_key" {
   description = "OVH application key"
   type        = string
   sensitive   = true
+  nullable    = true
+  default     = null
 }
 
 variable "ovh_application_secret" {
   description = "OVH application secret"
   type        = string
   sensitive   = true
+  nullable    = true
+  default     = null
 }
 
 variable "ovh_consumer_key" {
   description = "OVH consumer key"
   type        = string
   sensitive   = true
+  nullable    = true
+  default     = null
 }
 
 variable "ovh_project_service_name" {
   description = "OVHcloud Public Cloud project service name"
   type        = string
-}
-
-variable "openstack" {
-  description = "Optional OpenStack/OpenRC credentials for Talos image upload. If unset, OS_* environment variables or OS_CLOUD are used."
-  sensitive   = true
-
-  type = object({
-    cloud                         = optional(string)
-    auth_url                      = optional(string)
-    user_name                     = optional(string)
-    password                      = optional(string)
-    tenant_name                   = optional(string)
-    tenant_id                     = optional(string)
-    user_domain_name              = optional(string)
-    project_domain_name           = optional(string)
-    application_credential_id     = optional(string)
-    application_credential_name   = optional(string)
-    application_credential_secret = optional(string)
-    region                        = optional(string)
-  })
-
-  default = {}
 }
 
 # Version Mapping
@@ -227,10 +211,6 @@ variable "infra" {
 ###################################
 # Network Config
 ###################################
-# OVH provider limitation: ovh/ovh v2.13.1 does not expose Public Cloud
-# OpenStack security group resources/rules. SSH ingress (TCP/22) therefore
-# cannot be restricted here without adding the OpenStack provider, which this
-# provider intentionally avoids.
 variable "network" {
   description = "Cluster networking"
 
@@ -242,8 +222,8 @@ variable "network" {
     })
     kube_api = optional(object({
       endpoint = optional(string, "public_ip")
-      # Public CIDRs allowed to reach Kubernetes API (6443) and Talos API (50000) in Talos mode.
-      ingress_cidrs = optional(list(string), ["0.0.0.0/0"])
+      # Operator CIDRs allowed to reach SSH/Kubernetes/Talos APIs as applicable.
+      ingress_cidrs = optional(list(string), [])
 
       dns = optional(object({
         name = string
@@ -326,8 +306,8 @@ locals {
   lb_enabled             = local.kubernetes_enabled && var.infra.masters.count > 0 && try(var.network.kube_api.load_balancer.enabled, false)
   lb_ssh_jump_enabled    = local.lb_enabled && try(var.network.kube_api.load_balancer.ssh_jump_enabled, false)
   lb_ssh_jump_port       = try(var.network.kube_api.load_balancer.ssh_jump_port, 22)
-  lb_floating_ip_address = try(ovh_cloud_project_loadbalancer.kube_api[0].floating_ip.ip, null)
-  kube_api_ingress_cidrs = try(var.network.kube_api.ingress_cidrs, ["0.0.0.0/0"])
+  lb_floating_ip_address = try(ovh_cloud_floating_ip.kube_api[0].id, null)
+  kube_api_ingress_cidrs = try(var.network.kube_api.ingress_cidrs, [])
   lb_flavor_id = local.lb_enabled ? one([
     for f in data.ovh_cloud_project_loadbalancer_flavors.lb[0].flavors :
     f.id if f.name == var.network.kube_api.load_balancer.flavor
@@ -377,6 +357,8 @@ locals {
   workers_map = {
     for vm in local.worker_details : vm.name => vm
   }
+
+  cluster_vms_map = merge(local.masters_map, local.workers_map)
 
   vm_details = [
     for i in range(var.infra.vms.count) : {

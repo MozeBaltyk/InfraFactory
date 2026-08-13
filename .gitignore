@@ -10,7 +10,7 @@ ansible.cfg
 kubeconfig
 .token
 .local
-env/.cache/
+.cache/
 env/OVH/*.openrc
 env/OVH/*.openrc.local
 env/OVH/openrc.sh

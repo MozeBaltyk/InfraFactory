@@ -148,3 +148,12 @@ check "ovh_dns_endpoint_requires_name" {
     error_message = "network.kube_api.endpoint = \"dns\" requires network.kube_api.dns.name to be set."
   }
 }
+
+resource "terraform_data" "validate_operator_ingress_cidrs" {
+  lifecycle {
+    precondition {
+      condition     = !local.kubernetes_enabled || length(local.kube_api_ingress_cidrs) > 0
+      error_message = "Kubernetes deployments require at least one explicit network.kube_api.ingress_cidrs entry (normally your operator/VPN public CIDR, for example 203.0.113.10/32). The unsafe 0.0.0.0/0 default is intentionally disabled."
+    }
+  }
+}

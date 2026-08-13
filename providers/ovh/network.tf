@@ -64,34 +64,42 @@ resource "terraform_data" "validate_existing_private_network" {
 }
 
 ###
-### OpenStack security group rules for public Kubernetes/Talos access
+### Cluster-owned OpenStack security group
 ###
 
-data "openstack_networking_secgroup_v2" "default" {
-  count  = local.is_talos ? 1 : 0
-  name   = "default"
-  region = var.cluster.region
+resource "openstack_networking_secgroup_v2" "cluster" {
+  count       = local.kubernetes_enabled ? 1 : 0
+  name        = "${var.cluster.id}-${terraform.workspace}"
+  description = "InfraFactory ${var.cluster.id} cluster"
+  region      = var.cluster.region
+
+  depends_on = [terraform_data.validate_operator_ingress_cidrs]
 }
 
 locals {
-  talos_public_ingress_rules = local.is_talos ? merge(
-    {
-      for cidr in local.kube_api_ingress_cidrs : "talos-${cidr}" => {
-        port = 50000
-        cidr = cidr
-      }
-    },
+  cluster_public_ingress_rules = local.kubernetes_enabled ? merge(
     {
       for cidr in local.kube_api_ingress_cidrs : "kube-api-${cidr}" => {
         port = 6443
+        cidr = cidr
+      }
+    },
+    local.is_talos ? {
+      for cidr in local.kube_api_ingress_cidrs : "talos-api-${cidr}" => {
+        port = 50000
+        cidr = cidr
+      }
+      } : {
+      for cidr in local.kube_api_ingress_cidrs : "ssh-${cidr}" => {
+        port = 22
         cidr = cidr
       }
     }
   ) : {}
 }
 
-resource "openstack_networking_secgroup_rule_v2" "talos_public_ingress" {
-  for_each = local.talos_public_ingress_rules
+resource "openstack_networking_secgroup_rule_v2" "cluster_public_ingress" {
+  for_each = local.cluster_public_ingress_rules
 
   direction         = "ingress"
   ethertype         = "IPv4"
@@ -99,151 +107,96 @@ resource "openstack_networking_secgroup_rule_v2" "talos_public_ingress" {
   port_range_min    = each.value.port
   port_range_max    = each.value.port
   remote_ip_prefix  = each.value.cidr
-  security_group_id = data.openstack_networking_secgroup_v2.default[0].id
+  security_group_id = openstack_networking_secgroup_v2.cluster[0].id
   region            = var.cluster.region
 }
 
-resource "openstack_networking_secgroup_rule_v2" "talos_private_ingress" {
-  count = local.is_talos ? 1 : 0
+resource "openstack_networking_secgroup_rule_v2" "cluster_private_ingress" {
+  count = local.kubernetes_enabled ? 1 : 0
 
   direction         = "ingress"
   ethertype         = "IPv4"
   remote_ip_prefix  = local.private_cidr
-  security_group_id = data.openstack_networking_secgroup_v2.default[0].id
+  security_group_id = openstack_networking_secgroup_v2.cluster[0].id
   region            = var.cluster.region
 }
 
-# The OVH provider's LB Delete does NOT cascade delete the gateway created by
-# gateway_create. The gateway survives with its port on the subnet, blocking
-# subnet deletion. This resource explicitly cleans up the gateway before the
-# subnet is destroyed.
-#
-# Dependency chain (destroy order):
-#   LB → VMs → private_network_destroy_grace (cleanup gateway) → subnet
-# VMs depend on this resource so OpenTofu destroys them BEFORE this one.
-resource "null_resource" "private_network_destroy_grace" {
-  count = local.private_network_managed ? 1 : 0
+data "openstack_networking_port_v2" "cluster_public" {
+  for_each = local.kubernetes_enabled ? local.cluster_vms_map : {}
 
-  triggers = {
-    network_id      = local.private_network_id
-    subnet_id       = local.private_subnet_id
-    gateway_name    = local.lb_enabled ? "${var.cluster.id}-gateway" : ""
-    cluster_id      = var.cluster.id
-    service_name    = var.ovh_project_service_name
-    region          = var.cluster.region
-    ovh_endpoint    = var.ovh_endpoint
-    credential_hint = "Set OVH_APPLICATION_KEY, OVH_APPLICATION_SECRET, and OVH_CONSUMER_KEY in the environment before destroy."
-  }
+  device_id = ovh_cloud_project_instance.vms[each.key].id
+  fixed_ip  = local.vm_public_ipv4_addresses_after_wait[each.key]
+  region    = var.cluster.region
 
-  provisioner "local-exec" {
-    when = destroy
+  depends_on = [terraform_data.validate_public_ips]
+}
 
-    environment = {
-      OVH_ENDPOINT     = self.triggers.ovh_endpoint
-      OVH_SERVICE_NAME = self.triggers.service_name
-      OVH_REGION       = self.triggers.region
-      OVH_GATEWAY_NAME = self.triggers.gateway_name
-      OVH_CLUSTER_ID   = self.triggers.cluster_id
-      OVH_SUBNET_ID    = self.triggers.subnet_id
-    }
+data "openstack_networking_port_v2" "cluster_private" {
+  for_each = local.kubernetes_enabled ? local.cluster_vms_map : {}
 
-    command = <<-EOT
-      if [ -z "$OVH_APPLICATION_KEY" ] || [ -z "$OVH_APPLICATION_SECRET" ] || [ -z "$OVH_CONSUMER_KEY" ]; then
-        echo "ERROR: OVH destroy cleanup needs OVH_APPLICATION_KEY, OVH_APPLICATION_SECRET, and OVH_CONSUMER_KEY in the environment." >&2
-        echo "       ${self.triggers.credential_hint}" >&2
-        exit 1
-      fi
-      # Prefer 'uv' when available: it runs the script in an ephemeral,
-      # cached venv with the ovh package, requires no persistent install,
-      # and side-steps PEP 668-protected system Pythons.
-      if command -v uv >/dev/null 2>&1; then
-        exec uv run --no-project --with ovh python3 "${path.module}/cleanup_gateway.py"
-      fi
-      # Fallback: rely on a system python3 that already has the ovh package.
-      if ! command -v python3 >/dev/null 2>&1; then
-        echo "ERROR: neither uv nor python3 is available for OVH destroy cleanup." >&2
-        echo "       Install uv (https://docs.astral.sh/uv/) or Python 3, then retry destroy." >&2
-        exit 1
-      fi
-      if ! python3 -c "import ovh" >/dev/null 2>&1; then
-        echo "ERROR: the 'ovh' Python package is required for OVH destroy cleanup." >&2
-        echo "       Either install 'uv' (recommended) or run 'pip install --user ovh'," >&2
-        echo "       then retry destroy." >&2
-        exit 1
-      fi
-      python3 "${path.module}/cleanup_gateway.py"
-    EOT
-  }
+  device_id  = ovh_cloud_project_instance.vms[each.key].id
+  network_id = local.private_network_id
+  fixed_ip   = each.value.private_ip
+  region     = var.cluster.region
+}
 
-  depends_on = [
-    ovh_cloud_project_network_private_subnet_v2.cluster,
-  ]
+resource "openstack_networking_port_secgroup_associate_v2" "cluster_public" {
+  for_each = local.kubernetes_enabled ? local.cluster_vms_map : {}
+
+  port_id            = data.openstack_networking_port_v2.cluster_public[each.key].id
+  security_group_ids = [openstack_networking_secgroup_v2.cluster[0].id]
+  enforce            = true
+  region             = var.cluster.region
+}
+
+resource "openstack_networking_port_secgroup_associate_v2" "cluster_private" {
+  for_each = local.kubernetes_enabled ? local.cluster_vms_map : {}
+
+  port_id            = data.openstack_networking_port_v2.cluster_private[each.key].id
+  security_group_ids = [openstack_networking_secgroup_v2.cluster[0].id]
+  enforce            = true
+  region             = var.cluster.region
 }
 
 ###
-### Capture and clean up LB floating IP at destroy time
+### Gateway and floating IP for the Kubernetes API load balancer
 ###
-# The OVH LB resource does NOT cascade-delete the floating IP when the LB is
-# destroyed. This terraform_data holds the IP in self.input and runs a destroy
-# provisioner BEFORE the LB is destroyed (because this resource depends on the
-# LB, the destroy order is: capture → LB → ...). At that point self.input is
-# still live, so no file handoff is needed. The destroy provisioner calls the
-# cleanup script with OVH_FLOATING_IP set; OVH_GATEWAY_NAME and OVH_SUBNET_ID
-# are absent, so the script skips gateway and subnet operations — those are
-# handled by null_resource.private_network_destroy_grace later in the chain.
-resource "terraform_data" "capture_lb_floating_ip" {
+
+resource "terraform_data" "gateway_vm_generation" {
   count = local.lb_enabled ? 1 : 0
 
   input = {
-    ip           = local.lb_floating_ip_address
-    cluster_id   = var.cluster.id
-    module_path  = abspath(path.module)
-    ovh_endpoint = var.ovh_endpoint
-    service_name = var.ovh_project_service_name
-    region       = var.cluster.region
+    for name, vm in ovh_cloud_project_instance.vms : name => vm.id
+  }
+}
+
+resource "ovh_cloud_gateway" "kube_api" {
+  count = local.lb_enabled ? 1 : 0
+
+  service_name = var.ovh_project_service_name
+  region       = var.cluster.region
+  name         = "${var.cluster.id}-gateway"
+
+  external_gateway = {
+    enabled = true
+    model   = upper(var.network.kube_api.load_balancer.gateway_model)
   }
 
-  provisioner "local-exec" {
-    when    = create
-    command = "echo 'Floating IP ${self.input.ip} captured for cluster ${self.input.cluster_id}'"
+  subnet_ids = [local.private_subnet_id]
+
+  lifecycle {
+    replace_triggered_by = [terraform_data.gateway_vm_generation[count.index]]
   }
 
-  provisioner "local-exec" {
-    when = destroy
+  depends_on = [ovh_cloud_project_instance.vms]
+}
 
-    environment = {
-      OVH_ENDPOINT     = self.input.ovh_endpoint
-      OVH_SERVICE_NAME = self.input.service_name
-      OVH_REGION       = self.input.region
-      OVH_FLOATING_IP  = self.input.ip
-    }
+resource "ovh_cloud_floating_ip" "kube_api" {
+  count = local.lb_enabled ? 1 : 0
 
-    command = <<-EOT
-      if [ -z "$OVH_APPLICATION_KEY" ] || [ -z "$OVH_APPLICATION_SECRET" ] || [ -z "$OVH_CONSUMER_KEY" ]; then
-        echo "ERROR: OVH destroy floating-IP cleanup needs OVH_APPLICATION_KEY, OVH_APPLICATION_SECRET, and OVH_CONSUMER_KEY in the environment." >&2
-        exit 1
-      fi
-      if command -v uv >/dev/null 2>&1; then
-        exec uv run --no-project --with ovh python3 "${path.module}/cleanup_gateway.py"
-      fi
-      if ! command -v python3 >/dev/null 2>&1; then
-        echo "ERROR: neither uv nor python3 is available for OVH destroy cleanup." >&2
-        echo "       Install uv (https://docs.astral.sh/uv/) or Python 3, then retry destroy." >&2
-        exit 1
-      fi
-      if ! python3 -c "import ovh" >/dev/null 2>&1; then
-        echo "ERROR: the 'ovh' Python package is required for OVH destroy cleanup." >&2
-        echo "       Either install 'uv' (recommended) or run 'pip install --user ovh'," >&2
-        echo "       then retry destroy." >&2
-        exit 1
-      fi
-      python3 "${path.module}/cleanup_gateway.py"
-    EOT
-  }
-
-  depends_on = [
-    ovh_cloud_project_loadbalancer.kube_api,
-  ]
+  service_name = var.ovh_project_service_name
+  region       = var.cluster.region
+  description  = "${var.cluster.id}-kube-api-fip"
 }
 
 ###
@@ -270,12 +223,11 @@ resource "ovh_cloud_project_loadbalancer" "kube_api" {
         id        = local.private_network_id
         subnet_id = local.private_subnet_id
       }
-      gateway_create = {
-        model = var.network.kube_api.load_balancer.gateway_model
-        name  = "${var.cluster.id}-gateway"
+      gateway = {
+        id = ovh_cloud_gateway.kube_api[0].id
       }
-      floating_ip_create = {
-        description = "${var.cluster.id}-kube-api-fip"
+      floating_ip = {
+        id = ovh_cloud_floating_ip.kube_api[0].current_state.id
       }
     }
   }
@@ -283,9 +235,10 @@ resource "ovh_cloud_project_loadbalancer" "kube_api" {
   listeners = concat(
     [
       {
-        port     = 6443
-        protocol = "tcp"
-        name     = "kube-api"
+        port          = 6443
+        protocol      = "tcp"
+        name          = "kube-api"
+        allowed_cidrs = local.kube_api_ingress_cidrs
 
         pool = {
           algorithm = "roundRobin"
@@ -312,9 +265,10 @@ resource "ovh_cloud_project_loadbalancer" "kube_api" {
     ],
     local.lb_ssh_jump_enabled ? [
       {
-        port     = local.lb_ssh_jump_port
-        protocol = "tcp"
-        name     = "master-ssh-jump"
+        port          = local.lb_ssh_jump_port
+        protocol      = "tcp"
+        name          = "master-ssh-jump"
+        allowed_cidrs = local.kube_api_ingress_cidrs
 
         pool = {
           algorithm = "roundRobin"
@@ -343,6 +297,7 @@ resource "ovh_cloud_project_loadbalancer" "kube_api" {
 
   depends_on = [
     ovh_cloud_project_network_private_subnet_v2.cluster,
-    ovh_cloud_project_instance.vms
+    ovh_cloud_project_instance.vms,
+    openstack_networking_port_secgroup_associate_v2.cluster_private,
   ]
 }

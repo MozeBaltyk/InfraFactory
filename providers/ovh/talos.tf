@@ -7,7 +7,7 @@
 locals {
   talos_openstack_image_name = coalesce(var.talos.image_name, "talos-${var.talos.version}")
   talos_openstack_image_url  = "https://factory.talos.dev/image/${var.talos.schematic_id}/${var.talos.version}/openstack-amd64.raw.xz"
-  talos_openstack_cache_path = "${local.env_root}/.cache/talos-openstack"
+  talos_openstack_cache_path = "${path.module}/../../.cache/talos-openstack"
 }
 
 module "talos_image" {
@@ -60,8 +60,9 @@ module "talos_cluster" {
 
   depends_on = [
     null_resource.talos_env_directory,
-    openstack_networking_secgroup_rule_v2.talos_private_ingress,
-    openstack_networking_secgroup_rule_v2.talos_public_ingress,
+    openstack_networking_port_secgroup_associate_v2.cluster_public,
+    openstack_networking_port_secgroup_associate_v2.cluster_private,
+    ovh_cloud_project_loadbalancer.kube_api,
     terraform_data.validate_public_ips,
   ]
 }

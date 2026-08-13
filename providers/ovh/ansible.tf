@@ -42,6 +42,8 @@ module "ansible" {
 
   depends_on = [
     ovh_cloud_project_instance.vms,
-    data.ovh_cloud_project_instance.vms
+    data.ovh_cloud_project_instance.vms,
+    openstack_networking_port_secgroup_associate_v2.cluster_public,
+    openstack_networking_port_secgroup_associate_v2.cluster_private,
   ]
 }

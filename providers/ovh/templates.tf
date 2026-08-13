@@ -13,8 +13,8 @@ module "cloudinit" {
   node_username           = var.cluster.username
   timezone                = var.cluster.timezone
   extra_packages          = var.extra_packages
-  public_key              = module.ssh_keys.public_key_openssh
-  cluster_token           = module.ssh_keys.cluster_token
+  public_key              = local.is_talos ? "" : module.ssh_keys[0].public_key_openssh
+  cluster_token           = local.is_talos ? "" : module.ssh_keys[0].cluster_token
   k3s                     = var.k3s
   rke2                    = var.rke2
   ansible                 = var.ansible

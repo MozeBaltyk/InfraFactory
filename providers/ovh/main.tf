@@ -17,13 +17,15 @@ data "ovh_cloud_project_flavors" "all" {
 ###
 
 resource "random_id" "ssh_key_suffix" {
+  count       = local.is_talos ? 0 : 1
   byte_length = 4
 }
 
 resource "ovh_cloud_project_ssh_key" "cluster" {
+  count        = local.is_talos ? 0 : 1
   service_name = var.ovh_project_service_name
-  name         = "${terraform.workspace}-${random_id.ssh_key_suffix.hex}"
-  public_key   = trimspace(module.ssh_keys.public_key_openssh)
+  name         = "${terraform.workspace}-${random_id.ssh_key_suffix[0].hex}"
+  public_key   = trimspace(module.ssh_keys[0].public_key_openssh)
 }
 
 locals {
@@ -113,8 +115,12 @@ resource "ovh_cloud_project_instance" "vms" {
     flavor_id = local.flavor_map[each.value.instance_size].id
   }
 
-  ssh_key {
-    name = ovh_cloud_project_ssh_key.cluster.name
+  dynamic "ssh_key" {
+    for_each = local.is_talos ? [] : [ovh_cloud_project_ssh_key.cluster[0].name]
+
+    content {
+      name = ssh_key.value
+    }
   }
 
   network {
@@ -148,7 +154,6 @@ resource "ovh_cloud_project_instance" "vms" {
     terraform_data.validate_flavors,
     terraform_data.validate_existing_private_network,
     ovh_cloud_project_network_private_subnet_v2.cluster,
-    null_resource.private_network_destroy_grace,
   ]
 }
 
