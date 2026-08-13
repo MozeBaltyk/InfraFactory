@@ -1,25 +1,19 @@
-set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+set shell := ["bash", "-eu", "-o", "pipefail", "-c", "umask 077; exec bash -eu -o pipefail -c \"$1\"", "--"]
 
-ENV := env_var_or_default("ENV", "lab")
+ENV_RAW := env_var_or_default("ENV", "lab")
+ENV := if ENV_RAW =~ '^[A-Za-z0-9._-]+$' { ENV_RAW } else { error("ENV must be a nonempty workspace identifier containing only A-Za-z0-9._-") }
 ENV_TFVARS_PATH := "../../env/OVH/" + ENV + ".tfvars"
 
 [private]
 _source-openrc:
-    @is_talos=0; \
-      if test -f {{ ENV_TFVARS_PATH }}; then \
-        while IFS= read -r line; do \
-          case "$line" in *cloud_init_selected*'='*'"talos"'*) is_talos=1; break ;; esac; \
-        done < {{ ENV_TFVARS_PATH }}; \
-      fi; \
-      if test "$is_talos" = 0; then exit 0; fi; \
-      for openrc in "${OPENRC:-}" ../../env/OVH/{{ ENV }}.openrc.local ../../env/OVH/{{ ENV }}.openrc ../../env/OVH/openrc.sh; do \
+    @for openrc in "${OPENRC:-}" {{ quote("../../env/OVH/" + ENV + ".openrc.local") }} {{ quote("../../env/OVH/" + ENV + ".openrc") }} ../../env/OVH/openrc.sh; do \
         if test -n "$openrc" && test -f "$openrc"; then printf '%s\n' "$openrc"; exit 0; fi; \
       done; \
       exit 0
 
 [private]
 _workspace:
-    @tofu workspace select {{ ENV }} || tofu workspace new {{ ENV }}
+    @tofu workspace select {{ quote(ENV) }} || tofu workspace new {{ quote(ENV) }}
 
 validate:
     @tofu init -backend=false
@@ -29,8 +23,7 @@ plan NAME='':
     @tofu init
     @just _workspace
     @openrc="$(just _source-openrc)"; \
-      if test -z "${OS_AUTH_URL:-}${OS_CLOUD:-}" && test -n "$openrc"; then set -a; . "$openrc"; set +a; fi; \
-      name="{{ NAME }}"; \
+      name={{ quote(NAME) }}; \
       target_args=(); \
       if test -n "$name"; then \
         case "$name" in \
@@ -38,14 +31,14 @@ plan NAME='':
         esac; \
         target_args=(-target="ovh_cloud_project_instance.vms[\"$name\"]"); \
       fi; \
-      tofu plan -var-file={{ ENV_TFVARS_PATH }} "${target_args[@]}"
+      if test -z "${OS_AUTH_URL:-}${OS_CLOUD:-}" && test -n "$openrc"; then set -a; source "$openrc"; set +a; fi; \
+      tofu plan -var-file={{ quote(ENV_TFVARS_PATH) }} "${target_args[@]}"
 
 deploy NAME='':
     @tofu init
     @just _workspace
     @openrc="$(just _source-openrc)"; \
-      if test -z "${OS_AUTH_URL:-}${OS_CLOUD:-}" && test -n "$openrc"; then set -a; . "$openrc"; set +a; fi; \
-      name="{{ NAME }}"; \
+      name={{ quote(NAME) }}; \
       target_args=(); \
       if test -n "$name"; then \
         case "$name" in \
@@ -53,28 +46,29 @@ deploy NAME='':
         esac; \
         target_args=(-target="ovh_cloud_project_instance.vms[\"$name\"]"); \
       fi; \
-      tofu apply -auto-approve -var-file={{ ENV_TFVARS_PATH }} "${target_args[@]}"
+      if test -z "${OS_AUTH_URL:-}${OS_CLOUD:-}" && test -n "$openrc"; then set -a; source "$openrc"; set +a; fi; \
+      tofu apply -auto-approve -var-file={{ quote(ENV_TFVARS_PATH) }} "${target_args[@]}"
 
-# Force rebuild one VM instance
+# Force rebuild one VM instance through the full dependency graph
 replace NAME:
-    @name="{{ NAME }}"; \
+    @openrc="$(just _source-openrc)"; \
+      name={{ quote(NAME) }}; \
       case "$name" in \
         *[!A-Za-z0-9._-]*|'') echo "Invalid VM name: $name" >&2; exit 1 ;; \
       esac; \
       tofu init; \
       just _workspace; \
-      tofu apply -var-file={{ ENV_TFVARS_PATH }} -target="ovh_cloud_project_instance.vms[\"$name\"]" -replace="ovh_cloud_project_instance.vms[\"$name\"]"
+      if test -z "${OS_AUTH_URL:-}${OS_CLOUD:-}" && test -n "$openrc"; then set -a; source "$openrc"; set +a; fi; \
+      tofu apply -var-file={{ quote(ENV_TFVARS_PATH) }} -replace="ovh_cloud_project_instance.vms[\"$name\"]"
 
 # Destroy on the provider. Pass STALE=true to skip the refresh phase
 # (use when machines are broken/stale and refresh hangs on dead nodes).
 destroy STALE='':
     @tofu init
     @just _workspace
-    @refresh=""; \
-      if test -n "{{ STALE }}"; then refresh="-refresh=false"; fi; \
+    @stale={{ quote(STALE) }}; \
+      refresh_args=(); \
+      if test -n "$stale"; then refresh_args=(-refresh=false); fi; \
       openrc="$(just _source-openrc)"; \
-      if test -z "${OS_AUTH_URL:-}${OS_CLOUD:-}" && test -n "$openrc"; then set -a; . "$openrc"; set +a; fi; \
-      OVH_APPLICATION_KEY="$(sed -n 's/^[[:space:]]*ovh_application_key[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' {{ ENV_TFVARS_PATH }})" \
-      OVH_APPLICATION_SECRET="$(sed -n 's/^[[:space:]]*ovh_application_secret[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' {{ ENV_TFVARS_PATH }})" \
-      OVH_CONSUMER_KEY="$(sed -n 's/^[[:space:]]*ovh_consumer_key[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' {{ ENV_TFVARS_PATH }})" \
-      tofu destroy -auto-approve $refresh -var-file={{ ENV_TFVARS_PATH }}
+      if test -z "${OS_AUTH_URL:-}${OS_CLOUD:-}" && test -n "$openrc"; then set -a; source "$openrc"; set +a; fi; \
+      tofu destroy -auto-approve "${refresh_args[@]}" -var-file={{ quote(ENV_TFVARS_PATH) }}

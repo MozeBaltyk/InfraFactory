@@ -1,11 +1,11 @@
-set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+set shell := ["bash", "-eu", "-o", "pipefail", "-c", "umask 077; exec bash -eu -o pipefail -c \"$1\"", "--"]
 
 ENV := env_var_or_default("ENV", "lab")
 ENV_TFVARS_PATH := "../../env/KVM/" + ENV + ".tfvars"
 
 [private]
 _workspace:
-    @tofu workspace select {{ ENV }} || tofu workspace new {{ ENV }}
+    @tofu workspace select {{ quote(ENV) }} || tofu workspace new {{ quote(ENV) }}
 
 validate:
     @tofu init -backend=false
@@ -14,7 +14,7 @@ validate:
 plan NAME='':
     @tofu init
     @just _workspace
-    @name="{{ NAME }}"; \
+    @name={{ quote(NAME) }}; \
       target_args=(); \
       if test -n "$name"; then \
         case "$name" in \
@@ -22,12 +22,12 @@ plan NAME='':
         esac; \
         target_args=(-target="libvirt_domain.vms[\"$name\"]"); \
       fi; \
-      tofu plan -var-file={{ ENV_TFVARS_PATH }} "${target_args[@]}"
+      tofu plan -var-file={{ quote(ENV_TFVARS_PATH) }} "${target_args[@]}"
 
 deploy NAME='':
     @tofu init
     @just _workspace
-    @name="{{ NAME }}"; \
+    @name={{ quote(NAME) }}; \
       target_args=(); \
       if test -n "$name"; then \
         case "$name" in \
@@ -35,23 +35,24 @@ deploy NAME='':
         esac; \
         target_args=(-target="libvirt_domain.vms[\"$name\"]"); \
       fi; \
-      tofu apply -auto-approve -var-file={{ ENV_TFVARS_PATH }} "${target_args[@]}"
+      tofu apply -auto-approve -var-file={{ quote(ENV_TFVARS_PATH) }} "${target_args[@]}"
 
 # Force rebuild one VM instance
 replace NAME:
-    @name="{{ NAME }}"; \
+    @name={{ quote(NAME) }}; \
       case "$name" in \
         *[!A-Za-z0-9._-]*|'') echo "Invalid VM name: $name" >&2; exit 1 ;; \
       esac; \
       tofu init; \
       just _workspace; \
-      tofu apply -var-file={{ ENV_TFVARS_PATH }} -target="libvirt_domain.vms[\"$name\"]" -replace="libvirt_domain.vms[\"$name\"]"
+      tofu apply -var-file={{ quote(ENV_TFVARS_PATH) }} -target="libvirt_domain.vms[\"$name\"]" -replace="libvirt_domain.vms[\"$name\"]"
 
 # Destroy on the provider. Pass STALE=true to skip the refresh phase
 # (use when machines are broken/stale and refresh hangs on dead nodes).
 destroy STALE='':
     @tofu init
     @just _workspace
-    @refresh=""; \
-      if test -n "{{ STALE }}"; then refresh="-refresh=false"; fi; \
-      tofu destroy -auto-approve $refresh -var-file={{ ENV_TFVARS_PATH }}
+    @stale={{ quote(STALE) }}; \
+      refresh=""; \
+      if test -n "$stale"; then refresh="-refresh=false"; fi; \
+      tofu destroy -auto-approve $refresh -var-file={{ quote(ENV_TFVARS_PATH) }}
