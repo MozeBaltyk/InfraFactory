@@ -28,6 +28,14 @@ resource "ovh_cloud_project_ssh_key" "cluster" {
   public_key   = trimspace(module.ssh_keys[0].public_key_openssh)
 }
 
+# Talos has no sshd, but the OVH instance API still requires an SSH key.
+resource "ovh_cloud_project_ssh_key" "talos_placeholder" {
+  count        = local.is_talos ? 1 : 0
+  service_name = var.ovh_project_service_name
+  name         = "${var.cluster.id}-${terraform.workspace}-talos-unused"
+  public_key   = local.talos_ovh_placeholder_public_key
+}
+
 locals {
   requested_flavors = toset(compact([
     var.infra.masters.instance_size,
@@ -65,6 +73,7 @@ locals {
     one(local.selected_images),
     null
   )
+
 }
 
 resource "terraform_data" "validate_image" {
@@ -98,7 +107,7 @@ resource "terraform_data" "validate_flavors" {
 ###
 
 resource "ovh_cloud_project_instance" "vms" {
-  for_each = local.all_vms_map
+  for_each = local.public_vms_map
 
   service_name   = var.ovh_project_service_name
   region         = var.cluster.region
@@ -116,7 +125,7 @@ resource "ovh_cloud_project_instance" "vms" {
   }
 
   dynamic "ssh_key" {
-    for_each = local.is_talos ? [] : [ovh_cloud_project_ssh_key.cluster[0].name]
+    for_each = [local.is_talos ? ovh_cloud_project_ssh_key.talos_placeholder[0].name : ovh_cloud_project_ssh_key.cluster[0].name]
 
     content {
       name = ssh_key.value
@@ -157,11 +166,59 @@ resource "ovh_cloud_project_instance" "vms" {
   ]
 }
 
+resource "ovh_cloud_project_instance" "private_cluster" {
+  for_each = local.private_cluster_vms_map
+
+  service_name   = var.ovh_project_service_name
+  region         = var.cluster.region
+  billing_period = "hourly"
+
+  name      = each.value.name
+  user_data = each.value.user_data_enabled ? local.cloudinit_user_data[each.key] : null
+
+  boot_from {
+    image_id = local.selected_image.id
+  }
+
+  flavor {
+    flavor_id = local.flavor_map[each.value.instance_size].id
+  }
+
+  ssh_key {
+    name = ovh_cloud_project_ssh_key.cluster[0].name
+  }
+
+  network {
+    public = false
+    private {
+      ip = each.value.private_ip
+      network {
+        id        = local.private_network_id
+        subnet_id = local.private_subnet_id
+      }
+    }
+  }
+
+  timeouts {
+    create = "20m"
+  }
+
+  lifecycle {
+    ignore_changes = [user_data]
+  }
+
+  depends_on = [
+    terraform_data.validate_image,
+    terraform_data.validate_flavors,
+    ovh_cloud_gateway.kube_api,
+  ]
+}
+
 ### 
 ### Topology Dynamic: Catch the ips
 ###
 resource "time_sleep" "wait_instance_networks" {
-  for_each = local.all_vms_map
+  for_each = local.public_vms_map
 
   create_duration = "30s"
 
@@ -173,7 +230,7 @@ resource "time_sleep" "wait_instance_networks" {
 data "ovh_cloud_project_instance" "vms" {
   # Keep keys static so OpenTofu can evaluate this data source during import
   # and partial-state recovery. Instance IDs remain apply-time values.
-  for_each = local.all_vms_map
+  for_each = local.public_vms_map
 
   service_name = var.ovh_project_service_name
   region       = var.cluster.region
@@ -203,10 +260,7 @@ locals {
   }
 
   # Private IPv4: already known from the deterministic cidrhost assignment.
-  vm_private_ipv4_addresses = {
-    for name, vm in local.all_vms_map :
-    name => vm.private_ip
-  }
+  vm_private_ipv4_addresses = { for name, vm in local.all_vms_map : name => vm.private_ip }
 
   # Names of public-attached VMs whose public IPv4 the OVH API has not (yet) returned.
   # Used by the precondition below to fail with a clear message instead

@@ -57,6 +57,20 @@ variable "vm_ips" {
   default     = []
 }
 
+variable "proxy_jump" {
+  description = "Optional ansible_ssh_common_args value routing SSH through a bastion via ProxyCommand."
+  type = object({
+    common_args = string
+  })
+  default = null
+}
+
+variable "node_generation" {
+  description = "Non-sensitive map of stable node names to provider instance IDs used to rerun readiness after replacement."
+  type        = map(string)
+  default     = {}
+}
+
 variable "cloudinit_check_enabled" {
   description = "Run the cloud-init readiness check (false when nodes boot without user-data)."
   type        = bool

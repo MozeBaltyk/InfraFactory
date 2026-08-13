@@ -68,17 +68,18 @@ resource "terraform_data" "validate_existing_private_network" {
 ###
 
 resource "openstack_networking_secgroup_v2" "cluster" {
-  count       = local.kubernetes_enabled ? 1 : 0
-  name        = "${var.cluster.id}-${terraform.workspace}"
-  description = "InfraFactory ${var.cluster.id} cluster"
-  region      = var.cluster.region
+  count                = local.kubernetes_enabled ? 1 : 0
+  name                 = "${var.cluster.id}-${terraform.workspace}"
+  description          = "InfraFactory ${var.cluster.id} cluster"
+  region               = var.cluster.region
+  delete_default_rules = local.lb_ssh_jump_enabled
 
   depends_on = [terraform_data.validate_operator_ingress_cidrs]
 }
 
 locals {
   cluster_public_ingress_rules = local.kubernetes_enabled ? merge(
-    {
+    local.lb_ssh_jump_enabled ? {} : {
       for cidr in local.kube_api_ingress_cidrs : "kube-api-${cidr}" => {
         port = 6443
         cidr = cidr
@@ -89,7 +90,7 @@ locals {
         port = 50000
         cidr = cidr
       }
-      } : {
+      } : local.lb_ssh_jump_enabled ? {} : {
       for cidr in local.kube_api_ingress_cidrs : "ssh-${cidr}" => {
         port = 22
         cidr = cidr
@@ -112,7 +113,7 @@ resource "openstack_networking_secgroup_rule_v2" "cluster_public_ingress" {
 }
 
 resource "openstack_networking_secgroup_rule_v2" "cluster_private_ingress" {
-  count = local.kubernetes_enabled ? 1 : 0
+  count = local.kubernetes_enabled && !local.lb_ssh_jump_enabled ? 1 : 0
 
   direction         = "ingress"
   ethertype         = "IPv4"
@@ -121,8 +122,64 @@ resource "openstack_networking_secgroup_rule_v2" "cluster_private_ingress" {
   region            = var.cluster.region
 }
 
+resource "openstack_networking_secgroup_rule_v2" "cluster_ssh_from_bastion" {
+  count = local.lb_ssh_jump_enabled ? 1 : 0
+
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 22
+  port_range_max    = 22
+  remote_group_id   = openstack_networking_secgroup_v2.bastion[0].id
+  security_group_id = openstack_networking_secgroup_v2.cluster[0].id
+  region            = var.cluster.region
+}
+
+locals {
+  jump_cluster_east_west_rules = local.lb_ssh_jump_enabled ? {
+    tcp-low  = { protocol = "tcp", min = 1, max = 21 }
+    tcp-high = { protocol = "tcp", min = 23, max = 65535 }
+    udp      = { protocol = "udp", min = 1, max = 65535 }
+    icmp     = { protocol = "icmp", min = null, max = null }
+  } : {}
+}
+
+resource "openstack_networking_secgroup_rule_v2" "cluster_east_west" {
+  for_each = local.jump_cluster_east_west_rules
+
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = each.value.protocol
+  port_range_min    = each.value.min
+  port_range_max    = each.value.max
+  remote_group_id   = openstack_networking_secgroup_v2.cluster[0].id
+  security_group_id = openstack_networking_secgroup_v2.cluster[0].id
+  region            = var.cluster.region
+}
+
+resource "openstack_networking_secgroup_rule_v2" "cluster_lb_backend" {
+  count = local.lb_ssh_jump_enabled ? 1 : 0
+
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 6443
+  port_range_max    = 6443
+  remote_ip_prefix  = local.private_cidr
+  security_group_id = openstack_networking_secgroup_v2.cluster[0].id
+  region            = var.cluster.region
+}
+
+resource "openstack_networking_secgroup_rule_v2" "cluster_egress" {
+  count             = local.lb_ssh_jump_enabled ? 1 : 0
+  direction         = "egress"
+  ethertype         = "IPv4"
+  security_group_id = openstack_networking_secgroup_v2.cluster[0].id
+  region            = var.cluster.region
+}
+
 data "openstack_networking_port_v2" "cluster_public" {
-  for_each = local.kubernetes_enabled ? local.cluster_vms_map : {}
+  for_each = local.kubernetes_enabled && !local.lb_ssh_jump_enabled ? local.cluster_vms_map : {}
 
   device_id = ovh_cloud_project_instance.vms[each.key].id
   fixed_ip  = local.vm_public_ipv4_addresses_after_wait[each.key]
@@ -134,14 +191,14 @@ data "openstack_networking_port_v2" "cluster_public" {
 data "openstack_networking_port_v2" "cluster_private" {
   for_each = local.kubernetes_enabled ? local.cluster_vms_map : {}
 
-  device_id  = ovh_cloud_project_instance.vms[each.key].id
+  device_id  = local.lb_ssh_jump_enabled ? ovh_cloud_project_instance.private_cluster[each.key].id : ovh_cloud_project_instance.vms[each.key].id
   network_id = local.private_network_id
   fixed_ip   = each.value.private_ip
   region     = var.cluster.region
 }
 
 resource "openstack_networking_port_secgroup_associate_v2" "cluster_public" {
-  for_each = local.kubernetes_enabled ? local.cluster_vms_map : {}
+  for_each = local.kubernetes_enabled && !local.lb_ssh_jump_enabled ? local.cluster_vms_map : {}
 
   port_id            = data.openstack_networking_port_v2.cluster_public[each.key].id
   security_group_ids = [openstack_networking_secgroup_v2.cluster[0].id]
@@ -165,9 +222,10 @@ resource "openstack_networking_port_secgroup_associate_v2" "cluster_private" {
 resource "terraform_data" "gateway_vm_generation" {
   count = local.lb_enabled ? 1 : 0
 
-  input = {
-    for name, vm in ovh_cloud_project_instance.vms : name => vm.id
-  }
+  input = merge(
+    { for name, vm in ovh_cloud_project_instance.vms : name => vm.id },
+    local.lb_ssh_jump_enabled ? { (local.bastion_name) = ovh_cloud_project_instance.bastion[0].id } : {},
+  )
 }
 
 resource "ovh_cloud_gateway" "kube_api" {
@@ -188,7 +246,10 @@ resource "ovh_cloud_gateway" "kube_api" {
     replace_triggered_by = [terraform_data.gateway_vm_generation[count.index]]
   }
 
-  depends_on = [ovh_cloud_project_instance.vms]
+  depends_on = [
+    ovh_cloud_project_instance.vms,
+    ovh_cloud_project_instance.bastion,
+  ]
 }
 
 resource "ovh_cloud_floating_ip" "kube_api" {
@@ -232,72 +293,43 @@ resource "ovh_cloud_project_loadbalancer" "kube_api" {
     }
   }
 
-  listeners = concat(
-    [
-      {
-        port          = 6443
-        protocol      = "tcp"
-        name          = "kube-api"
-        allowed_cidrs = local.kube_api_ingress_cidrs
+  listeners = [
+    {
+      port          = 6443
+      protocol      = "tcp"
+      name          = "kube-api"
+      allowed_cidrs = local.kube_api_ingress_cidrs
 
-        pool = {
-          algorithm = "roundRobin"
-          protocol  = "tcp"
-          name      = "kube-api-pool"
+      pool = {
+        algorithm = "roundRobin"
+        protocol  = "tcp"
+        name      = "kube-api-pool"
 
-          health_monitor = {
-            name         = "${var.cluster.id}-kube-api-hm"
-            delay        = 5
-            max_retries  = 3
-            timeout      = 3
-            monitor_type = "tcp"
-          }
-
-          members = [
-            for m in local.master_details : {
-              address       = m.private_ip
-              protocol_port = 6443
-              weight        = 1
-            }
-          ]
+        health_monitor = {
+          name         = "${var.cluster.id}-kube-api-hm"
+          delay        = 5
+          max_retries  = 3
+          timeout      = 3
+          monitor_type = "tcp"
         }
-      }
-    ],
-    local.lb_ssh_jump_enabled ? [
-      {
-        port          = local.lb_ssh_jump_port
-        protocol      = "tcp"
-        name          = "master-ssh-jump"
-        allowed_cidrs = local.kube_api_ingress_cidrs
 
-        pool = {
-          algorithm = "roundRobin"
-          protocol  = "tcp"
-          name      = "master-ssh-jump-pool"
-
-          health_monitor = {
-            name         = "${var.cluster.id}-master-ssh-jump-hm"
-            delay        = 5
-            max_retries  = 3
-            timeout      = 3
-            monitor_type = "tcp"
+        members = [
+          for m in local.master_details : {
+            address       = m.private_ip
+            protocol_port = 6443
+            weight        = 1
           }
-
-          members = [
-            {
-              address       = local.master_details[0].private_ip
-              protocol_port = 22
-              weight        = 1
-            }
-          ]
-        }
+        ]
       }
-    ] : []
-  )
+    }
+  ]
 
   depends_on = [
     ovh_cloud_project_network_private_subnet_v2.cluster,
     ovh_cloud_project_instance.vms,
+    ovh_cloud_project_instance.private_cluster,
+    ovh_cloud_project_instance.bastion,
     openstack_networking_port_secgroup_associate_v2.cluster_private,
+    openstack_networking_port_secgroup_associate_v2.bastion_private,
   ]
 }

@@ -2,7 +2,13 @@
 ## OVH credentials
 ##
 variable "infra_provider" {
+  type    = string
   default = "OVH"
+
+  validation {
+    condition     = var.infra_provider == "OVH"
+    error_message = "infra_provider must be OVH."
+  }
 }
 
 variable "ovh_endpoint" {
@@ -137,6 +143,31 @@ variable "cluster" {
     condition     = contains(["default", "k3s", "rke2", "talos"], var.cluster.cloud_init_selected)
     error_message = "cluster.cloud_init_selected must be one of: default, k3s, rke2, talos."
   }
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9](?:[A-Za-z0-9-]{0,53}[A-Za-z0-9])?$", var.cluster.id))
+    error_message = "cluster.id must be a valid single DNS label of at most 55 characters."
+  }
+
+  validation {
+    condition     = length(var.cluster.domain) <= 253 && can(regex("^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$", var.cluster.domain))
+    error_message = "cluster.domain must be a valid DNS domain of at most 253 characters."
+  }
+
+  validation {
+    condition     = can(regex("^[a-z_][a-z0-9_-]{0,31}$", var.cluster.username))
+    error_message = "cluster.username must be a valid Linux/SSH username (lowercase, at most 32 characters)."
+  }
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_+.-]+(?:/[A-Za-z0-9_+.-]+)?$", var.cluster.timezone))
+    error_message = "cluster.timezone must be a simple timezone name such as UTC or Europe/Paris."
+  }
+
+  validation {
+    condition     = contains(["serial", "role"], var.cluster.node_name_format)
+    error_message = "cluster.node_name_format must be either serial or role."
+  }
 }
 
 ###################################
@@ -234,7 +265,6 @@ variable "network" {
         flavor           = optional(string, "small")
         gateway_model    = optional(string, "s")
         ssh_jump_enabled = optional(bool, false)
-        ssh_jump_port    = optional(number, 22)
       }), {})
     }), {})
   })
@@ -252,7 +282,8 @@ variable "network" {
 
   validation {
     condition = alltrue([
-      for cidr in try(var.network.kube_api.ingress_cidrs, []) : can(cidrnetmask(cidr))
+      for cidr in try(var.network.kube_api.ingress_cidrs, []) :
+      can(cidrnetmask(cidr)) && !strcontains(cidr, ":")
     ])
     error_message = "network.kube_api.ingress_cidrs must contain valid IPv4 CIDR blocks."
   }
@@ -301,11 +332,12 @@ locals {
 
   private_network_id = local.private_network_managed ? ovh_cloud_project_network_private.cluster[0].regions_openstack_ids[var.cluster.region] : local.existing_private_network_openstack_id
   private_subnet_id  = local.private_network_managed ? ovh_cloud_project_network_private_subnet_v2.cluster[0].id : local.existing_private_subnet_id
+  private_gateway_ip = local.private_network_managed ? ovh_cloud_project_network_private_subnet_v2.cluster[0].gateway_ip : try(local.existing_private_subnet_matches[0].gateway_ip, null)
 
   ## Load Balancer
+  ssh_jump_requested     = try(var.network.kube_api.load_balancer.ssh_jump_enabled, false)
   lb_enabled             = local.kubernetes_enabled && var.infra.masters.count > 0 && try(var.network.kube_api.load_balancer.enabled, false)
-  lb_ssh_jump_enabled    = local.lb_enabled && try(var.network.kube_api.load_balancer.ssh_jump_enabled, false)
-  lb_ssh_jump_port       = try(var.network.kube_api.load_balancer.ssh_jump_port, 22)
+  lb_ssh_jump_enabled    = local.lb_enabled && local.ssh_jump_requested && !local.is_talos
   lb_floating_ip_address = try(ovh_cloud_floating_ip.kube_api[0].id, null)
   kube_api_ingress_cidrs = try(var.network.kube_api.ingress_cidrs, [])
   lb_flavor_id = local.lb_enabled ? one([
@@ -328,7 +360,7 @@ locals {
       user_data_enabled = var.infra.masters.user_data_enabled
       private_ip        = (cidrhost(local.private_cidr, local.private_ip_host_offset_base + i))
       private_attach    = true
-      public_attach     = true
+      public_attach     = !local.lb_ssh_jump_enabled
     }
   ]
 
@@ -346,7 +378,7 @@ locals {
       user_data_enabled = var.infra.workers.user_data_enabled
       private_ip        = (cidrhost(local.private_cidr, local.private_ip_host_offset_base + i + var.infra.masters.count))
       private_attach    = true
-      public_attach     = true
+      public_attach     = !local.lb_ssh_jump_enabled
     }
   ]
 
@@ -380,7 +412,9 @@ locals {
     for vm in local.vm_details : vm.name => vm
   }
 
-  all_vms_map = merge(local.masters_map, local.workers_map, local.vms_map)
+  all_vms_map             = merge(local.masters_map, local.workers_map, local.vms_map)
+  public_vms_map          = local.lb_ssh_jump_enabled ? local.vms_map : local.all_vms_map
+  private_cluster_vms_map = local.lb_ssh_jump_enabled ? local.cluster_vms_map : {}
 
   first_master_name = try(local.master_details[0].name, null)
   first_master_fqdn = local.first_master_name != null ? "${local.first_master_name}.${local.subdomain}" : null

@@ -5,17 +5,21 @@ output "cluster_nodes" {
   description = "Cluster node connection data"
 
   value = {
-    controller_ips = compact([for vm in local.master_details : local.vm_public_ipv4_addresses[vm.name]])
-    worker_ips     = compact([for vm in local.worker_details : local.vm_public_ipv4_addresses[vm.name]])
+    controller_ips = [for vm in local.master_details : local.lb_ssh_jump_enabled ? vm.private_ip : local.vm_public_ipv4_addresses[vm.name]]
+    worker_ips     = [for vm in local.worker_details : local.lb_ssh_jump_enabled ? vm.private_ip : local.vm_public_ipv4_addresses[vm.name]]
     vm_ips         = compact([for vm in local.vm_details : local.vm_public_ipv4_addresses[vm.name]])
 
     ssh_first_master = !local.is_talos && local.first_master_name != null ? try(
-      format(
+      local.lb_ssh_jump_enabled ? format(
+        "ssh -F %s %s",
+        jsonencode("env/${var.infra_provider}/${terraform.workspace}/ssh_config"),
+        local.first_master_name,
+        ) : format(
         "ssh -o StrictHostKeyChecking=no -i env/%s/%s/.key.private %s@%s",
         var.infra_provider,
         terraform.workspace,
         var.cluster.username,
-        local.vm_public_ipv4_addresses[local.first_master_name]
+        local.vm_public_ipv4_addresses[local.first_master_name],
       ),
       "waiting for IP assignment..."
     ) : null
@@ -36,39 +40,34 @@ output "kube_api_load_balancer" {
   } : null
 }
 
-output "master_ssh_jump" {
-  description = "Optional SSH jump endpoint through the OVH kube-api load balancer (only when enabled)"
+output "bastion" {
+  description = "Dedicated OVH SSH bastion details (only when jump mode is enabled)"
 
   value = local.lb_ssh_jump_enabled ? {
-    endpoint      = local.lb_floating_ip_address
-    port          = local.lb_ssh_jump_port
-    target_master = "${local.master_details[0].name} (${local.master_details[0].private_ip}:22)"
+    name       = local.bastion_name
+    public_ip  = local.bastion_public_ipv4_address
+    private_ip = local.bastion_private_ip
+    flavor = {
+      id    = local.bastion_flavor.id
+      name  = local.bastion_flavor.name
+      vcpus = local.bastion_flavor.vcpus
+      ram   = local.bastion_flavor.ram
+      disk  = local.bastion_flavor.disk
+    }
     command = format(
-      "ssh -o StrictHostKeyChecking=no -i env/%s/%s/.key.private -p %d %s@%s",
-      var.infra_provider,
-      terraform.workspace,
-      local.lb_ssh_jump_port,
-      var.cluster.username,
-      local.lb_floating_ip_address
+      "ssh -F %s %s",
+      jsonencode("env/${var.infra_provider}/${terraform.workspace}/ssh_config"),
+      local.bastion_name,
     )
-    private_ips = {
+    cluster_private_ips = {
       controllers = [for vm in local.master_details : vm.private_ip]
       workers     = [for vm in local.worker_details : vm.private_ip]
-      vms         = [for vm in local.vm_details : vm.private_ip]
-      all         = [for vm in local.all_vms_map : vm.private_ip]
     }
-    example_vm_command = length(local.vm_details) > 0 ? format(
-      "ssh -i env/%s/%s/.key.private -o StrictHostKeyChecking=no -o \"ProxyCommand=ssh -i env/%s/%s/.key.private -o StrictHostKeyChecking=no -p %d -W %%h:%%p %s@%s\" %s@%s",
-      var.infra_provider,
-      terraform.workspace,
-      var.infra_provider,
-      terraform.workspace,
-      local.lb_ssh_jump_port,
-      var.cluster.username,
-      local.lb_floating_ip_address,
-      var.cluster.username,
-      local.vm_details[0].private_ip
-    ) : null
+    first_master_command = format(
+      "ssh -F %s %s",
+      jsonencode("env/${var.infra_provider}/${terraform.workspace}/ssh_config"),
+      local.first_master_name,
+    )
   } : null
 }
 

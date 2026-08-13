@@ -1,4 +1,4 @@
-# Generated with hosts.tpl
+# Generated with hosts.tpl%{ if proxy_jump != null } (SSH transport is configured in ansible.cfg)%{ endif }
 [all]
 ## ALL HOSTS
 localhost ansible_connection=local

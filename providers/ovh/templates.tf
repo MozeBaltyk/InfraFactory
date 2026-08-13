@@ -70,10 +70,10 @@ locals {
         accept_dhcp_routes = false
         accept_dhcp_dns    = false
 
-        network_gateway   = null
-        dns_servers       = null
+        network_gateway   = vm.public_attach ? null : local.private_gateway_ip
+        dns_servers       = vm.public_attach ? null : "213.186.33.99"
         domain            = local.subdomain
-        emit_empty_routes = true
+        emit_empty_routes = vm.public_attach
       }
     )
   }
@@ -117,16 +117,26 @@ locals {
             NEED_APPLY=1
           fi
 
+          %{if !vm.public_attach~}
+          # OVH delivers the same fixed IP via DHCP, so the IP check alone never
+          # fires and DHCP DNS (which cannot resolve public names) survives.
+          if ! resolvectl dns "$IFACE" 2>/dev/null | grep -Fq "213.186.33.99"; then
+            NEED_APPLY=1
+          fi
+          %{endif~}
+
           if [ "$NEED_APPLY" -eq 1 ]; then
             netplan apply
           fi
 
           ip addr replace "$CIDR" dev "$IFACE"
 
+          %{if vm.public_attach~}
           ip -4 route show default dev "$IFACE" | while read -r route; do
             [ -n "$route" ] || continue
             ip -4 route del $route 2>/dev/null || true
           done
+          %{endif~}
         EOT
       },
       {
@@ -162,11 +172,11 @@ locals {
     name => "#cloud-config\n${yamlencode(merge(config, {
       write_files = concat(
         try(config.write_files, []),
-        local.all_vms_map[name].private_attach && local.all_vms_map[name].public_attach ? local.ovh_private_netplan_write_files[name] : []
+        local.all_vms_map[name].private_attach ? local.ovh_private_netplan_write_files[name] : []
       )
 
       runcmd = concat(
-        local.all_vms_map[name].private_attach && local.all_vms_map[name].public_attach ? local.ovh_private_netplan_runcmd[name] : [],
+        local.all_vms_map[name].private_attach ? local.ovh_private_netplan_runcmd[name] : [],
         try(config.runcmd, [])
       )
     }))}"

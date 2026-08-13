@@ -20,6 +20,13 @@ check "ovh_lb_requires_private_network" {
   }
 }
 
+check "workspace_identifier" {
+  assert {
+    condition     = can(regex("^[A-Za-z0-9._-]+$", terraform.workspace))
+    error_message = "The OVH workspace name must contain only A-Za-z0-9._-."
+  }
+}
+
 check "ovh_lb_flavor_exists" {
   assert {
     condition = (
@@ -38,7 +45,7 @@ check "ovh_private_network_cidr_has_enough_addresses" {
       can(
         cidrhost(
           var.network.private.cidr,
-          (tonumber(split("/", var.network.private.cidr)[1]) <= 28 ? 10 : 2) + var.infra.masters.count + var.infra.workers.count + var.infra.vms.count - 1
+          (tonumber(split("/", var.network.private.cidr)[1]) <= 28 ? 10 : 2) + var.infra.masters.count + var.infra.workers.count + var.infra.vms.count + (local.lb_ssh_jump_enabled ? 1 : 0) - 1
         )
       )
     )
@@ -110,7 +117,7 @@ check "ovh_existing_private_network_ips_valid" {
       var.network.private.mode != "existing" ||
       alltrue([
         for ip in var.infra.vms.ip_addresses :
-        can(cidrnetmask("${ip}/32"))
+        can(cidrnetmask("${ip}/32")) && !strcontains(ip, ":")
       ])
     )
     error_message = "infra.vms.ip_addresses must contain valid IPv4 addresses."

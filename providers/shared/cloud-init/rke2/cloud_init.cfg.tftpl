@@ -172,6 +172,20 @@ write_files:
         export INSTALL_RKE2_VERSION="$VERSION"
       fi
 
+%{ if !is_first_master ~}
+      wait_for_first_master() {
+        echo "Waiting for first master endpoint ${first_master_ip}:9345"
+        for attempt in $(seq 1 360); do
+          if bash -c "</dev/tcp/${first_master_ip}/9345" >/dev/null 2>&1; then
+            return 0
+          fi
+          sleep 5
+        done
+        echo "Timed out waiting for ${first_master_ip}:9345 after 1800 seconds" >&2
+        return 1
+      }
+%{ endif ~}
+
       echo "Test if URL install is reachable: $RKE2_INSTALL_URL"
       if ! curl --connect-timeout 5 --max-time 10 -fsSLI "$RKE2_INSTALL_URL" >/dev/null 2>curl_error.log; then
         if grep -qi "SSL certificate problem" curl_error.log; then
@@ -183,24 +197,11 @@ write_files:
       fi
 
       echo "Installing RKE2: ${node_role}"
-            
-%{ if node_role == "master" ~}
 %{ if !is_first_master ~}
-      echo "Waiting for first master endpoint ${first_master_ip}:9345"
-      ready=0
-      for attempt in $(seq 1 120); do
-        if bash -c "</dev/tcp/${first_master_ip}/9345" >/dev/null 2>&1; then
-          ready=1
-          break
-        fi
-        sleep 5
-      done
-
-      if [[ "$ready" -ne 1 ]]; then
-        echo "Timed out waiting for ${first_master_ip}:9345 after 600 seconds"
-        exit 1
-      fi
+      wait_for_first_master
 %{ endif ~}
+
+%{ if node_role == "master" ~}
       curl -sfL https://get.rke2.io | sh -
       systemctl enable rke2-server
       systemctl start rke2-server

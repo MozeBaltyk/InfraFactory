@@ -8,6 +8,8 @@ locals {
   talos_openstack_image_name = coalesce(var.talos.image_name, "talos-${var.talos.version}")
   talos_openstack_image_url  = "https://factory.talos.dev/image/${var.talos.schematic_id}/${var.talos.version}/openstack-amd64.raw.xz"
   talos_openstack_cache_path = "${path.module}/../../.cache/talos-openstack"
+  # OVH provider schema requires one key block, although Talos has no sshd.
+  talos_ovh_placeholder_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOYHAAKJuAYmq2luBmUrzT3NCdqa5yKs8VVdWtse0jLl infrafactory-talos-unused"
 }
 
 module "talos_image" {
@@ -24,7 +26,11 @@ resource "null_resource" "talos_env_directory" {
   count = local.is_talos ? 1 : 0
 
   provisioner "local-exec" {
-    command = "mkdir -p ${local.env_path}"
+    command = "mkdir -p -- \"$ENV_PATH\""
+
+    environment = {
+      ENV_PATH = abspath(local.env_path)
+    }
   }
 }
 

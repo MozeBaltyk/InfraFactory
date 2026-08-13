@@ -3,7 +3,11 @@ resource "null_resource" "env_directory" {
   count = var.write_local_artifacts ? 1 : 0
 
   provisioner "local-exec" {
-    command = "mkdir -p ${var.env_path}"
+    command = "mkdir -p -- \"$ENV_PATH\""
+
+    environment = {
+      ENV_PATH = abspath(var.env_path)
+    }
   }
 }
 
