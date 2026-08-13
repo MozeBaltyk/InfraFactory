@@ -27,7 +27,7 @@ EOT
 # The cache lives outside the libvirt pool: libvirtd creates the pool dir as root,
 # so the tofu user could not write the downloaded image into it.
 locals {
-  talos_image_cache = "${local.env_root}/.cache/talos"
+  talos_image_cache = "${path.module}/../../.cache/talos"
 }
 
 resource "null_resource" "talos_image" {
