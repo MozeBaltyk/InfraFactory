@@ -185,9 +185,10 @@ resource "openstack_networking_secgroup_rule_v2" "cluster_lb_backend" {
   region            = var.cluster.region
 }
 
-# Talos jump mode: the LB talos-api pool health-checks member TCP/50000.
+# Talos LB mode: the LB talos-api pool health-checks member TCP/50000. Only
+# needed in non-jump mode, where the LB carries the talos-api endpoint.
 resource "openstack_networking_secgroup_rule_v2" "cluster_talos_lb_backend" {
-  count = local.lb_ssh_jump_enabled && local.is_talos ? 1 : 0
+  count = local.is_talos && !local.lb_ssh_jump_enabled ? 1 : 0
 
   direction         = "ingress"
   ethertype         = "IPv4"
@@ -351,8 +352,9 @@ resource "ovh_cloud_project_loadbalancer" "kube_api" {
         ]
       }
     }
-    ], local.is_talos ? [{
-      # Talos apid API through the same LB (single operator-facing endpoint).
+    ], local.is_talos && !local.lb_ssh_jump_enabled ? [{
+      # Talos apid API through the same LB, but only in non-jump mode: jump mode
+      # reaches apid exclusively through the bastion SSH tunnels.
       port          = 50000
       protocol      = "tcp"
       name          = "talos-api"

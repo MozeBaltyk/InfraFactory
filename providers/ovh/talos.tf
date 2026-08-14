@@ -11,22 +11,36 @@ locals {
   # OVH provider schema requires one key block, although Talos has no sshd.
   talos_ovh_placeholder_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOYHAAKJuAYmq2luBmUrzT3NCdqa5yKs8VVdWtse0jLl infrafactory-talos-unused"
 
-  # Dual-NIC routing fix (Talos only): the public NIC (ens3) keeps DHCP with its
-  # default route; the private NIC (ens4, or ens3 on private-only VMs) is static
-  # with NO default route so the Talos RouteSpecController never sees two
-  # gateways. Keys match the nodes passed to the talos-cluster module.
+  # The Talos OpenStack image uses kernel-style NIC names (eth0/eth1), not the
+  # Ubuntu predictable names (ens3/ens4) used in the netplan overlay.
+  # - Dual-NIC (non-jump): eth0 keeps DHCP with its default route; eth1 is
+  #   static with NO default route so the Talos RouteSpecController never sees
+  #   two gateways.
+  # - Private-only (jump mode): eth0 is static with a default route via the
+  #   private gateway (DHCP alone would hand out the private subnet's DNS,
+  #   which cannot resolve public names); nameservers are pinned to OVH public
+  #   DNS. Keys match the nodes passed to the talos-cluster module.
   ovh_talos_interface_patches = local.is_talos ? {
     for name, vm in local.all_vms_map : name => [yamlencode({
       machine = {
         network = {
+          nameservers = ["213.186.33.99"]
           interfaces = concat(
             vm.public_attach ? [{
-              interface = "ens3"
+              interface = "eth0"
               dhcp      = true
             }] : [],
-            vm.private_attach ? [{
-              interface = local.ovh_private_interface_names[name]
+            vm.private_attach ? [vm.public_attach ? {
+              interface = "eth1"
               addresses = ["${vm.private_ip}/${split("/", local.private_cidr)[1]}"]
+              routes    = []
+              } : {
+              interface = "eth0"
+              addresses = ["${vm.private_ip}/${split("/", local.private_cidr)[1]}"]
+              routes = [{
+                network = "0.0.0.0/0"
+                gateway = local.private_gateway_ip
+              }]
             }] : [],
           )
         }
@@ -85,13 +99,16 @@ module "talos_cluster" {
   first_master_node = local.lb_ssh_jump_enabled ? local.talos_tunnel_endpoints[local.first_master_name] : local.vm_public_ipv4_addresses_after_wait[local.first_master_name]
 
   # Post-bootstrap operations (talosconfig, health, kubeconfig) dial the LB
-  # floating IP; apply/bootstrap keep their direct per-node endpoints.
-  management_endpoint = local.lb_enabled ? local.lb_floating_ip_address : null
+  # floating IP in non-jump mode. In jump mode they dial the per-node SSH
+  # tunnel endpoints (127.0.0.1:<port>), so the talosconfig works through the
+  # bastion tunnels; apply/bootstrap keep their direct per-node endpoints.
+  management_endpoint = !local.lb_ssh_jump_enabled && local.lb_enabled ? local.lb_floating_ip_address : null
 
   cni                                = var.talos.cni
   allow_scheduling_on_control_planes = var.talos.allow_scheduling_on_control_planes
   config_patches                     = var.talos.config_patches
-  # apid certs must accept the LB floating IP so day-2 API access through the LB works.
+  # machine.certSANs feeds the kube-apiserver cert: workers and clients validate
+  # it against the LB floating IP endpoint regardless of jump mode.
   controlplane_config_patches = concat(
     var.talos.controlplane_config_patches,
     local.lb_enabled ? [yamlencode({
