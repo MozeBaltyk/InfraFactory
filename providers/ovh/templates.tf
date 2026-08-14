@@ -13,14 +13,14 @@ module "cloudinit" {
   node_username           = var.cluster.username
   timezone                = var.cluster.timezone
   extra_packages          = var.extra_packages
-  public_key              = local.is_talos ? "" : module.ssh_keys[0].public_key_openssh
-  cluster_token           = local.is_talos ? "" : module.ssh_keys[0].cluster_token
+  public_key              = module.ssh_keys.public_key_openssh
+  cluster_token           = module.ssh_keys.cluster_token
   k3s                     = var.k3s
   rke2                    = var.rke2
   ansible                 = var.ansible
   package_upgrade_enabled = var.cluster.package_upgrade_enabled
 
-  vms = local.is_talos ? {} : {
+  vms = {
     for vm in local.all_vms_map :
     vm.name => {
       hostname            = vm.name
@@ -52,7 +52,7 @@ locals {
     name => yamldecode(body)
   }
 
-  ovh_private_netplan = local.is_talos ? {} : {
+  ovh_private_netplan = {
     for name, vm in local.all_vms_map :
     name => templatefile(
       "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
@@ -78,7 +78,7 @@ locals {
     )
   }
 
-  ovh_private_netplan_write_files = local.is_talos ? {} : {
+  ovh_private_netplan_write_files = {
     for name, vm in local.all_vms_map :
     name => [
       {
@@ -159,7 +159,7 @@ locals {
     ]
   }
 
-  ovh_private_netplan_runcmd = local.is_talos ? {} : {
+  ovh_private_netplan_runcmd = {
     for name, vm in local.all_vms_map :
     name => [
       ["systemctl", "daemon-reload"],

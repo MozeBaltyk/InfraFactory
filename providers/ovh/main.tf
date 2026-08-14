@@ -17,25 +17,13 @@ data "ovh_cloud_project_flavors" "all" {
 ###
 
 resource "random_id" "ssh_key_suffix" {
-  # OVH requires a cluster SSH key whenever any instance references it, which
-  # includes jump mode (bastion + private_cluster) even for Talos.
-  count       = local.is_talos && !local.lb_ssh_jump_enabled ? 0 : 1
   byte_length = 4
 }
 
 resource "ovh_cloud_project_ssh_key" "cluster" {
-  count        = local.is_talos && !local.lb_ssh_jump_enabled ? 0 : 1
   service_name = var.ovh_project_service_name
-  name         = "${terraform.workspace}-${random_id.ssh_key_suffix[0].hex}"
-  public_key   = trimspace(module.ssh_keys[0].public_key_openssh)
-}
-
-# Talos has no sshd, but the OVH instance API still requires an SSH key.
-resource "ovh_cloud_project_ssh_key" "talos_placeholder" {
-  count        = local.is_talos ? 1 : 0
-  service_name = var.ovh_project_service_name
-  name         = "${var.cluster.id}-${terraform.workspace}-talos-unused"
-  public_key   = local.talos_ovh_placeholder_public_key
+  name         = "${terraform.workspace}-${random_id.ssh_key_suffix.hex}"
+  public_key   = trimspace(module.ssh_keys.public_key_openssh)
 }
 
 locals {
@@ -81,7 +69,7 @@ locals {
 resource "terraform_data" "validate_image" {
   lifecycle {
     precondition {
-      condition = local.is_talos || local.selected_image != null
+      condition = local.selected_image != null
       error_message = format(
         "No OVH image matching patterns [%s] found in region '%s'.",
         join(", ", local.os.image.search_patterns),
@@ -116,10 +104,10 @@ resource "ovh_cloud_project_instance" "vms" {
   billing_period = "hourly"
 
   name      = each.value.name
-  user_data = local.is_talos ? null : (each.value.user_data_enabled ? local.cloudinit_user_data[each.key] : null)
+  user_data = each.value.user_data_enabled ? local.cloudinit_user_data[each.key] : null
 
   boot_from {
-    image_id = local.is_talos ? module.talos_image[0].id : local.selected_image.id
+    image_id = local.selected_image.id
   }
 
   flavor {
@@ -127,7 +115,7 @@ resource "ovh_cloud_project_instance" "vms" {
   }
 
   dynamic "ssh_key" {
-    for_each = [local.is_talos ? ovh_cloud_project_ssh_key.talos_placeholder[0].name : ovh_cloud_project_ssh_key.cluster[0].name]
+    for_each = [ovh_cloud_project_ssh_key.cluster.name]
 
     content {
       name = ssh_key.value
@@ -176,10 +164,10 @@ resource "ovh_cloud_project_instance" "private_cluster" {
   billing_period = "hourly"
 
   name      = each.value.name
-  user_data = local.is_talos ? null : (each.value.user_data_enabled ? local.cloudinit_user_data[each.key] : null)
+  user_data = each.value.user_data_enabled ? local.cloudinit_user_data[each.key] : null
 
   boot_from {
-    image_id = local.is_talos ? module.talos_image[0].id : local.selected_image.id
+    image_id = local.selected_image.id
   }
 
   flavor {
@@ -187,7 +175,7 @@ resource "ovh_cloud_project_instance" "private_cluster" {
   }
 
   dynamic "ssh_key" {
-    for_each = [local.is_talos ? ovh_cloud_project_ssh_key.talos_placeholder[0].name : ovh_cloud_project_ssh_key.cluster[0].name]
+    for_each = [ovh_cloud_project_ssh_key.cluster.name]
 
     content {
       name = ssh_key.value
@@ -217,7 +205,6 @@ resource "ovh_cloud_project_instance" "private_cluster" {
     terraform_data.validate_image,
     terraform_data.validate_flavors,
     ovh_cloud_gateway.kube_api,
-    module.talos_image,
   ]
 }
 

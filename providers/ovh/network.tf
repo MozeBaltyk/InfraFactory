@@ -85,12 +85,7 @@ locals {
         cidr = cidr
       }
     },
-    local.is_talos && !local.lb_ssh_jump_enabled ? {
-      for cidr in local.kube_api_ingress_cidrs : "talos-api-${cidr}" => {
-        port = 50000
-        cidr = cidr
-      }
-      } : local.lb_ssh_jump_enabled ? {} : {
+    local.lb_ssh_jump_enabled ? {} : {
       for cidr in local.kube_api_ingress_cidrs : "ssh-${cidr}" => {
         port = 22
         cidr = cidr
@@ -123,28 +118,13 @@ resource "openstack_networking_secgroup_rule_v2" "cluster_private_ingress" {
 }
 
 resource "openstack_networking_secgroup_rule_v2" "cluster_ssh_from_bastion" {
-  count = local.lb_ssh_jump_enabled && !local.is_talos ? 1 : 0
+  count = local.lb_ssh_jump_enabled ? 1 : 0
 
   direction         = "ingress"
   ethertype         = "IPv4"
   protocol          = "tcp"
   port_range_min    = 22
   port_range_max    = 22
-  remote_group_id   = openstack_networking_secgroup_v2.bastion[0].id
-  security_group_id = openstack_networking_secgroup_v2.cluster[0].id
-  region            = var.cluster.region
-}
-
-# Talos jump mode: the SSH tunnels terminate on the bastion, which must reach
-# each node's apid port (TCP/50000) on the private network.
-resource "openstack_networking_secgroup_rule_v2" "cluster_talos_from_bastion" {
-  count = local.lb_ssh_jump_enabled && local.is_talos ? 1 : 0
-
-  direction         = "ingress"
-  ethertype         = "IPv4"
-  protocol          = "tcp"
-  port_range_min    = 50000
-  port_range_max    = 50000
   remote_group_id   = openstack_networking_secgroup_v2.bastion[0].id
   security_group_id = openstack_networking_secgroup_v2.cluster[0].id
   region            = var.cluster.region
@@ -180,21 +160,6 @@ resource "openstack_networking_secgroup_rule_v2" "cluster_lb_backend" {
   protocol          = "tcp"
   port_range_min    = 6443
   port_range_max    = 6443
-  remote_ip_prefix  = local.private_cidr
-  security_group_id = openstack_networking_secgroup_v2.cluster[0].id
-  region            = var.cluster.region
-}
-
-# Talos LB mode: the LB talos-api pool health-checks member TCP/50000. Only
-# needed in non-jump mode, where the LB carries the talos-api endpoint.
-resource "openstack_networking_secgroup_rule_v2" "cluster_talos_lb_backend" {
-  count = local.is_talos && !local.lb_ssh_jump_enabled ? 1 : 0
-
-  direction         = "ingress"
-  ethertype         = "IPv4"
-  protocol          = "tcp"
-  port_range_min    = 50000
-  port_range_max    = 50000
   remote_ip_prefix  = local.private_cidr
   security_group_id = openstack_networking_secgroup_v2.cluster[0].id
   region            = var.cluster.region
@@ -323,7 +288,7 @@ resource "ovh_cloud_project_loadbalancer" "kube_api" {
     }
   }
 
-  listeners = concat([
+  listeners = [
     {
       port          = 6443
       protocol      = "tcp"
@@ -352,36 +317,7 @@ resource "ovh_cloud_project_loadbalancer" "kube_api" {
         ]
       }
     }
-    ], local.is_talos && !local.lb_ssh_jump_enabled ? [{
-      # Talos apid API through the same LB, but only in non-jump mode: jump mode
-      # reaches apid exclusively through the bastion SSH tunnels.
-      port          = 50000
-      protocol      = "tcp"
-      name          = "talos-api"
-      allowed_cidrs = local.kube_api_ingress_cidrs
-
-      pool = {
-        algorithm = "roundRobin"
-        protocol  = "tcp"
-        name      = "talos-api-pool"
-
-        health_monitor = {
-          name         = "${var.cluster.id}-talos-api-hm"
-          delay        = 5
-          max_retries  = 3
-          timeout      = 3
-          monitor_type = "tcp"
-        }
-
-        members = [
-          for m in local.master_details : {
-            address       = m.private_ip
-            protocol_port = 50000
-            weight        = 1
-          }
-        ]
-      }
-  }] : [])
+  ]
 
   depends_on = [
     ovh_cloud_project_network_private_subnet_v2.cluster,

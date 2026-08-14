@@ -25,7 +25,7 @@ OVH now includes:
 - optional dedicated hardened OVH bastion with private-only K3s/RKE2 nodes and kube-api-only load balancer
 - generated two-hop SSH config with host-key verification disabled and full-graph bastion/non-bootstrap private-node replacement recovery; first-controller replacement is refused pending etcd restore support
 - explicit `just` recipes for full-graph OVH VM replacement
-- Talos bootstrap through OpenStack Glance plus a cluster-owned OpenStack security group for k3s/rke2/Talos
+- cluster-owned OpenStack security group for k3s/rke2
 - environment-native OVH/OpenStack authentication and restrictive operator ingress CIDRs
 
 Libvirt has been realigned with the recent OVH baseline for standalone `infra.vms`, per-role `user_data_enabled`, shared default cloud-init on standalone VMs, inventory VM groups, and normalized controller/worker/VM IP outputs.

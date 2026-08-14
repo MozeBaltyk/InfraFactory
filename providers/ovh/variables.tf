@@ -86,16 +86,6 @@ variable "os_catalog" {
 
       default_instance_size = "b2-7"
     }
-
-    talos = {
-      os_name = "talos"
-
-      image = {
-        search_patterns = ["talos"]
-      }
-
-      default_instance_size = "b2-7"
-    }
   }
 }
 
@@ -140,8 +130,8 @@ variable "cluster" {
   }
 
   validation {
-    condition     = contains(["default", "k3s", "rke2", "talos"], var.cluster.cloud_init_selected)
-    error_message = "cluster.cloud_init_selected must be one of: default, k3s, rke2, talos."
+    condition     = contains(["default", "k3s", "rke2"], var.cluster.cloud_init_selected)
+    error_message = "cluster.cloud_init_selected must be one of: default, k3s, rke2."
   }
 
   validation {
@@ -253,7 +243,7 @@ variable "network" {
     })
     kube_api = optional(object({
       endpoint = optional(string, "public_ip")
-      # Operator CIDRs allowed to reach SSH/Kubernetes/Talos APIs as applicable.
+      # Operator CIDRs allowed to reach SSH/Kubernetes APIs as applicable.
       ingress_cidrs = optional(list(string), [])
 
       dns = optional(object({
@@ -297,8 +287,7 @@ locals {
 
   subdomain = "${var.cluster.id}.${var.cluster.domain}"
 
-  is_talos           = var.cluster.cloud_init_selected == "talos"
-  kubernetes_enabled = contains(["k3s", "rke2", "talos"], var.cluster.cloud_init_selected)
+  kubernetes_enabled = contains(["k3s", "rke2"], var.cluster.cloud_init_selected)
 
   ## Private handling
   private_network_mode     = var.network.private.mode
@@ -337,8 +326,7 @@ locals {
   ## Load Balancer
   ssh_jump_requested = try(var.network.kube_api.load_balancer.ssh_jump_enabled, false)
   lb_enabled         = local.kubernetes_enabled && var.infra.masters.count > 0 && try(var.network.kube_api.load_balancer.enabled, false)
-  # Jump mode makes K3s/RKE2 nodes private-only (Ansible ProxyJump) and, for
-  # Talos, adds SSH LocalForward tunnels as the per-node apid access path.
+  # Jump mode makes K3s/RKE2 nodes private-only (Ansible ProxyJump).
   lb_ssh_jump_enabled    = local.lb_enabled && local.ssh_jump_requested
   lb_floating_ip_address = try(ovh_cloud_floating_ip.kube_api[0].id, null)
   kube_api_ingress_cidrs = try(var.network.kube_api.ingress_cidrs, [])
@@ -420,19 +408,6 @@ locals {
 
   first_master_name = try(local.master_details[0].name, null)
   first_master_fqdn = local.first_master_name != null ? "${local.first_master_name}.${local.subdomain}" : null
-
-  ## Talos jump mode: deterministic localhost SSH tunnel endpoints, one per node.
-  ## Local port = 50000 + node index (masters then workers); remote target is the
-  ## node's private IP on the Talos apid port (50000). Opened through the bastion
-  ## via the LocalForward directives in the generated ssh_config.
-  talos_tunnel_ports = local.is_talos && local.lb_ssh_jump_enabled ? {
-    for i, vm in concat(local.master_details, local.worker_details) :
-    vm.name => 50000 + i
-  } : {}
-
-  talos_tunnel_endpoints = {
-    for name, port in local.talos_tunnel_ports : name => "127.0.0.1:${port}"
-  }
 
   ## Kubernetes API bootstrap endpoint (first master private IP); overridden by LB when present
   kube_api_bootstrap_endpoint = try(local.master_details[0].private_ip, null)

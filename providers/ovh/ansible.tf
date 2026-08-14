@@ -45,9 +45,9 @@ module "ansible" {
     name => local.lb_ssh_jump_enabled ? ovh_cloud_project_instance.private_cluster[name].id : ovh_cloud_project_instance.vms[name].id
   }
 
-  cloudinit_check_enabled = !local.is_talos && local.k8s_cloudinit_check_enabled
-  k8s_flow_enabled        = !local.is_talos && local.k8s_master_user_data_enabled
-  write_local_artifacts   = !local.is_talos
+  cloudinit_check_enabled = local.k8s_cloudinit_check_enabled
+  k8s_flow_enabled        = local.k8s_master_user_data_enabled
+  write_local_artifacts   = true
 
   depends_on = [
     ovh_cloud_project_instance.vms,

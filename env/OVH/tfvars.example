@@ -3,7 +3,7 @@ ovh_project_service_name = "xxxxxxxxxxxxxxxx"
 
 # Export OVH_APPLICATION_KEY, OVH_APPLICATION_SECRET, and OVH_CONSUMER_KEY.
 # OpenStack-backed networking in Kubernetes modes also requires OS_* variables
-# or clouds.yaml/OS_CLOUD. Talos additionally uses OpenStack for its Glance image.
+# or clouds.yaml/OS_CLOUD.
 
 cluster = {
   id                      = "factory"
@@ -12,7 +12,7 @@ cluster = {
   region                  = "GRA9"
   username                = "localadmin"
   node_name_format        = "serial" # serial => factory-node01, role => factory-m01/factory-w01
-  cloud_init_selected     = "k3s"  # or rke2 or talos
+  cloud_init_selected     = "k3s"  # or rke2
   package_upgrade_enabled = false # Optional
 }
 
@@ -60,7 +60,7 @@ infra = {
 # network.private.cidr = "10.0.30.0/24"
 
 os = {
-  selected = "ubuntu24" #or talos
+  selected = "ubuntu24"
 }
 
 ###
@@ -82,8 +82,8 @@ os = {
 ### The gateway and floating IP are explicit OVH resources owned by OpenTofu.
 ###
 ### Kubernetes modes create a dedicated OpenStack security group. It permits
-### private intra-cluster traffic, 6443 for all modes, SSH for k3s/rke2, and
-### Talos API 50000 only for Talos, restricted to ingress_cidrs.
+### private intra-cluster traffic, 6443 for all modes, and SSH for k3s/rke2,
+### restricted to ingress_cidrs.
 ###
 
 # Minimal (private network only, no load balancer; endpoint = first master public IP)
@@ -119,10 +119,8 @@ os = {
 #       flavor        = "small"
 #       gateway_model = "s"
 #       # Optional: create one hardened dual-NIC Ubuntu bastion. Masters/workers
-#       # become private-only: Ansible reaches K3s/RKE2 nodes through ProxyJump,
-#       # and Talos nodes are reached through SSH LocalForward tunnels on the
-#       # bastion (talosctl/apply uses 127.0.0.1:<port>; day-2 health/kubeconfig
-#       # still use the LB floating IP). The LB exposes TCP/6443 only.
+#       # become private-only: Ansible reaches K3s/RKE2 nodes through ProxyJump.
+#       # The LB exposes TCP/6443 only.
 #       # Toggling this on an existing cluster replaces masters/workers: back up
 #       # etcd/workloads, schedule downtime, and review a saved full plan first.
 #       # `just replace` refuses the first controller; recover it only through a
@@ -204,28 +202,8 @@ os = {
 #   }
 # }
 
-# if os.selected = "talos" and cloud_init_selected="talos"
-# talos = {
-#   version                            = "v1.13.7"
-#   kubernetes_version                 = "v1.36.0"
-#   schematic_id                       = "3765679..." # Vanilla Talos default is declared in providers/ovh/vars_extra.tf
-#   image_name                         = "talos-v1.13.7" # OpenStack Glance image name
-#   cni                                = "flannel" # "flannel", "none", or null
-#   allow_scheduling_on_control_planes = false
-#   controlplane_config_patches        = []
-#   worker_config_patches              = []
-#   config_patches = [
-#     <<-EOT
-#     apiVersion: v1alpha1
-#     kind: TimeSyncConfig
-#     ntp:
-#       servers:
-#         - time.cloudflare.com
-#         - pool.ntp.org
-#     EOT
-#   ]
-# }
-# OVH extra disks (including Talos UserVolumeConfig disks) are not supported.
+# if os.selected = "ubuntu24"
+# OVH extra disks are not supported.
 
 
 # ansible = {

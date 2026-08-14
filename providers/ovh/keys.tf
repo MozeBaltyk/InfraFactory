@@ -3,9 +3,6 @@
 ###
 
 module "ssh_keys" {
-  # Talos has no sshd, but jump mode still needs the operator keys for the
-  # bastion (ssh_config identity + bastion cloud-init) and the SSH tunnels.
-  count  = local.is_talos && !local.lb_ssh_jump_enabled ? 0 : 1
   source = "../shared/modules/ssh-keys"
 
   env_path            = local.env_path

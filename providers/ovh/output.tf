@@ -9,7 +9,7 @@ output "cluster_nodes" {
     worker_ips     = [for vm in local.worker_details : local.lb_ssh_jump_enabled ? vm.private_ip : local.vm_public_ipv4_addresses[vm.name]]
     vm_ips         = compact([for vm in local.vm_details : local.vm_public_ipv4_addresses[vm.name]])
 
-    ssh_first_master = !local.is_talos && local.first_master_name != null ? try(
+    ssh_first_master = local.first_master_name != null ? try(
       local.lb_ssh_jump_enabled ? format(
         "ssh -F %s %s",
         jsonencode("env/${var.infra_provider}/${terraform.workspace}/ssh_config"),
@@ -63,26 +63,11 @@ output "bastion" {
       controllers = [for vm in local.master_details : vm.private_ip]
       workers     = [for vm in local.worker_details : vm.private_ip]
     }
-    # Talos jump mode: one ssh -N LocalForward tunnel per node through the
-    # bastion; the talos-cluster module dials 127.0.0.1:<port> for apply and
-    # bootstrap. Day-2 operations (health, kubeconfig, talosconfig) also use
-    # these tunnels. The tunnel runs as a ControlMaster; stop it with
-    # `ssh -S <config>.sock -O exit <bastion>`.
-    talos_tunnel_command = local.is_talos ? format(
-      "ssh -f -N -M -S %s.sock -o ExitOnForwardFailure=yes -F %s %s",
-      abspath("${local.env_path}/ssh_config"),
-      jsonencode("env/${var.infra_provider}/${terraform.workspace}/ssh_config"),
-      local.bastion_name,
-    ) : null
-    talos_tunnels = local.is_talos ? {
-      for name, port in local.talos_tunnel_ports :
-      name => "${local.cluster_vms_map[name].private_ip}:50000 -> 127.0.0.1:${port}"
-    } : null
-    first_master_command = !local.is_talos ? format(
+    first_master_command = format(
       "ssh -F %s %s",
       jsonencode("env/${var.infra_provider}/${terraform.workspace}/ssh_config"),
       local.first_master_name,
-    ) : null
+    )
   } : null
 }
 
@@ -94,12 +79,5 @@ export KUBECONFIG=env/${var.infra_provider}/${terraform.workspace}/kubeconfig
 # Then :
 kubectl get nodes
 EOT
-    ) : (local.is_talos ? (<<-EOT
-export KUBECONFIG=env/${var.infra_provider}/${terraform.workspace}/kubeconfig
-# Or :
-kubecm add -cf env/${var.infra_provider}/${terraform.workspace}/kubeconfig --context-name talos-${var.infra_provider}-${terraform.workspace} --create
-# Then :
-kubectl get nodes
-EOT
-  ) : "")
+  ) : ""
 }
