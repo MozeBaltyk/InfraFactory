@@ -191,7 +191,7 @@ data "http" "my_ip" {
 }
 
 locals {
-  env_root = "${path.module}/../../env"
+  env_root = abspath("${path.module}/../../env")
   env_path = "${local.env_root}/${var.infra_provider}/${terraform.workspace}"
 
   my_public_ip = "${chomp(trimspace(data.http.my_ip.response_body))}/32"

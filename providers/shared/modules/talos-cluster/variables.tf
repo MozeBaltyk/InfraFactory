@@ -32,11 +32,13 @@ variable "kube_api_endpoint" {
 }
 
 variable "nodes" {
-  description = "Map of stable node name to node settings. Endpoint may be known only after apply."
+  description = "Map of stable node name to node settings. Endpoint may be known only after apply. node_address overrides the cluster identity address used in the talosconfig nodes list and cluster health checks; null falls back to endpoint. extra_patches are per-node machine config patches appended after role patches."
   type = map(object({
-    endpoint = string
-    role     = string
-    hostname = optional(string)
+    endpoint      = string
+    role          = string
+    hostname      = optional(string)
+    node_address  = optional(string)
+    extra_patches = optional(list(string), [])
     extra_disks = optional(list(object({
       wwn        = string
       mount_path = string
@@ -72,6 +74,12 @@ variable "nodes" {
 variable "first_master_node" {
   description = "Operator endpoint of the first master (bootstrap + kubeconfig node)."
   type        = string
+}
+
+variable "management_endpoint" {
+  description = "Dial endpoint for post-bootstrap operations (cluster health, kubeconfig, talosconfig). When set, apid traffic is routed through a load balancer (e.g. an OVH LB floating IP); null keeps the direct controlplane endpoints. Machine config apply and bootstrap always use the direct per-node endpoints."
+  type        = string
+  default     = null
 }
 
 variable "config_patches" {

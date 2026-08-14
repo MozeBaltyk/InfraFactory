@@ -278,7 +278,7 @@ locals {
   # Talos replaces cloud-init + Ansible: nodes boot to maintenance mode and are configured by the talos provider
   is_talos = var.cluster.cloud_init_selected == "talos"
 
-  env_root = "${path.module}/../../env"
+  env_root = abspath("${path.module}/../../env")
   env_path = "${local.env_root}/${var.infra_provider}/${terraform.workspace}"
 
   libvirt_query = join("&", compact([

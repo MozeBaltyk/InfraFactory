@@ -290,7 +290,7 @@ variable "network" {
 }
 
 locals {
-  env_root = "${path.module}/../../env"
+  env_root = abspath("${path.module}/../../env")
   env_path = "${local.env_root}/${var.infra_provider}/${terraform.workspace}"
 
   os = var.os_catalog[var.os.selected]

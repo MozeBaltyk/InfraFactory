@@ -293,7 +293,7 @@ resource "ovh_cloud_project_loadbalancer" "kube_api" {
     }
   }
 
-  listeners = [
+  listeners = concat([
     {
       port          = 6443
       protocol      = "tcp"
@@ -322,7 +322,35 @@ resource "ovh_cloud_project_loadbalancer" "kube_api" {
         ]
       }
     }
-  ]
+    ], local.is_talos ? [{
+      # Talos apid API through the same LB (single operator-facing endpoint).
+      port          = 50000
+      protocol      = "tcp"
+      name          = "talos-api"
+      allowed_cidrs = local.kube_api_ingress_cidrs
+
+      pool = {
+        algorithm = "roundRobin"
+        protocol  = "tcp"
+        name      = "talos-api-pool"
+
+        health_monitor = {
+          name         = "${var.cluster.id}-talos-api-hm"
+          delay        = 5
+          max_retries  = 3
+          timeout      = 3
+          monitor_type = "tcp"
+        }
+
+        members = [
+          for m in local.master_details : {
+            address       = m.private_ip
+            protocol_port = 50000
+            weight        = 1
+          }
+        ]
+      }
+  }] : [])
 
   depends_on = [
     ovh_cloud_project_network_private_subnet_v2.cluster,

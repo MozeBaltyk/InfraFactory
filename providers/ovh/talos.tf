@@ -10,6 +10,30 @@ locals {
   talos_openstack_cache_path = "${path.module}/../../.cache/talos-openstack"
   # OVH provider schema requires one key block, although Talos has no sshd.
   talos_ovh_placeholder_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOYHAAKJuAYmq2luBmUrzT3NCdqa5yKs8VVdWtse0jLl infrafactory-talos-unused"
+
+  # Dual-NIC routing fix (Talos only): the public NIC (ens3) keeps DHCP with its
+  # default route; the private NIC (ens4, or ens3 on private-only VMs) is static
+  # with NO default route so the Talos RouteSpecController never sees two
+  # gateways. Keys match the nodes passed to the talos-cluster module.
+  ovh_talos_interface_patches = local.is_talos ? {
+    for name, vm in local.all_vms_map : name => [yamlencode({
+      machine = {
+        network = {
+          interfaces = concat(
+            vm.public_attach ? [{
+              interface = "ens3"
+              dhcp      = true
+            }] : [],
+            vm.private_attach ? [{
+              interface = local.ovh_private_interface_names[name]
+              addresses = ["${vm.private_ip}/${split("/", local.private_cidr)[1]}"]
+            }] : [],
+          )
+        }
+      }
+    })]
+    if contains(["master", "worker"], vm.role)
+  } : {}
 }
 
 module "talos_image" {
@@ -46,21 +70,35 @@ module "talos_cluster" {
   nodes = {
     for vm_name, vm in local.all_vms_map :
     vm_name => {
-      endpoint    = local.vm_public_ipv4_addresses_after_wait[vm_name]
-      role        = vm.role
-      hostname    = vm.name
-      extra_disks = []
+      endpoint      = local.vm_public_ipv4_addresses_after_wait[vm_name]
+      node_address  = vm.private_ip
+      role          = vm.role
+      hostname      = vm.name
+      extra_disks   = []
+      extra_patches = local.ovh_talos_interface_patches[vm_name]
     }
     if contains(["master", "worker"], vm.role)
   }
 
   first_master_node = local.vm_public_ipv4_addresses_after_wait[local.first_master_name]
 
+  # Post-bootstrap operations (talosconfig, health, kubeconfig) dial the LB
+  # floating IP; apply/bootstrap keep their direct per-node endpoints.
+  management_endpoint = local.lb_enabled ? local.lb_floating_ip_address : null
+
   cni                                = var.talos.cni
   allow_scheduling_on_control_planes = var.talos.allow_scheduling_on_control_planes
   config_patches                     = var.talos.config_patches
-  controlplane_config_patches        = var.talos.controlplane_config_patches
-  worker_config_patches              = var.talos.worker_config_patches
+  # apid certs must accept the LB floating IP so day-2 API access through the LB works.
+  controlplane_config_patches = concat(
+    var.talos.controlplane_config_patches,
+    local.lb_enabled ? [yamlencode({
+      machine = {
+        certSANs = [local.lb_floating_ip_address]
+      }
+    })] : [],
+  )
+  worker_config_patches = var.talos.worker_config_patches
 
   env_path = local.env_path
 
