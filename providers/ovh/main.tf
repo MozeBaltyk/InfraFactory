@@ -17,12 +17,14 @@ data "ovh_cloud_project_flavors" "all" {
 ###
 
 resource "random_id" "ssh_key_suffix" {
-  count       = local.is_talos ? 0 : 1
+  # OVH requires a cluster SSH key whenever any instance references it, which
+  # includes jump mode (bastion + private_cluster) even for Talos.
+  count       = local.is_talos && !local.lb_ssh_jump_enabled ? 0 : 1
   byte_length = 4
 }
 
 resource "ovh_cloud_project_ssh_key" "cluster" {
-  count        = local.is_talos ? 0 : 1
+  count        = local.is_talos && !local.lb_ssh_jump_enabled ? 0 : 1
   service_name = var.ovh_project_service_name
   name         = "${terraform.workspace}-${random_id.ssh_key_suffix[0].hex}"
   public_key   = trimspace(module.ssh_keys[0].public_key_openssh)
@@ -174,18 +176,22 @@ resource "ovh_cloud_project_instance" "private_cluster" {
   billing_period = "hourly"
 
   name      = each.value.name
-  user_data = each.value.user_data_enabled ? local.cloudinit_user_data[each.key] : null
+  user_data = local.is_talos ? null : (each.value.user_data_enabled ? local.cloudinit_user_data[each.key] : null)
 
   boot_from {
-    image_id = local.selected_image.id
+    image_id = local.is_talos ? module.talos_image[0].id : local.selected_image.id
   }
 
   flavor {
     flavor_id = local.flavor_map[each.value.instance_size].id
   }
 
-  ssh_key {
-    name = ovh_cloud_project_ssh_key.cluster[0].name
+  dynamic "ssh_key" {
+    for_each = [local.is_talos ? ovh_cloud_project_ssh_key.talos_placeholder[0].name : ovh_cloud_project_ssh_key.cluster[0].name]
+
+    content {
+      name = ssh_key.value
+    }
   }
 
   network {
@@ -211,6 +217,7 @@ resource "ovh_cloud_project_instance" "private_cluster" {
     terraform_data.validate_image,
     terraform_data.validate_flavors,
     ovh_cloud_gateway.kube_api,
+    module.talos_image,
   ]
 }
 

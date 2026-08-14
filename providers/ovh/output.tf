@@ -63,11 +63,24 @@ output "bastion" {
       controllers = [for vm in local.master_details : vm.private_ip]
       workers     = [for vm in local.worker_details : vm.private_ip]
     }
-    first_master_command = format(
+    # Talos jump mode: one ssh -N -f LocalForward tunnel per node through the
+    # bastion; the talos-cluster module dials 127.0.0.1:<port> for apply and
+    # bootstrap. Day-2 operations (health, kubeconfig, talosconfig) go through
+    # the load balancer floating IP, not these tunnels.
+    talos_tunnel_command = local.is_talos ? format(
+      "ssh -f -N -o ExitOnForwardFailure=yes -F %s %s",
+      jsonencode("env/${var.infra_provider}/${terraform.workspace}/ssh_config"),
+      local.bastion_name,
+    ) : null
+    talos_tunnels = local.is_talos ? {
+      for name, port in local.talos_tunnel_ports :
+      name => "${local.cluster_vms_map[name].private_ip}:50000 -> 127.0.0.1:${port}"
+    } : null
+    first_master_command = !local.is_talos ? format(
       "ssh -F %s %s",
       jsonencode("env/${var.infra_provider}/${terraform.workspace}/ssh_config"),
       local.first_master_name,
-    )
+    ) : null
   } : null
 }
 

@@ -379,8 +379,8 @@ See [AGENTS.md](AGENTS.md) for AI assistant context and full governance rules.
 
 ## Known Limitations
 
-- OVH uses public-IP-based operator access normally; `ssh_jump_enabled=true` uses a dedicated bastion and private Kubernetes node IPs (K3s/RKE2 only)
-- OVH dedicated-bastion mode is plan-validated only; live K3s/RKE2 first boot, replacement, and destroy proofs remain pending
+- OVH uses public-IP-based operator access normally; `ssh_jump_enabled=true` uses a dedicated bastion and private Kubernetes node IPs: K3s/RKE2 nodes via ProxyJump, Talos nodes via per-node SSH `LocalForward` tunnels (localhost `50000+index` → private `:50000`)
+- OVH dedicated-bastion mode is plan-validated only; live K3s/RKE2 first boot, Talos tunnel/apply, replacement, and destroy proofs remain pending
 - OVH refuses `just replace` for the first K3s/RKE2 controller; use a verified etcd snapshot and the distribution restore procedure instead
 - OVH standalone `infra.vms` are public-attached and private-attached in current code
 - OVH custom root disk sizing and extra disks are not supported yet

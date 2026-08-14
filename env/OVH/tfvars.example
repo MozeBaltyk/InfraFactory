@@ -119,8 +119,10 @@ os = {
 #       flavor        = "small"
 #       gateway_model = "s"
 #       # Optional: create one hardened dual-NIC Ubuntu bastion. Masters/workers
-#       # become private-only and Ansible reaches them through ProxyJump. The LB
-#       # still exposes only TCP/6443. This mode is rejected for Talos.
+#       # become private-only: Ansible reaches K3s/RKE2 nodes through ProxyJump,
+#       # and Talos nodes are reached through SSH LocalForward tunnels on the
+#       # bastion (talosctl/apply uses 127.0.0.1:<port>; day-2 health/kubeconfig
+#       # still use the LB floating IP). The LB exposes TCP/6443 only.
 #       # Toggling this on an existing cluster replaces masters/workers: back up
 #       # etcd/workloads, schedule downtime, and review a saved full plan first.
 #       # `just replace` refuses the first controller; recover it only through a

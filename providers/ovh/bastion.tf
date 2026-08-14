@@ -52,9 +52,9 @@ resource "terraform_data" "validate_ssh_jump_topology" {
     precondition {
       condition = (
         !local.ssh_jump_requested ||
-        (local.lb_enabled && !local.is_talos && var.network.kube_api.endpoint == "lb_ip")
+        (local.lb_enabled && var.network.kube_api.endpoint == "lb_ip")
       )
-      error_message = "network.kube_api.load_balancer.ssh_jump_enabled requires an enabled K3s/RKE2 load balancer with network.kube_api.endpoint = \"lb_ip\" and is not supported with Talos."
+      error_message = "network.kube_api.load_balancer.ssh_jump_enabled requires an enabled load balancer with network.kube_api.endpoint = \"lb_ip\". K3s/RKE2 nodes are reached through the bastion via ProxyJump; Talos nodes are reached via SSH LocalForward tunnels through the bastion."
     }
   }
 }
@@ -133,7 +133,9 @@ locals {
   ) : null
 
   bastion_base_config = try(yamldecode(module.bastion_cloudinit[0].rendered[local.bastion_name]), null)
-  bastion_permit_open = join(" ", [for vm in local.cluster_vms_map : "${vm.private_ip}:22"])
+  # K3s/RKE2 forward to node SSH (:22); Talos nodes have no sshd, only the apid
+  # port (:50000) reached through SSH tunnels.
+  bastion_permit_open = join(" ", [for vm in local.cluster_vms_map : "${vm.private_ip}:${local.is_talos ? 50000 : 22}"])
   bastion_sshd_test_addresses = [
     for cidr in local.kube_api_ingress_cidrs : cidrhost(cidr, 0)
   ]
@@ -402,6 +404,11 @@ Host *
 Host ${local.bastion_name}
   HostName ${local.bastion_public_ipv4_address}
   User ${var.cluster.username}
+%{if local.is_talos~}
+%{for name, port in local.talos_tunnel_ports~}
+  LocalForward 127.0.0.1:${port} ${local.cluster_vms_map[name].private_ip}:50000
+%{endfor~}
+%{else~}
 
 %{for name, vm in local.private_cluster_vms_map~}
 Host ${name}
@@ -410,6 +417,7 @@ Host ${name}
   ProxyJump ${local.bastion_name}
 
 %{endfor~}
+%{endif~}
 EOT
 }
 
@@ -444,5 +452,49 @@ resource "terraform_data" "bastion_cloudinit_ready" {
     local_sensitive_file.ssh_config,
     openstack_networking_port_secgroup_associate_v2.bastion_public,
     openstack_networking_port_secgroup_associate_v2.bastion_private,
+  ]
+}
+
+# Talos jump mode: open one ssh -N -f LocalForward tunnel per node through the
+# bastion before talos apply/bootstrap dials them (127.0.0.1:<port>). Destroy
+# kills the exact ssh process. K3s/RKE2 jump uses ProxyJump instead and must not
+# create this resource.
+resource "terraform_data" "talos_tunnels" {
+  count = local.is_talos && local.lb_ssh_jump_enabled ? 1 : 0
+
+  input = abspath("${local.env_path}/ssh_config")
+
+  triggers_replace = [
+    ovh_cloud_project_instance.bastion[0].id,
+    local.bastion_public_ipv4_address,
+  ]
+
+  provisioner "local-exec" {
+    when    = create
+    command = <<-EOT
+      set -e
+      # Kill any stale tunnel from a previous bastion generation, then bring the
+      # tunnels back up and verify each local endpoint actually accepts TCP.
+      pkill -f ${self.input} 2>/dev/null || true
+      sleep 1
+      ssh -f -N -o ExitOnForwardFailure=yes -F ${self.input} ${local.bastion_name}
+      %{for name, port in local.talos_tunnel_ports~}
+      timeout 30 bash -c 'until (echo >/dev/tcp/127.0.0.1/${port}) 2>/dev/null; do sleep 1; done'
+      %{endfor~}
+    EOT
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "pkill -f ${self.input} 2>/dev/null || true"
+  }
+
+  depends_on = [
+    module.ssh_keys,
+    local_sensitive_file.ssh_config,
+    terraform_data.bastion_cloudinit_ready,
+    openstack_networking_port_secgroup_associate_v2.bastion_public,
+    openstack_networking_port_secgroup_associate_v2.bastion_private,
+    openstack_networking_secgroup_rule_v2.cluster_talos_from_bastion,
   ]
 }

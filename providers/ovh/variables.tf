@@ -335,9 +335,11 @@ locals {
   private_gateway_ip = local.private_network_managed ? ovh_cloud_project_network_private_subnet_v2.cluster[0].gateway_ip : try(local.existing_private_subnet_matches[0].gateway_ip, null)
 
   ## Load Balancer
-  ssh_jump_requested     = try(var.network.kube_api.load_balancer.ssh_jump_enabled, false)
-  lb_enabled             = local.kubernetes_enabled && var.infra.masters.count > 0 && try(var.network.kube_api.load_balancer.enabled, false)
-  lb_ssh_jump_enabled    = local.lb_enabled && local.ssh_jump_requested && !local.is_talos
+  ssh_jump_requested = try(var.network.kube_api.load_balancer.ssh_jump_enabled, false)
+  lb_enabled         = local.kubernetes_enabled && var.infra.masters.count > 0 && try(var.network.kube_api.load_balancer.enabled, false)
+  # Jump mode makes K3s/RKE2 nodes private-only (Ansible ProxyJump) and, for
+  # Talos, adds SSH LocalForward tunnels as the per-node apid access path.
+  lb_ssh_jump_enabled    = local.lb_enabled && local.ssh_jump_requested
   lb_floating_ip_address = try(ovh_cloud_floating_ip.kube_api[0].id, null)
   kube_api_ingress_cidrs = try(var.network.kube_api.ingress_cidrs, [])
   lb_flavor_id = local.lb_enabled ? one([
@@ -418,6 +420,19 @@ locals {
 
   first_master_name = try(local.master_details[0].name, null)
   first_master_fqdn = local.first_master_name != null ? "${local.first_master_name}.${local.subdomain}" : null
+
+  ## Talos jump mode: deterministic localhost SSH tunnel endpoints, one per node.
+  ## Local port = 50000 + node index (masters then workers); remote target is the
+  ## node's private IP on the Talos apid port (50000). Opened through the bastion
+  ## via the LocalForward directives in the generated ssh_config.
+  talos_tunnel_ports = local.is_talos && local.lb_ssh_jump_enabled ? {
+    for i, vm in concat(local.master_details, local.worker_details) :
+    vm.name => 50000 + i
+  } : {}
+
+  talos_tunnel_endpoints = {
+    for name, port in local.talos_tunnel_ports : name => "127.0.0.1:${port}"
+  }
 
   ## Kubernetes API bootstrap endpoint (first master private IP); overridden by LB when present
   kube_api_bootstrap_endpoint = try(local.master_details[0].private_ip, null)

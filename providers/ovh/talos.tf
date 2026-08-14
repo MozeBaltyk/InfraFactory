@@ -70,7 +70,9 @@ module "talos_cluster" {
   nodes = {
     for vm_name, vm in local.all_vms_map :
     vm_name => {
-      endpoint      = local.vm_public_ipv4_addresses_after_wait[vm_name]
+      # Jump mode: dial the localhost SSH tunnel port; the cluster identity
+      # stays the node's private IP. Non-jump dials the node's public IP.
+      endpoint      = local.lb_ssh_jump_enabled ? local.talos_tunnel_endpoints[vm_name] : local.vm_public_ipv4_addresses_after_wait[vm_name]
       node_address  = vm.private_ip
       role          = vm.role
       hostname      = vm.name
@@ -80,7 +82,7 @@ module "talos_cluster" {
     if contains(["master", "worker"], vm.role)
   }
 
-  first_master_node = local.vm_public_ipv4_addresses_after_wait[local.first_master_name]
+  first_master_node = local.lb_ssh_jump_enabled ? local.talos_tunnel_endpoints[local.first_master_name] : local.vm_public_ipv4_addresses_after_wait[local.first_master_name]
 
   # Post-bootstrap operations (talosconfig, health, kubeconfig) dial the LB
   # floating IP; apply/bootstrap keep their direct per-node endpoints.
@@ -108,5 +110,6 @@ module "talos_cluster" {
     openstack_networking_port_secgroup_associate_v2.cluster_private,
     ovh_cloud_project_loadbalancer.kube_api,
     terraform_data.validate_public_ips,
+    terraform_data.talos_tunnels, # dial endpoints ready when jump mode is active
   ]
 }
