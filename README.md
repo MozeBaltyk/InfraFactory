@@ -60,8 +60,8 @@ OpenTofu (provision VMs)
   - `arkade get kubecm`
   - `arkade get kubectl`
   - `arkade get k9s`
-  - `cockpit` to manage in a web interface the libvirt VMs
-  - `ansible`
+  - `apt install cockpit cockpit-machines` to manage in a web interface the libvirt VMs
+  - `apt install ansible`
 
 ---
 
