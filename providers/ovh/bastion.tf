@@ -455,14 +455,21 @@ resource "terraform_data" "bastion_cloudinit_ready" {
   ]
 }
 
-# Talos jump mode: open one ssh -N -f LocalForward tunnel per node through the
-# bastion before talos apply/bootstrap dials them (127.0.0.1:<port>). Destroy
-# kills the exact ssh process. K3s/RKE2 jump uses ProxyJump instead and must not
-# create this resource.
+# Talos jump mode: open one ssh -N LocalForward tunnel per node through the
+# bastion before talos apply/bootstrap dials them (127.0.0.1:<port>). A
+# ControlMaster connection owns all forwards, so a stale tunnel is stopped
+# deterministically with `-O exit` (never pkill -f, which matches this
+# provisioner's own command line). K3s/RKE2 jump uses ProxyJump instead and
+# must not create this resource.
 resource "terraform_data" "talos_tunnels" {
   count = local.is_talos && local.lb_ssh_jump_enabled ? 1 : 0
 
-  input = abspath("${local.env_path}/ssh_config")
+  # Carry both values via `self` only: destroy provisioners may not reference
+  # other resources or locals.
+  input = {
+    ssh_config = abspath("${local.env_path}/ssh_config")
+    host       = local.bastion_name
+  }
 
   triggers_replace = [
     ovh_cloud_project_instance.bastion[0].id,
@@ -473,11 +480,11 @@ resource "terraform_data" "talos_tunnels" {
     when    = create
     command = <<-EOT
       set -e
-      # Kill any stale tunnel from a previous bastion generation, then bring the
-      # tunnels back up and verify each local endpoint actually accepts TCP.
-      pkill -f ${self.input} 2>/dev/null || true
-      sleep 1
-      ssh -f -N -o ExitOnForwardFailure=yes -F ${self.input} ${local.bastion_name}
+      # Stop any tunnel left over from a previous apply or bastion generation.
+      ssh -S ${self.input.ssh_config}.sock -O exit ${self.input.host} 2>/dev/null || true
+      # Bring the tunnels back up as a daemonized ControlMaster; -M keeps the
+      # master open so the -O exit above is the only teardown needed.
+      ssh -f -N -M -S ${self.input.ssh_config}.sock -o ExitOnForwardFailure=yes -F ${self.input.ssh_config} ${self.input.host}
       %{for name, port in local.talos_tunnel_ports~}
       timeout 30 bash -c 'until (echo >/dev/tcp/127.0.0.1/${port}) 2>/dev/null; do sleep 1; done'
       %{endfor~}
@@ -486,7 +493,7 @@ resource "terraform_data" "talos_tunnels" {
 
   provisioner "local-exec" {
     when    = destroy
-    command = "pkill -f ${self.input} 2>/dev/null || true"
+    command = "ssh -S ${self.input.ssh_config}.sock -O exit ${self.input.host} 2>/dev/null || true"
   }
 
   depends_on = [
