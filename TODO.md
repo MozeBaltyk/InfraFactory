@@ -23,7 +23,7 @@ OVH now includes:
 - standalone extra VMs via `infra.vms`, including VM-only default cloud-init deployments
 - OVH extra VMs receive common default cloud-init plus the OVH private-netplan overlay
 - optional dedicated hardened OVH bastion with private-only K3s/RKE2 nodes and kube-api-only load balancer
-- generated two-hop SSH config with host-key verification disabled and full-graph bastion/non-bootstrap private-node replacement recovery; first-controller replacement is refused pending etcd restore support
+- self-contained ProxyCommand SSH transport (no generated `ssh_config`) with full-graph bastion/non-bootstrap private-node replacement recovery; first-controller replacement is refused pending etcd restore support
 - explicit `just` recipes for full-graph OVH VM replacement
 - cluster-owned OpenStack security group for k3s/rke2
 - environment-native OVH/OpenStack authentication and restrictive operator ingress CIDRs
@@ -105,3 +105,30 @@ Azure has been realigned with the recent OVH/Libvirt baseline for standalone `in
 - [X] Deploy 1 control-plane + 1 worker, k8s v1.36.0 / Talos v1.13.7 (live cluster)
 - [X] Talos provider features: factory image URL, cluster health gate, talosconfig artifact
 - [ ] Decide: promote Talos as documented provider mode (k3s/rke2/talos) or close the eval branch
+
+### Phase 7: Target Architecture (platform/ + tests/) — incremental, libvirt-first
+Docs: `docs/architecture.md` §8/§10/§11/§12. Target structure: `platform/{talos,k3s,rke2,artifacts,inventory,validation}/` + `tests/{contracts,libvirt,azure,ovh}/` + full endpoint outputs on all providers.
+
+**A. Contract outputs (§10)**
+- [ ] Add missing endpoint outputs to all 3 providers: `bootstrap_endpoints`, `management_endpoint`, `kubernetes_endpoint` (null when N/A)
+- [ ] Extend `cluster_nodes` to full node objects per §5 (name/role/private/public/operator_address/endpoints)
+- [ ] Contract assertion: output shape identical across providers
+
+**B. Contract tests (§11)**
+- [ ] Create `tests/contracts/` with `tofu test` (OpenTofu v1.6.2 supports it)
+- [ ] Invariant tests: normalized node shape; artifacts under `env/`; no public IP on private-only nodes; deterministic Talos bootstrap endpoints; talosconfig uses management_endpoint; stable Kubernetes endpoint; provider output parity
+- [ ] Wire `tofu test` into `just validate` or a new `just test`
+
+**C. platform/ extraction (§8/§12) — libvirt first, then azure/ovh**
+- [ ] Move `talos-cluster` module → `platform/talos/`
+- [ ] Move `cloudinit-renderer` module → `platform/{k3s,rke2}/` (split per type)
+- [ ] Move `ansible-artifacts` module → `platform/{artifacts,inventory}/`
+- [ ] Move `ssh-keys` module → `platform/artifacts/`
+- [ ] Move `providers/shared/cloud-init/$type/` → `platform/`
+- [ ] Add `platform/validation/` for post-deploy checks (moved from `checks.tf`-style logic)
+- [ ] After each move: `tofu validate` on all 3 providers + libvirt live re-deploy + commit
+
+**D. Docs sync**
+- [ ] Update `docs/architecture.md` "current state" notes (§5/§8/§10/§11/§12) — remove target-shape flags as work lands
+- [ ] Update `docs/provider-contract.md` (new outputs, new shared paths)
+- [ ] Update `providers/README` capability/test matrix if extraction changes paths

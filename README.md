@@ -24,6 +24,7 @@ It enables you to deploy VM-only environments, Kubernetes clusters with varying 
 - ⚙️ **Cloud-init** Bootstrap:   
         - Bare virtual machines    
         - Kubernetes via K3s or RKE2    
+- 🧩 **Talos** (libvirt): Kubernetes via the Talos provider (cluster-specific machine configuration, etcd bootstrap) — see `docs/architecture.md`
 - 🚀 **Post-Configuration**: Extend and customize nodes using optional ansible-pull for continuous configuration management
 
 **Core Workflow:**
@@ -152,20 +153,24 @@ Available commands:
 
 ### Configuration Files
 
-OVH dedicated-bastion migration is intentionally disruptive. Before changing
-`ssh_jump_enabled` on an existing cluster, back up etcd and workloads, schedule
-downtime, and save/review the authenticated full plan. Use `just replace bastion`
-for bastion recovery. `just replace` refuses the first K3s/RKE2 controller:
-replacing that bootstrap node safely requires a verified etcd snapshot and the
-distribution recovery procedure ([K3s](https://docs.k3s.io/datastore/backup-restore) or
+**OVH dedicated bastion (private-only nodes)** — full end-to-end workflow:
+`docs/lifecycle.md` → "OVH Dedicated-Bastion Workflow".
+
+Migration caveat: OVH dedicated-bastion migration is intentionally disruptive.
+Before changing `ssh_jump_enabled` on an existing cluster, back up etcd and
+workloads, schedule downtime, and save/review the authenticated full plan. Use
+`just replace bastion` for bastion recovery. `just replace` refuses the first
+K3s/RKE2 controller: replacing that bootstrap node safely requires a verified
+etcd snapshot and the distribution recovery procedure
+([K3s](https://docs.k3s.io/datastore/backup-restore) or
 [RKE2](https://docs.rke2.io/datastore/backup_restore)); automatic datastore
-membership recovery is not implemented. Jump-mode SSH transport is configured in
-`ansible.cfg` (relative `private_key_file`, `host_key_checking = false`, and a
-self-contained `ssh_common_args = -o ProxyCommand='ssh -W %h:%p -q ...'` that
-carries its own key/host-key options through the bastion); the
-bastion and private nodes are never directly exposed.
-If SSH is unavailable, use OVH console/rescue with scoped cloud credentials to
-repair ingress or replace the bastion; do not expose private nodes or LB TCP/22.
+membership recovery is not implemented. Jump-mode SSH transport is configured
+in `ansible.cfg` (relative `private_key_file`, `host_key_checking = false`,
+and a self-contained `ssh_common_args = -o ProxyCommand='ssh -W %h:%p -q ...'`
+that carries its own key/host-key options through the bastion); the bastion
+and private nodes are never directly exposed. If SSH is unavailable, use OVH
+console/rescue with scoped cloud credentials to repair ingress or replace the
+bastion; do not expose private nodes or LB TCP/22.
 
 Each environment is defined by a `.tfvars` file in `env/<PROVIDER>/`:
 
@@ -236,14 +241,18 @@ Important lifecycle caveats:
 
 ```txt
 InfraFactory/
-├── AGENTS.md                     # AI assistant context
-├── README.md                     # The only doc, I will produce in my life.
+├── AGENTS.md                     # AI assistant guide (rules + docs pointers)
+├── README.md                     # User workflow (this file)
 ├── TODO.md                       # Task tracking
 ├── justfile                      # CLI orchestrator (run: just)
+├── docs/                         # Architecture, contract, lifecycle, networking, ADRs
+│   └── decisions/                # Architecture decision records (ADR-001..003)
+├── .local/                       # Agent contract (AGENTS.md) + workflow state
 ├── gitops/                       # Optional Flux/tofu-controller management layer
 │   ├── apps/                     # Flux-managed platform apps and controllers
+│   ├── docs/                     # GitOps layer documentation
 │   ├── flux/                     # Flux system config and Terraform CR overlays
-│   ├── templates/                # Helmfile templates
+│   ├── scripts/                  # GitOps helper scripts
 │   ├── crds.yaml                 # CRDs required by the GitOps stack
 │   ├── flux.yaml                 # Flux and Flux operator deployment
 │   └── justfile                  # GitOps operation commands
@@ -260,27 +269,16 @@ InfraFactory/
 │
 ├── providers/                    # Cloud provider implementations
 │   ├── libvirt/                  # Local KVM/QEMU provider
-│   │   ├── justfile             # Provider-local Just recipes
-│   │   ├── main.tf               # VM provisioning
-│   │   ├── variables.tf          # Input variables
-│   │   ├── output.tf             # Outputs (IPs, kubeconfig)
-│   │   ├── templates.tf          # Cloud-init templates
-│   │   ├── keys.tf               # SSH key management
-│   │   ├── providers.tf          # Provider configuration
-│   │   └── vars_extra.tf         # Optional provider-specific extras
 │   ├── azure/                    # Microsoft Azure provider
-│   │   ├── justfile             # Provider-local Just recipes
-│   │   └── [provider files]
 │   ├── ovh/                      # OVH Cloud provider
-│   │   ├── justfile             # Provider-local Just recipes
-│   │   └── [provider files]
 │   │
 │   └── shared/                   # Shared resources (all providers)
 │       ├── ansible/              # Shared Ansible playbooks (post-deployment steps)
 │       │   ├── check_cloudinit.yml
 │       │   ├── fetch_kubeconfig.yml
 │       │   ├── local.yml
-│       │   └── reconciliate_tls.yml
+│       │   ├── reconciliate_tls.yml
+│       │   └── validate.yml
 │       ├── cloud-init/           # Cloud-init templates (default, k3s, rke2)
 │       │   ├── default/
 │       │   │   ├── cloud_init.cfg.tftpl
@@ -291,8 +289,10 @@ InfraFactory/
 │       │   └── rke2/
 │       │       ├── cloud_init.cfg.tftpl      # rke2 deployment template
 │       │       └── network_config.cfg.tftpl
-│       └── inventory/
-│           └── hosts.tpl         # Ansible inventory template (generated post-deployment)
+│       ├── inventory/
+│       │   └── hosts.tpl         # Ansible inventory template (generated post-deployment)
+│       └── modules/              # Shared modules: ssh-keys, cloudinit-renderer,
+│                                 # ansible-artifacts, talos-cluster
 │
 └── assets/                       # Images and documentation assets
     └── InfraFactory.png
@@ -341,9 +341,9 @@ In this context, GitOps bootstrap is different from cloud-init bootstrap:
    ↓
 5. For Kubernetes modes with enabled user data, Ansible checks cloud-init readiness on K8s nodes
    ↓
-6. Ansible reconciles kube-apiserver TLS SAN with public IP and restarts the service (k3s/rke2 only)
+6. Ansible reconciles kube-apiserver TLS SAN with the public/LB endpoint and restarts the service (k3s/rke2 only)
    ↓
-7. Ansible fetches kubeconfig from first master, rewrites server endpoint to public IP (k3s/rke2 only)
+7. Ansible fetches kubeconfig from first master, rewrites server endpoint to the stable Kubernetes endpoint (k3s/rke2 only)
 ```
 
 **Deployment Flow:**
@@ -368,14 +368,19 @@ In this context, GitOps bootstrap is different from cloud-init bootstrap:
 
 ## Governance & Architecture
 
-Infrastructure deployments are governed by the principles in [AGENTS.md](AGENTS.md), enforcing:
+Architecture and governance are documented in `docs/`:
 
-- **Core Principles**: Modular design, provider symmetry, consistent workflows
-- **Development Priority**: Libvirt (dev) → Azure → OVH
-- **Code Quality**: Incremental implementation, focused commits, no system modifications
-- **Architecture**: Schema coverage policy, provider parity validation
+- **Architecture**: `docs/architecture.md` — layers, principles, endpoint
+  model, invariants
+- **Provider contract**: `docs/provider-contract.md` — canonical provider
+  interface and layout
+- **Lifecycle**: `docs/lifecycle.md` — provisioning phases
+- **Networking**: `docs/networking.md` — endpoint terminology, SSH transport
+- **Decisions**: `docs/decisions/` — architecture decision records (ADRs)
 
-See [AGENTS.md](AGENTS.md) for AI assistant context and full governance rules.
+Development priorities: Libvirt (dev) → Azure → OVH (see ADR-003).
+
+See [AGENTS.md](AGENTS.md) for AI assistant rules.
 
 ---
 
