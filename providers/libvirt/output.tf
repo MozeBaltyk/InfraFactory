@@ -150,3 +150,27 @@ EOT
     )
   ) : ""
 }
+
+###
+### Contract endpoint outputs (§10)
+###
+output "kubernetes_endpoint" {
+  description = "Stable Kubernetes API endpoint (first master's operator-accessible address)."
+
+  value = local.kube_api_endpoint
+}
+
+output "bootstrap_endpoints" {
+  description = "Deterministic per-node access endpoints used during bootstrap (operator endpoint per node)."
+
+  value = {
+    for vm_name, vm in local.all_vms_map :
+    vm_name => local.vm_operator_endpoints[vm_name]
+  }
+}
+
+output "management_endpoint" {
+  description = "Stable day-2 management endpoint. Talos: first master operator endpoint; k3s/rke2: null."
+
+  value = local.is_talos && local.first_master_name != null ? local.vm_operator_endpoints[local.first_master_name] : null
+}

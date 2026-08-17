@@ -93,3 +93,27 @@ kubectl get nodes
 EOT
   ) : ""
 }
+
+###
+### Contract endpoint outputs (§10)
+###
+output "kubernetes_endpoint" {
+  description = "Stable Kubernetes API endpoint (LB floating IP, DNS, or first master public/private IP)."
+
+  value = local.public_kube_api_endpoint
+}
+
+output "bootstrap_endpoints" {
+  description = "Deterministic per-node access endpoints used during bootstrap (private IP in jump mode, public IP otherwise)."
+
+  value = {
+    for vm in concat(local.master_details, local.worker_details, local.vm_details) :
+    vm.name => local.lb_ssh_jump_enabled ? vm.private_ip : local.vm_public_ipv4_addresses[vm.name]
+  }
+}
+
+output "management_endpoint" {
+  description = "Stable day-2 management endpoint. OVH does not run Talos: null."
+
+  value = null
+}

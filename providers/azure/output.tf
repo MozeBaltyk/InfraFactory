@@ -45,3 +45,27 @@ kubectl get nodes
 EOT
   ) : ""
 }
+
+###
+### Contract endpoint outputs (§10)
+###
+output "kubernetes_endpoint" {
+  description = "Stable Kubernetes API endpoint (first master public IP)."
+
+  value = local.public_kube_api_endpoint
+}
+
+output "bootstrap_endpoints" {
+  description = "Deterministic per-node access endpoints used during bootstrap (public IP per node)."
+
+  value = {
+    for vm in concat(local.master_details, local.worker_details, local.vm_details) :
+    vm.name => azurerm_public_ip.vm-pip[vm.name].ip_address
+  }
+}
+
+output "management_endpoint" {
+  description = "Stable day-2 management endpoint. Azure does not run Talos: null."
+
+  value = null
+}
