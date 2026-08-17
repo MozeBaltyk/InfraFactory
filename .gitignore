@@ -8,7 +8,6 @@ hosts.ini
 .vscode
 ansible.cfg
 kubeconfig
-ssh_config
 .token
 .local
 .cache/

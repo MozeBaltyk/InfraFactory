@@ -36,8 +36,11 @@ module "ansible" {
     local.lb_ssh_jump_enabled ? vm.private_ip : local.vm_public_ipv4_addresses[vm.name]
   ])
 
+  # Self-contained ProxyCommand: the inner ssh must carry its own flags because
+  # ProxyJump does not forward -i/-o to the jump connection (fresh bastion host
+  # keys then fail strict verification without a tty).
   proxy_jump = local.lb_ssh_jump_enabled ? {
-    common_args = "-o ProxyCommand='ssh -W %h:%p -q -o StrictHostKeyChecking=no -i ${abspath("${local.env_path}/.key.private")} ${var.cluster.username}@${local.bastion_public_ipv4_address}'"
+    common_args = "-o ProxyCommand='ssh -W %h:%p -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ${abspath("${local.env_path}/.key.private")} ${var.cluster.username}@${local.bastion_public_ipv4_address}'"
   } : null
 
   node_generation = {

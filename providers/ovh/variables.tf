@@ -326,7 +326,7 @@ locals {
   ## Load Balancer
   ssh_jump_requested = try(var.network.kube_api.load_balancer.ssh_jump_enabled, false)
   lb_enabled         = local.kubernetes_enabled && var.infra.masters.count > 0 && try(var.network.kube_api.load_balancer.enabled, false)
-  # Jump mode makes K3s/RKE2 nodes private-only (Ansible ProxyJump).
+  # Jump mode makes K3s/RKE2 nodes private-only (Ansible ProxyCommand).
   lb_ssh_jump_enabled    = local.lb_enabled && local.ssh_jump_requested
   lb_floating_ip_address = try(ovh_cloud_floating_ip.kube_api[0].id, null)
   kube_api_ingress_cidrs = try(var.network.kube_api.ingress_cidrs, [])

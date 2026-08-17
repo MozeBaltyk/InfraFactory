@@ -159,8 +159,10 @@ for bastion recovery. `just replace` refuses the first K3s/RKE2 controller:
 replacing that bootstrap node safely requires a verified etcd snapshot and the
 distribution recovery procedure ([K3s](https://docs.k3s.io/datastore/backup-restore) or
 [RKE2](https://docs.rke2.io/datastore/backup_restore)); automatic datastore
-membership recovery is not implemented. The generated `env/OVH/<env>/ssh_config` provides
-stable aliases and disables host-key verification (`StrictHostKeyChecking no`); the
+membership recovery is not implemented. Jump-mode SSH transport is configured in
+`ansible.cfg` (relative `private_key_file`, `host_key_checking = false`, and a
+self-contained `ssh_common_args = -o ProxyCommand='ssh -W %h:%p -q ...'` that
+carries its own key/host-key options through the bastion); the
 bastion and private nodes are never directly exposed.
 If SSH is unavailable, use OVH console/rescue with scoped cloud credentials to
 repair ingress or replace the bastion; do not expose private nodes or LB TCP/22.
@@ -379,7 +381,7 @@ See [AGENTS.md](AGENTS.md) for AI assistant context and full governance rules.
 
 ## Known Limitations
 
-- OVH uses public-IP-based operator access normally; `ssh_jump_enabled=true` uses a dedicated bastion and private Kubernetes node IPs: K3s/RKE2 nodes via ProxyJump
+- OVH uses public-IP-based operator access normally; `ssh_jump_enabled=true` uses a dedicated bastion and private Kubernetes node IPs: K3s/RKE2 nodes via a self-contained ProxyCommand in `ansible.cfg`
 - OVH dedicated-bastion mode is plan-validated only; live K3s/RKE2 first boot, replacement, and destroy proofs remain pending
 - OVH refuses `just replace` for the first K3s/RKE2 controller; use a verified etcd snapshot and the distribution restore procedure instead
 - OVH standalone `infra.vms` are public-attached and private-attached in current code

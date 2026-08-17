@@ -54,7 +54,7 @@ resource "terraform_data" "validate_ssh_jump_topology" {
         !local.ssh_jump_requested ||
         (local.lb_enabled && var.network.kube_api.endpoint == "lb_ip")
       )
-      error_message = "network.kube_api.load_balancer.ssh_jump_enabled requires an enabled load balancer with network.kube_api.endpoint = \"lb_ip\". K3s/RKE2 nodes are reached through the bastion via ProxyJump."
+      error_message = "network.kube_api.load_balancer.ssh_jump_enabled requires an enabled load balancer with network.kube_api.endpoint = \"lb_ip\". K3s/RKE2 nodes are reached through the bastion via a self-contained ProxyCommand."
     }
   }
 }
@@ -133,7 +133,7 @@ locals {
   ) : null
 
   bastion_base_config = try(yamldecode(module.bastion_cloudinit[0].rendered[local.bastion_name]), null)
-  # K3s/RKE2 forward to node SSH (:22) through ProxyJump.
+  # K3s/RKE2 forward to node SSH (:22) through a self-contained ProxyCommand.
   bastion_permit_open = join(" ", [for vm in local.cluster_vms_map : "${vm.private_ip}:22"])
   bastion_sshd_test_addresses = [
     for cidr in local.kube_api_ingress_cidrs : cidrhost(cidr, 0)
@@ -387,33 +387,6 @@ resource "openstack_networking_port_secgroup_associate_v2" "bastion_private" {
   region             = var.cluster.region
 }
 
-resource "local_sensitive_file" "ssh_config" {
-  count = local.lb_ssh_jump_enabled ? 1 : 0
-
-  filename        = "${local.env_path}/ssh_config"
-  file_permission = "0600"
-  content         = <<-EOT
-Host *
-  IdentityFile ${jsonencode(abspath("${local.env_path}/.key.private"))}
-  IdentitiesOnly yes
-  ForwardAgent no
-  StrictHostKeyChecking no
-  UserKnownHostsFile /dev/null
-
-Host ${local.bastion_name}
-  HostName ${local.bastion_public_ipv4_address}
-  User ${var.cluster.username}
-
-%{for name, vm in local.private_cluster_vms_map~}
-Host ${name}
-  HostName ${vm.private_ip}
-  User ${var.cluster.username}
-  ProxyJump ${local.bastion_name}
-
-%{endfor~}
-EOT
-}
-
 resource "terraform_data" "bastion_cloudinit_ready" {
   count = local.lb_ssh_jump_enabled ? 1 : 0
 
@@ -425,7 +398,8 @@ resource "terraform_data" "bastion_cloudinit_ready" {
   provisioner "local-exec" {
     command = <<-EOT
       for attempt in $(seq 1 60); do
-        if ssh -F "$SSH_CONFIG" -o ConnectTimeout=5 "$HOST_ALIAS" \
+        if ssh -i "$KEY_PATH" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -o IdentitiesOnly=yes -o ConnectTimeout=5 "$BASTION_HOST" \
           timeout 900 cloud-init status --wait; then
           exit 0
         fi
@@ -435,14 +409,13 @@ resource "terraform_data" "bastion_cloudinit_ready" {
     EOT
 
     environment = {
-      HOST_ALIAS = local.bastion_name
-      SSH_CONFIG = abspath("${local.env_path}/ssh_config")
+      BASTION_HOST = "${var.cluster.username}@${local.bastion_public_ipv4_address}"
+      KEY_PATH     = abspath("${local.env_path}/.key.private")
     }
   }
 
   depends_on = [
     module.ssh_keys,
-    local_sensitive_file.ssh_config,
     openstack_networking_port_secgroup_associate_v2.bastion_public,
     openstack_networking_port_secgroup_associate_v2.bastion_private,
   ]
