@@ -230,8 +230,8 @@ nodes = {
 
 In the current implementation the normalized model is exposed through the
 `cluster_nodes` output (`controller_ips`, `worker_ips`, `vm_ips`,
-`public_ips`, `private_ips`) plus the shared node objects consumed by
-`platform/`.
+`public_ips`, `private_ips`, and a full `nodes` map of §5 node objects) plus
+the shared node objects consumed by `platform/`.
 
 Provider-specific resources MUST NOT be required by downstream cluster
 modules when the normalized model can represent the required information.
@@ -424,11 +424,11 @@ providers/
 
 platform/
   talos/
-  k3s/
-  rke2/
-  artifacts/
+  cloud-init/      # renderer + per-type templates (default/k3s/rke2)
+  artifacts/       # ssh-keys + ansible-artifacts
   inventory/
-  validation/
+  ansible/
+  validation/      # target: post-deploy checks shared across providers
 ```
 
 Providers answer:
@@ -517,11 +517,14 @@ An output may be `null` when it does not apply.
 
 Provider-specific consumers MUST NOT redefine the meaning of these fields.
 
-Current state: `cluster_nodes` and `kubeconfig_command` exist on all three
-providers; `kube_api_load_balancer` and `bastion` on OVH; `management_endpoint`
-exists as a `talos-cluster` module input (libvirt); `bootstrap_endpoints`,
-`talosconfig`, `ssh_config` outputs are target-shape. The full conceptual
-contract is specified in `docs/provider-contract.md`.
+Current state: `cluster_nodes` (including full §5 node objects under `nodes`),
+`kubeconfig_command`, `bootstrap_endpoints`, `management_endpoint` and
+`kubernetes_endpoint` exist on all three providers; `kube_api_load_balancer`
+and `bastion` on OVH. `inventory`, `kubeconfig` and `talosconfig` are not
+standalone outputs (rendered artifacts / commands instead); `ssh_config` is
+intentionally not generated (self-contained `ProxyCommand` transport, see
+`docs/networking.md`). The full conceptual contract is specified in
+`docs/provider-contract.md`.
 
 ---
 
@@ -544,9 +547,11 @@ Tests should verify invariants such as:
 Use OpenTofu tests for module/contract validation. Use live provider tests
 only where cloud behavior itself needs validation.
 
-Current state: parity is validated through `providers/README`'s documented
-test matrix and deploy-time checks (`checks.tf`); a dedicated `tests/` tree is
-target-shape.
+Current state: shared-module contracts are tested through
+`tests/contracts/` (`just test`); provider parity beyond that is validated
+through `providers/README`'s documented test matrix and deploy-time checks
+(`checks.tf` on OVH). Live provider test trees (`tests/{libvirt,azure,ovh}/`)
+are target-shape.
 
 ---
 
@@ -564,15 +569,15 @@ InfraFactory/
 │
 ├── platform/
 │   ├── talos/
-│   ├── k3s/
-│   ├── rke2/
-│   ├── artifacts/
+│   ├── cloud-init/        # renderer + per-type templates
+│   ├── artifacts/         # ssh-keys + ansible-artifacts
 │   ├── inventory/
-│   └── validation/
+│   ├── ansible/
+│   └── validation/        # target: shared post-deploy checks
 │
 ├── tests/
 │   ├── contracts/
-│   ├── libvirt/
+│   ├── libvirt/           # target: live provider tests
 │   ├── azure/
 │   └── ovh/
 │

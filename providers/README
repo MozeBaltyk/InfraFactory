@@ -212,3 +212,10 @@ At minimum, each provider change should preserve:
 - Both `k3s` and `rke2` cloud-init modes
 - VM-only `default` flow with standalone `infra.vms`
 - Generated inventory and kubeconfig artifacts when applicable
+
+### Contract tests
+
+Shared-module contract invariants (normalized node groups, SSH transport,
+cloud-init variant selection, key/token precedence) are covered by
+`just test` (`tests/contracts/`, plan/apply tests on local providers only).
+Run them on any change touching `platform/` or `providers/`.
