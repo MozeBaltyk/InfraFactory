@@ -210,7 +210,7 @@ os = {
 #   pull = {
 #     repo     = "https://github.com/MozeBaltyk/InfraFactory.git"
 #     branch   = "main"
-#     playbook = "providers/shared/ansible/local.yml"
+#     playbook = "platform/ansible/local.yml"
 #     token    = "ghp_xxxxxxxxxxxx"
 #     timer    = "1h"
 #   }

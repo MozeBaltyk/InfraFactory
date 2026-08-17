@@ -22,9 +22,9 @@ Introduce a normalized node model that every provider exposes:
 - A per-VM object shape used by shared modules: name, role, private/public
   IP, sizing, extra disks, user-data toggle, cloud-init selection.
 
-Shared consumers (`providers/shared/modules/`) depend only on this model,
+Shared consumers (`platform/`) depend only on this model,
 never on raw provider resources. The canonical inventory template
-(`providers/shared/inventory/hosts.tpl`) is shared across providers.
+(`platform/inventory/hosts.tpl`) is shared across providers.
 
 ## Consequences
 

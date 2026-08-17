@@ -28,7 +28,7 @@ Every provider module MUST implement all of the following:
 ### Cloud-Init
 - Selectable cloud-init variant via `cluster.cloud_init_selected`:
   - `default`, `k3s`, `rke2`; Talos replaces cloud-init and Ansible where supported
-- Cloud-init source paths MUST reference `providers/shared/cloud-init/$type/`
+- Cloud-init source paths MUST reference `platform/cloud-init/$type/`
 - Inject username + SSH public key
 - Optional OS upgrade control via `cluster.package_upgrade_enabled`
 - Per-role `user_data_enabled` on masters, workers, and standalone VMs
@@ -44,7 +44,7 @@ Every provider module MUST implement all of the following:
 - `ansible.pull` block: `repo`, `branch`, `playbook`, `token`, `timer`
 
 ### Ansible Integration
-- Inventory output compatible with `providers/shared/inventory/hosts.tpl`
+- Inventory output compatible with `platform/inventory/hosts.tpl`
 - Inventory contains shared `CONTROLLERS`, `WORKERS`, and `VMS` groups
 - Generate `ansible.cfg` with remote user, inventory path, private key
 - Kubernetes post-deployment playbooks (shared, gated by Kubernetes cloud-init mode and role `user_data_enabled`):

@@ -54,7 +54,7 @@ check:
 ping:
     @ANSIBLE_CONFIG={{ quote("./env/" + PROVIDER + "/" + ENV + "/ansible.cfg") }} ansible K8S_CLUSTER -i {{ quote("./env/" + PROVIDER + "/" + ENV + "/hosts.ini") }} -m ping
 
-# Run ansible playbook for specified environment (ex: just play providers/shared/ansible/check_cloudinit.yml)
+# Run ansible playbook for specified environment (ex: just play platform/ansible/check_cloudinit.yml)
 [script("bash"), positional-arguments]
 play playbook *ARGS:
     export ANSIBLE_CONFIG={{ quote("./env/" + PROVIDER + "/" + ENV + "/ansible.cfg") }}

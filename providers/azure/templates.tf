@@ -7,7 +7,7 @@ locals {
 
 # Render shared cloud-init user-data for all nodes
 module "cloudinit" {
-  source = "../shared/modules/cloudinit-renderer"
+  source = "../../platform/cloud-init"
 
   cloud_init_selected = var.cluster.cloud_init_selected
   node_username       = var.cluster.username

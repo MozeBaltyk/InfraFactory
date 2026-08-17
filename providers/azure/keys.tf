@@ -3,7 +3,7 @@
 ###
 
 module "ssh_keys" {
-  source = "../shared/modules/ssh-keys"
+  source = "../../platform/artifacts/ssh-keys"
 
   env_path            = local.env_path
   cloud_init_selected = var.cluster.cloud_init_selected

@@ -101,7 +101,7 @@ OVH → direct, or SSH forwarding (jump) through the dedicated bastion
 This phase provides **deterministic per-node connectivity**.
 
 - Each provider renders the Ansible inventory
-  (`providers/shared/inventory/hosts.tpl`) into
+  (`platform/inventory/hosts.tpl`) into
   `env/<PROVIDER>/<workspace>/`:
   - `hosts.ini` (shared `CONTROLLERS` / `WORKERS` / `VMS` groups)
   - `ansible.cfg` (remote user, inventory path, private key, host-key policy)
@@ -132,7 +132,7 @@ RKE2
 ```
 
 For k3s/rke2, VMs boot with the selected cloud-init variant from
-`providers/shared/cloud-init/$type/` (`default`, `k3s`, `rke2`):
+`platform/cloud-init/$type/` (`default`, `k3s`, `rke2`):
 
 - SSH key + username injection
 - base packages / optional upgrade (`package_upgrade_enabled`)

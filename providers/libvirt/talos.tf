@@ -19,7 +19,7 @@ data "talos_image_factory_urls" "this" {
 
 module "talos_cluster" {
   count  = local.is_talos ? 1 : 0
-  source = "../shared/modules/talos-cluster"
+  source = "../../platform/talos"
 
   cluster_name       = var.cluster.id
   talos_version      = var.talos.version

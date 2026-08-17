@@ -6,7 +6,7 @@ locals {
   rendered = {
     for vm_name, vm in var.vms :
     vm_name => templatefile(
-      "${path.module}/../../../shared/cloud-init/${coalesce(vm.cloud_init_selected, var.cloud_init_selected)}/cloud_init.cfg.tftpl",
+      "${path.module}/${coalesce(vm.cloud_init_selected, var.cloud_init_selected)}/cloud_init.cfg.tftpl",
       {
         hostname      = vm.hostname
         fqdn          = vm.fqdn

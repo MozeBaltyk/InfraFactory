@@ -119,14 +119,15 @@ Docs: `docs/architecture.md` §8/§10/§11/§12. Target structure: `platform/{ta
 - [x] Wire `tofu test` into a new `just test`
 - [ ] Invariant tests: normalized node shape; artifacts under `env/`; no public IP on private-only nodes; deterministic Talos bootstrap endpoints; talosconfig uses management_endpoint; stable Kubernetes endpoint; provider output parity
 
-**C. platform/ extraction (§8/§12) — libvirt first, then azure/ovh**
-- [ ] Move `talos-cluster` module → `platform/talos/`
-- [ ] Move `cloudinit-renderer` module → `platform/{k3s,rke2}/` (split per type)
-- [ ] Move `ansible-artifacts` module → `platform/{artifacts,inventory}/`
-- [ ] Move `ssh-keys` module → `platform/artifacts/`
-- [ ] Move `providers/shared/cloud-init/$type/` → `platform/`
-- [ ] Add `platform/validation/` for post-deploy checks (moved from `checks.tf`-style logic)
-- [ ] After each move: `tofu validate` on all 3 providers + libvirt live re-deploy + commit
+**C. platform/ extraction (§8/§12)**
+- [x] Move `talos-cluster` module → `platform/talos/`
+- [x] Move `cloudinit-renderer` module + `cloud-init/$type/` templates → `platform/cloud-init/` (single renderer, co-located templates — no per-type module split)
+- [x] Move `ansible-artifacts` + `ssh-keys` modules → `platform/artifacts/`
+- [x] Move `inventory/hosts.tpl` → `platform/inventory/`
+- [x] Move shared playbooks → `platform/ansible/`
+- [x] Update all provider `source =` refs, `network_config.cfg.tftpl` paths, tests/contracts refs; `tofu validate` on all 3 providers + `just test` 10/10
+- [ ] Add `platform/validation/` for post-deploy checks (moved from `checks.tf`-style logic) — deferred: `checks.tf` is OVH-specific deploy-time validation, no shared logic to extract yet
+- [ ] Libvirt live re-deploy smoke test once a workspace has live state
 
 **D. Docs sync**
 - [ ] Update `docs/architecture.md` "current state" notes (§5/§8/§10/§11/§12) — remove target-shape flags as work lands

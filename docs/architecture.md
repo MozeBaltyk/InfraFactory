@@ -231,7 +231,7 @@ nodes = {
 In the current implementation the normalized model is exposed through the
 `cluster_nodes` output (`controller_ips`, `worker_ips`, `vm_ips`,
 `public_ips`, `private_ips`) plus the shared node objects consumed by
-`providers/shared/modules/`.
+`platform/`.
 
 Provider-specific resources MUST NOT be required by downstream cluster
 modules when the normalized model can represent the required information.
@@ -440,10 +440,11 @@ Cluster modules answer:
 > How is Kubernetes installed and operated on those nodes?
 
 Current state: shared modules live under
-`providers/shared/modules/` (`ssh-keys`, `cloudinit-renderer`,
-`ansible-artifacts`, `talos-cluster`); shared cloud-init under
-`providers/shared/cloud-init/`; shared inventory template under
-`providers/shared/inventory/hosts.tpl`.
+`platform/` (`ssh-keys`, `ansible-artifacts` under `platform/artifacts/`,
+`cloudinit-renderer` under `platform/cloud-init/`, `talos-cluster` under
+`platform/talos/`); shared cloud-init templates co-located with the renderer
+under `platform/cloud-init/`; shared inventory template under
+`platform/inventory/hosts.tpl`; shared playbooks under `platform/ansible/`.
 
 ---
 

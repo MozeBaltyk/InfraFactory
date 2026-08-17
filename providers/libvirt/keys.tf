@@ -3,7 +3,7 @@
 ###
 
 module "ssh_keys" {
-  source = "../shared/modules/ssh-keys"
+  source = "../../platform/artifacts/ssh-keys"
 
   env_path              = local.env_path
   write_local_artifacts = local.write_local_artifacts && !local.is_talos

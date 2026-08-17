@@ -13,7 +13,7 @@ locals {
 
 module "ansible" {
   count  = local.is_talos ? 0 : 1
-  source = "../shared/modules/ansible-artifacts"
+  source = "../../platform/artifacts/ansible-artifacts"
 
   env_path            = local.env_path
   cluster_id          = var.cluster.id

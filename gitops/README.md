@@ -6,7 +6,7 @@ It installs Flux, Flux Operator, and tofu-controller into an existing Kubernetes
 
 This is separate from VM/node bootstrap:
 
-- `providers/shared/cloud-init/` initializes VMs and installs `default`, `k3s`, or `rke2` node software.
+- `platform/cloud-init/` initializes VMs and installs `default`, `k3s`, or `rke2` node software.
 - `gitops/` initializes and operates the Kubernetes-side automation that runs OpenTofu through Flux/tofu-controller.
 
 Use this layer when you want Git to be the control plane for infrastructure changes instead of running the root `just deploy` workflow locally.

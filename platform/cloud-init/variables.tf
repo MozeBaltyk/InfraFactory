@@ -1,7 +1,8 @@
 ###
 ### Cloud-init renderer: renders the shared cloud-init user-data for every VM.
 ###
-### Renders the shared `providers/shared/cloud-init/<selected>/cloud_init.cfg.tftpl`
+### Renders the shared `cloud-init/<selected>/cloud_init.cfg.tftpl` template
+### (co-located under `platform/cloud-init/`).
 ### template once per VM. Provider-specific inputs (IPs, TLS SANs, first-master
 ### detection) are computed by the caller and passed in via `vms`; the shared
 ### cluster/package/token surface is passed as module inputs.

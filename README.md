@@ -304,7 +304,7 @@ InfraFactory/
 
 The `gitops/` directory is the optional Kubernetes-side management layer for InfraFactory.
 
-It deploys Flux and tofu-controller into an existing management cluster, then reconciles selected provider/environment OpenTofu stacks from Git. Provider implementation still lives in `providers/`, manual deployment inputs and local artifacts still live in `env/`, and VM/node bootstrap still comes from `providers/shared/cloud-init/`.
+It deploys Flux and tofu-controller into an existing management cluster, then reconciles selected provider/environment OpenTofu stacks from Git. Provider implementation still lives in `providers/`, manual deployment inputs and local artifacts still live in `env/`, and VM/node bootstrap still comes from `platform/cloud-init/`.
 
 Use this layer when you want InfraFactory deployments to be managed by Flux/tofu-controller instead of running `just deploy` locally from the root provider workflow.
 
@@ -349,7 +349,7 @@ In this context, GitOps bootstrap is different from cloud-init bootstrap:
 **Deployment Flow:**
 - You select `cloud_init_selected = "<value>"` in your `.tfvars` where `<value>` can be `[default|k3s|rke2]`
 - For VM-only deployments, use `cloud_init_selected = "default"`, `masters.count = 0`, `workers.count = 0`, and `infra.vms.count > 0`
-- OpenTofu uses the `providers/shared/cloud-init/<value>/` templates
+- OpenTofu uses the `platform/cloud-init/<value>/` templates
 - These templates are mounted on each VM at boot when that role's `user_data_enabled` is true
 - For Kubernetes deployments, Ansible runs post-deployment steps (bounded cloud-init check with a 600-second wait, TLS SAN reconciliation, kubeconfig fetch)
 - You can access kubeconfig right after `just deploy` completes for Kubernetes deployments with enabled master user data

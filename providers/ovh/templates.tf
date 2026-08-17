@@ -7,7 +7,7 @@ locals {
 
 # Render shared cloud-init user-data for all nodes
 module "cloudinit" {
-  source = "../shared/modules/cloudinit-renderer"
+  source = "../../platform/cloud-init"
 
   cloud_init_selected     = var.cluster.cloud_init_selected
   node_username           = var.cluster.username
@@ -55,7 +55,7 @@ locals {
   ovh_private_netplan = {
     for name, vm in local.all_vms_map :
     name => templatefile(
-      "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
+      "${path.module}/../../platform/cloud-init/${var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
       {
         # OVH exposes public+private VMs as ens3(public)+ens4(private).
         # Private-only VMs expose the private network as their first NIC: ens3.

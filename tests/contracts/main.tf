@@ -216,7 +216,7 @@ variable "rke2_token" {
 ### Modules under test
 
 module "ssh_keys" {
-  source = "../../providers/shared/modules/ssh-keys"
+  source = "../../platform/artifacts/ssh-keys"
 
   env_path              = var.env_path
   write_local_artifacts = var.write_local_artifacts
@@ -227,7 +227,7 @@ module "ssh_keys" {
 }
 
 module "ansible_artifacts" {
-  source = "../../providers/shared/modules/ansible-artifacts"
+  source = "../../platform/artifacts/ansible-artifacts"
 
   env_path                = var.env_path
   cluster_id              = var.cluster_id
@@ -247,7 +247,7 @@ module "ansible_artifacts" {
 }
 
 module "cloudinit_renderer" {
-  source = "../../providers/shared/modules/cloudinit-renderer"
+  source = "../../platform/cloud-init"
 
   cloud_init_selected     = var.cloud_init_selected
   node_username           = var.node_username

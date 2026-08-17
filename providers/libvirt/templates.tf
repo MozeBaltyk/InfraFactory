@@ -1,6 +1,6 @@
 # Use CloudInit ISO to add SSH key to the instances (skipped for Talos: nodes boot to maintenance mode)
 module "cloudinit" {
-  source = "../shared/modules/cloudinit-renderer"
+  source = "../../platform/cloud-init"
 
   cloud_init_selected = var.cluster.cloud_init_selected
   node_username       = var.cluster.username
@@ -39,7 +39,7 @@ resource "libvirt_cloudinit_disk" "commoninit" {
   user_data = each.value.user_data_enabled ? module.cloudinit.rendered[each.value.name] : null
 
   network_config = templatefile(
-    "${path.module}/../shared/cloud-init/${each.value.role == "vm" ? "default" : var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
+    "${path.module}/../../platform/cloud-init/${each.value.role == "vm" ? "default" : var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
     {
       # Primary NIC on Libvirt cloud images
       interface_id         = "primary"

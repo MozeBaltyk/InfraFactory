@@ -87,7 +87,7 @@ resource "terraform_data" "validate_bastion" {
 
 module "bastion_cloudinit" {
   count  = local.lb_ssh_jump_enabled ? 1 : 0
-  source = "../shared/modules/cloudinit-renderer"
+  source = "../../platform/cloud-init"
 
   cloud_init_selected     = "default"
   node_username           = var.cluster.username
@@ -115,7 +115,7 @@ module "bastion_cloudinit" {
 
 locals {
   bastion_private_netplan = local.lb_ssh_jump_enabled ? templatefile(
-    "${path.module}/../shared/cloud-init/default/network_config.cfg.tftpl",
+    "${path.module}/../../platform/cloud-init/default/network_config.cfg.tftpl",
     {
       interface_id         = "ens4"
       interface_match_name = "ens4"

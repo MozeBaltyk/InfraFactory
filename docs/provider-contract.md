@@ -37,15 +37,14 @@ Provider-specific files, present only where the capability exists:
 Shared assets outside the provider directories:
 
 ```text
-providers/shared/
+platform/
 ├── ansible/                    # shared playbooks (check_cloudinit, reconcile_tls, fetch_kubeconfig)
-├── cloud-init/$type/           # cloud_init.cfg + network_config templates
+├── cloud-init/                 # cloudinit-renderer module + cloud_init.cfg/network_config templates per type (default/k3s/rke2)
 ├── inventory/hosts.tpl         # common inventory template → hosts.ini
-└── modules/
-    ├── ssh-keys/
-    ├── cloudinit-renderer/
-    ├── ansible-artifacts/
-    └── talos-cluster/
+├── artifacts/
+│   ├── ssh-keys/               # keypair + token module
+│   └── ansible-artifacts/      # inventory + ansible.cfg rendering module
+└── talos/                      # talos-cluster module
 ```
 
 Provider-specific behavior must be added to the provider directory, not by
@@ -74,7 +73,7 @@ forking shared assets.
 
 - Selectable variant via `cluster.cloud_init_selected`: `default`, `k3s`,
   `rke2`; Talos replaces cloud-init/Ansible where supported (libvirt).
-- Cloud-init sources MUST reference `providers/shared/cloud-init/$type/`.
+- Cloud-init sources MUST reference `platform/cloud-init/$type/`.
 - Inject username + SSH public key.
 - Optional OS upgrade control via `cluster.package_upgrade_enabled`.
 - Per-role `user_data_enabled`; when disabled, no cloud-init is injected for
@@ -87,7 +86,7 @@ forking shared assets.
 
 ### Ansible Integration
 
-- Inventory output compatible with `providers/shared/inventory/hosts.tpl`.
+- Inventory output compatible with `platform/inventory/hosts.tpl`.
 - Inventory contains shared `CONTROLLERS`, `WORKERS`, and `VMS` groups.
 - Generate `ansible.cfg` with remote user, inventory path, private key.
 - Kubernetes post-deployment playbooks (shared, gated by cloud-init mode and
