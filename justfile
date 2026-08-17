@@ -26,6 +26,10 @@ env:
 validate:
     @ENV={{ quote(ENV) }} just "$(just _provider-module)::validate"
 
+# Run shared-module contract tests (tests/contracts)
+test:
+    @tofu -chdir=tests/contracts test
+
 # Plan on Provider specified in PROVIDER env variable (default: KVM). Pass NAME to target one VM.
 plan NAME='':
     @ENV={{ quote(ENV) }} just "$(just _provider-module)::plan" {{ quote(NAME) }}

@@ -93,7 +93,7 @@ write_files:
         - rke2-metrics-server
 %{ endif ~}
 %{ endif ~}
-%{ if rke2_kube_proxy_enabled != null && !rke2_kube_proxy_enabled && rke2_cni == "cilium" ~}
+%{ if rke2_kube_proxy_enabled == false && rke2_cni == "cilium" ~}
       disable-kube-proxy: true
 %{ endif ~}
 
@@ -109,7 +109,7 @@ write_files:
         namespace: kube-system
       spec:
         valuesContent: |-
-%{ if rke2_kube_proxy_enabled != null && !rke2_kube_proxy_enabled ~}
+%{ if rke2_kube_proxy_enabled == false ~}
           kubeProxyReplacement: true
           k8sServiceHost: "localhost"
           k8sServicePort: "6443"
