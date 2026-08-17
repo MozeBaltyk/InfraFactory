@@ -32,6 +32,19 @@ output "cluster_nodes" {
 
     public_kube_api_endpoint = local.public_kube_api_endpoint
     ssh_first_master         = local.first_master_name != null ? "ssh -o StrictHostKeyChecking=no -i env/${var.infra_provider}/${terraform.workspace}/.key.private ${var.cluster.username}@${azurerm_public_ip.vm-pip[local.first_master_name].ip_address}" : null
+
+    # Full §5 node objects: name/role/private/public/operator_address/bootstrap_endpoint.
+    nodes = {
+      for vm in concat(local.master_details, local.worker_details, local.vm_details) :
+      vm.name => {
+        name               = vm.name
+        role               = vm.role
+        private_ip         = azurerm_network_interface.vm-interface[vm.name].private_ip_address
+        public_ip          = azurerm_public_ip.vm-pip[vm.name].ip_address
+        operator_address   = azurerm_public_ip.vm-pip[vm.name].ip_address
+        bootstrap_endpoint = azurerm_public_ip.vm-pip[vm.name].ip_address
+      }
+    }
   }
 }
 

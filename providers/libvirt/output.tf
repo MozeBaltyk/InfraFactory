@@ -124,6 +124,18 @@ output "cluster_nodes" {
       all         = [for vm_name, vm in local.all_vms_map : local.vm_operator_endpoints[vm_name]]
     }
 
+    # Full §5 node objects: name/role/private/public/operator_address/bootstrap_endpoint.
+    nodes = {
+      for vm_name, vm in local.all_vms_map :
+      vm_name => {
+        name               = vm_name
+        role               = vm.role
+        private_ip         = coalesce(try(local.vm_ipv4_addresses[vm_name][0], null), vm.ip)
+        public_ip          = null
+        operator_address   = local.vm_operator_endpoints[vm_name]
+        bootstrap_endpoint = local.vm_operator_endpoints[vm_name]
+      }
+    }
 
     ssh_first_master = local.write_local_artifacts && !local.is_talos && local.first_master_name != null ? "ssh -o StrictHostKeyChecking=no -i env/${var.infra_provider}/${terraform.workspace}/.key.private ${var.cluster.username}@${local.vm_operator_endpoints[local.first_master_name]}" : null
   }

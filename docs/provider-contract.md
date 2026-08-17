@@ -101,7 +101,9 @@ forking shared assets.
 ### Outputs
 
 - `cluster_nodes` — normalized connection data:
-  `controller_ips`, `worker_ips`, `vm_ips`, `public_ips`, `private_ips`.
+  `controller_ips`, `worker_ips`, `vm_ips`, `public_ips`, `private_ips`,
+  plus `nodes` — full §5 node objects per VM:
+  `name`/`role`/`private_ip`/`public_ip`/`operator_address`/`bootstrap_endpoint`.
 - `kubeconfig_command` — command to use the generated kubeconfig when
   Kubernetes is enabled.
 - Kubernetes API endpoint output or nested detail where supported.

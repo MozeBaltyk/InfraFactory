@@ -28,6 +28,19 @@ output "cluster_nodes" {
       ),
       "waiting for IP assignment..."
     ) : null
+
+    # Full §5 node objects: name/role/private/public/operator_address/bootstrap_endpoint.
+    nodes = {
+      for vm in concat(local.master_details, local.worker_details, local.vm_details) :
+      vm.name => {
+        name               = vm.name
+        role               = vm.role
+        private_ip         = vm.private_ip
+        public_ip          = local.vm_public_ipv4_addresses[vm.name]
+        operator_address   = local.lb_ssh_jump_enabled ? vm.private_ip : local.vm_public_ipv4_addresses[vm.name]
+        bootstrap_endpoint = local.lb_ssh_jump_enabled ? vm.private_ip : local.vm_public_ipv4_addresses[vm.name]
+      }
+    }
   }
 
   depends_on = [ovh_cloud_project_instance.vms]

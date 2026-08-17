@@ -110,14 +110,14 @@ Azure has been realigned with the recent OVH/Libvirt baseline for standalone `in
 Docs: `docs/architecture.md` §8/§10/§11/§12. Target structure: `platform/{talos,k3s,rke2,artifacts,inventory,validation}/` + `tests/{contracts,libvirt,azure,ovh}/` + full endpoint outputs on all providers.
 
 **A. Contract outputs (§10)**
-- [ ] Add missing endpoint outputs to all 3 providers: `bootstrap_endpoints`, `management_endpoint`, `kubernetes_endpoint` (null when N/A)
-- [ ] Extend `cluster_nodes` to full node objects per §5 (name/role/private/public/operator_address/endpoints)
-- [ ] Contract assertion: output shape identical across providers
+- [x] Add missing endpoint outputs to all 3 providers: `bootstrap_endpoints`, `management_endpoint`, `kubernetes_endpoint` (null when N/A)
+- [x] Extend `cluster_nodes` to full node objects per §5 (name/role/private/public/operator_address/endpoints)
+- [ ] Contract assertion: output shape identical across providers (structural parity in place; automated parity check pending live-provider tests in B)
 
 **B. Contract tests (§11)**
-- [ ] Create `tests/contracts/` with `tofu test` (OpenTofu v1.6.2 supports it)
+- [x] Create `tests/contracts/` with `tofu test` (OpenTofu v1.6.2 supports it)
+- [x] Wire `tofu test` into a new `just test`
 - [ ] Invariant tests: normalized node shape; artifacts under `env/`; no public IP on private-only nodes; deterministic Talos bootstrap endpoints; talosconfig uses management_endpoint; stable Kubernetes endpoint; provider output parity
-- [ ] Wire `tofu test` into `just validate` or a new `just test`
 
 **C. platform/ extraction (§8/§12) — libvirt first, then azure/ovh**
 - [ ] Move `talos-cluster` module → `platform/talos/`
