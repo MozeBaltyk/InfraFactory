@@ -82,21 +82,23 @@ variable "cluster" {
   description = "Cluster topology"
 
   type = object({
-    id                  = string
-    domain              = string
-    timezone            = string
-    region              = string
-    username            = string
-    cloud_init_selected = string
+    id                      = string
+    domain                  = string
+    timezone                = string
+    region                  = string
+    username                = string
+    cloud_init_selected     = string
+    package_upgrade_enabled = optional(bool, true)
   })
 
   default = {
-    id                  = "factory"
-    domain              = "lab"
-    timezone            = "Europe/Paris"
-    region              = "westeurope"
-    username            = "localadmin"
-    cloud_init_selected = "k3s"
+    id                      = "factory"
+    domain                  = "lab"
+    timezone                = "Europe/Paris"
+    region                  = "westeurope"
+    username                = "localadmin"
+    cloud_init_selected     = "k3s"
+    package_upgrade_enabled = true
   }
 }
 
@@ -108,9 +110,10 @@ variable "infra" {
 
   type = object({
     masters = object({
-      count         = number
-      instance_size = optional(string, "Standard_D2s_v5")
-      disk_size     = optional(number, 40)
+      count             = number
+      instance_size     = optional(string, "Standard_D2s_v5")
+      disk_size         = optional(number, 40)
+      user_data_enabled = optional(bool, true)
       extra_disks = optional(list(object({
         size_gb    = number
         mount_path = string
@@ -120,9 +123,10 @@ variable "infra" {
     })
 
     workers = object({
-      count         = number
-      instance_size = optional(string, "Standard_D2s_v5")
-      disk_size     = optional(number, 40)
+      count             = number
+      instance_size     = optional(string, "Standard_D2s_v5")
+      disk_size         = optional(number, 40)
+      user_data_enabled = optional(bool, true)
       extra_disks = optional(list(object({
         size_gb    = number
         mount_path = string
@@ -130,6 +134,19 @@ variable "infra" {
         label      = string
       })), [])
     })
+
+    vms = optional(object({
+      count             = number
+      instance_size     = optional(string, "Standard_D2s_v5")
+      disk_size         = optional(number, 40)
+      user_data_enabled = optional(bool, true)
+      extra_disks = optional(list(object({
+        size_gb    = number
+        mount_path = string
+        filesystem = optional(string, "ext4")
+        label      = string
+      })), [])
+    }), { count = 0 })
   })
 
   default = {
@@ -139,6 +156,14 @@ variable "infra" {
     workers = {
       count = 0
     }
+    vms = {
+      count = 0
+    }
+  }
+
+  validation {
+    condition     = var.infra.masters.count >= 1 || var.infra.workers.count == 0
+    error_message = "Azure workers require at least one master node. Use infra.vms for VM-only deployments."
   }
 }
 
@@ -166,7 +191,7 @@ data "http" "my_ip" {
 }
 
 locals {
-  env_root = "${path.module}/../../env"
+  env_root = abspath("${path.module}/../../env")
   env_path = "${local.env_root}/${var.infra_provider}/${terraform.workspace}"
 
   my_public_ip = "${chomp(trimspace(data.http.my_ip.response_body))}/32"
@@ -179,21 +204,34 @@ locals {
 
   master_details = [
     for i in range(var.infra.masters.count) : {
-      name          = format("${local.os.hostname_prefix}-m%02d", i + 1)
-      role          = "master"
-      instance_size = var.infra.masters.instance_size
-      disk_size     = var.infra.masters.disk_size
-      extra_disks   = try(var.infra.masters.extra_disks, [])
+      name              = format("${local.os.hostname_prefix}-m%02d", i + 1)
+      role              = "master"
+      instance_size     = var.infra.masters.instance_size
+      disk_size         = var.infra.masters.disk_size
+      extra_disks       = try(var.infra.masters.extra_disks, [])
+      user_data_enabled = var.infra.masters.user_data_enabled
     }
   ]
 
   worker_details = [
     for i in range(var.infra.workers.count) : {
-      name          = format("${local.os.hostname_prefix}-w%02d", i + 1)
-      role          = "worker"
-      instance_size = var.infra.workers.instance_size
-      disk_size     = var.infra.workers.disk_size
-      extra_disks   = try(var.infra.workers.extra_disks, [])
+      name              = format("${local.os.hostname_prefix}-w%02d", i + 1)
+      role              = "worker"
+      instance_size     = var.infra.workers.instance_size
+      disk_size         = var.infra.workers.disk_size
+      extra_disks       = try(var.infra.workers.extra_disks, [])
+      user_data_enabled = var.infra.workers.user_data_enabled
+    }
+  ]
+
+  vm_details = [
+    for i in range(var.infra.vms.count) : {
+      name              = format("${local.os.hostname_prefix}-v%02d", i + 1)
+      role              = "vm"
+      instance_size     = var.infra.vms.instance_size
+      disk_size         = var.infra.vms.disk_size
+      extra_disks       = try(var.infra.vms.extra_disks, [])
+      user_data_enabled = var.infra.vms.user_data_enabled
     }
   ]
 
@@ -206,14 +244,18 @@ locals {
     for vm in local.worker_details : vm.name => vm
   }
 
-  all_vms_map = merge(local.masters_map, local.workers_map)
+  vms_map = {
+    for vm in local.vm_details : vm.name => vm
+  }
+
+  all_vms_map = merge(local.masters_map, local.workers_map, local.vms_map)
 
   # Get the first master
-  first_master_name = local.master_details[0].name
+  first_master_name = try(local.master_details[0].name, null)
 
   # Flattened list of extra disks with VM name and index for easier resource creation
   vm_disks = {
-    for vm in concat(local.master_details, local.worker_details) :
+    for vm in concat(local.master_details, local.worker_details, local.vm_details) :
     vm.name => [
       for i, disk in vm.extra_disks : {
         index      = i

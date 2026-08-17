@@ -4,8 +4,9 @@ cluster = {
   timezone            = "Europe/Paris"
   username            = "localadmin"
   node_name_format    = "serial" # serial => factory-node01, role => factory-m01/factory-w01
-  cloud_init_selected = "k3s"
+  cloud_init_selected = "k3s" # k3s or rke2 or talos
   factory_root_path   = "/srv"
+  package_upgrade_enabled = "false" # Optional
 }
 
 infra = {
@@ -14,6 +15,7 @@ infra = {
     cpu           = 2
     disk_size     = 10
     memory_gb     = 4
+    #user_data_enabled = true # Optional
     #mac_addresses = []  # Optionnal 
     #ip_addresses = []   # Optionnal 
     #extra_disks = [
@@ -26,9 +28,19 @@ infra = {
     cpu           = 2
     disk_size     = 10
     memory_gb     = 4
+    #user_data_enabled = true # Optional
     #mac_addresses = []  # Optionnal 
     #ip_addresses = []   # Optionnal 
     #extra_disks = []    # Optionnal 
+  }
+  vms = {
+    count         = 0
+    cpu           = 2
+    disk_size     = 10
+    memory_gb     = 4
+    #user_data_enabled = true # Optional; standalone VMs always use shared default cloud-init
+    #mac_addresses = []  # Optionnal
+    #ip_addresses = []   # Optionnal
   }
 }
 
@@ -48,14 +60,15 @@ network = {
 
 # Bridge with static example
 #network = {
-#  ip_type = "static"
-#  gateway = "192.168.122.1"
-#  mode    = "bridge"
+#  ip_type     = "static"
+#  cidr        = "192.168.122.0/24"  # Required for static mode (needed for netplan prefix length)
+#  gateway     = "192.168.122.1"
+#  mode        = "bridge"
 #  bridge_name = "br0"
 #}
 
 os = {
-  selected = "ubuntu24"
+  selected = "ubuntu24" # or talos
 }
 
 # Libvirt connexion
@@ -82,6 +95,7 @@ os = {
 # if cloud_init_selected=k3s
 #k3s = {
 #  version           = "v1.34.5+k3s1" # Optional
+#  data_dir          = "/data/k3s"    # Optional; mount an extra disk there first if desired
 #  token             = "shared-token" # Optional
 #  tls_sans          = ["dns1", "ip1"] # Optional
 #  etcd_enabled      = true           # Optional
@@ -94,13 +108,52 @@ os = {
 
 # if cloud_init_selected=rke2
 #rke2 = {
-#  version        = "v1.35.1+rke2r1"  # Optional
-#  token          = "shared-token"    # Optional
-#  tls_sans       = ["dns1", "ip1"]   # Optional
-#  etcd_enabled   = true              # Optional
-#  ingress_nginx_enabled  = true      # Optional
-#  metrics_server_enabled = true      # Optional
+#  version                = "v1.35.4+rke2r1"  # Optional
+#  data_dir               = "/data/rke2"      # Optional; mount an extra disk there first if desired
+#  token                  = "shared-token"    # Optional
+#  tls_sans               = ["dns1", "ip1"]   # Optional
+#  etcd_enabled           = true              # Optional
+#  ingress_nginx_enabled  = true              # Optional
+#  metrics_server_enabled = true              # Optional
+#  cni                    = "cilium"          # Optional: "calico", "canal", "cilium", "none" (null = RKE2 default)
+#  ingress_type           = "traefik"         # Optional: "ingress-nginx", "traefik", "cilium", "none" (null = RKE2 default)
+#  kube_proxy_enabled     = true              # Optional (default: true; required false when cilium.l2announcements.enabled=true)
+#  cilium = {
+#    hubble_enabled    = true                 # Optional: Hubble observability (default: false, only with cni="cilium")
+#    operator_replicas = 1                    # Optional: Cilium operator replicas when kube_proxy_enabled=false
+#    l2announcements = {
+#      enabled           = false              # Optional: requires cni="cilium" and kube_proxy_enabled=false when true
+#      lb_pool_start     = "192.168.100.200" # Required when enabled=true
+#      lb_pool_end       = "192.168.100.220" # Required when enabled=true
+#      network_interface = "ens3"            # Required when enabled=true
+#    }
+#  }
 #}
+
+# if os.selected = "talos" and cloud_init_selected="talos"
+#talos = {
+#  version                              = "v1.13.7" # Optional
+#  kubernetes_version                   = "v1.36.0" # Optional
+#  schematic_id                         = "3765679..." # Optional; vanilla Talos by default (see providers/libvirt/vars_extra.tf)
+#  cni                                  = "flannel" # Optional: "flannel", "none" (null = Talos default)
+#  allow_scheduling_on_control_planes   = false # Optional
+#  controlplane_config_patches          = [] # Optional; YAML strings applied only to control-plane nodes
+#  worker_config_patches                = [] # Optional; YAML strings applied only to worker nodes
+### config_patches                      = [] # Optional; YAML strings applied to every Talos node
+#  config_patches = [
+#     <<-EOT
+#     apiVersion: v1alpha1
+#     kind: TimeSyncConfig
+#     ntp:
+#       servers:
+#         - time.cloudflare.com
+#         - pool.ntp.org
+#     EOT
+#   ]
+####
+#}
+# Talos extra disks use infra.masters.extra_disks / infra.workers.extra_disks too,
+# but Talos mounts them as UserVolumeConfig at /var/mnt/<label>; mount_path is ignored.
 
 #ansible = {
 #  pull = {

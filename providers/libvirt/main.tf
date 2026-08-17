@@ -5,14 +5,62 @@ resource "libvirt_pool" "factory_pool" {
   path = local.factory_pool_path
 }
 
+# Safeguard: libvirt provider may leave an existing dir pool inactive on refresh.
+resource "null_resource" "pool_start" {
+  triggers = {
+    pool = libvirt_pool.factory_pool.name
+    uri  = local.libvirt_uri
+  }
+
+  provisioner "local-exec" {
+    command = <<EOT
+if ! virsh --connect "${local.libvirt_uri}" pool-info "${libvirt_pool.factory_pool.name}" | grep -q "State:.*running"; then
+  virsh --connect "${local.libvirt_uri}" pool-start "${libvirt_pool.factory_pool.name}"
+fi
+EOT
+  }
+}
+
 ### Disks
+
+# Talos image is a raw .xz: download, decompress and convert to qcow2.
+# The cache lives outside the libvirt pool: libvirtd creates the pool dir as root,
+# so the tofu user could not write the downloaded image into it.
+locals {
+  talos_image_cache = "${path.module}/../../.cache/talos"
+}
+
+resource "null_resource" "talos_image" {
+  count = local.is_talos ? 1 : 0
+
+  triggers = {
+    url  = data.talos_image_factory_urls.this[0].urls.disk_image
+    path = local.talos_image_cache
+  }
+
+  provisioner "local-exec" {
+    command = <<EOT
+mkdir -p ${local.talos_image_cache}
+DST=${local.talos_image_cache}/talos-metal-${var.talos.version}.qcow2
+SRC=${local.talos_image_cache}/talos-metal-${var.talos.version}.raw
+[ -f "$DST" ] || {
+  curl -fsSLo "${local.talos_image_cache}/talos-metal-${var.talos.version}.raw.zst" ${data.talos_image_factory_urls.this[0].urls.disk_image} \
+    && zstd -df "${local.talos_image_cache}/talos-metal-${var.talos.version}.raw.zst" \
+    && qemu-img convert -f raw -O qcow2 "$SRC" "$DST" \
+    && rm -f "$SRC"
+}
+EOT
+  }
+}
 
 # Fetch the OS image
 resource "libvirt_volume" "os_image" {
   name   = "${local.os.os_name}${local.os.os_version_short}-os_image"
   pool   = libvirt_pool.factory_pool.name
-  source = local.os.os_URL
+  source = local.is_talos ? "${local.talos_image_cache}/talos-metal-${var.talos.version}.qcow2" : local.os.os_URL
   format = "qcow2"
+
+  depends_on = [null_resource.pool_start, null_resource.talos_image]
 }
 
 resource "libvirt_volume" "resized_os_image" {
@@ -33,6 +81,8 @@ resource "libvirt_volume" "extra_disks" {
   name = "${each.value.vm_name}-disk0${each.value.index + 2}.qcow2"
   pool = libvirt_pool.factory_pool.name
   size = each.value.size_gb * 1024 * 1024 * 1024
+
+  depends_on = [libvirt_volume.os_image]
 }
 
 ### Network
@@ -43,7 +93,8 @@ resource "null_resource" "network_validation" {
         var.network.ip_type == "dhcp" ||
         (
           length(var.infra.masters.ip_addresses) >= var.infra.masters.count &&
-          length(var.infra.workers.ip_addresses) >= var.infra.workers.count
+          length(var.infra.workers.ip_addresses) >= var.infra.workers.count &&
+          length(var.infra.vms.ip_addresses) >= var.infra.vms.count
         )
       )
       error_message = "Static IP mode requires enough IP addresses for all VMs."
@@ -84,7 +135,7 @@ resource "libvirt_domain" "vms" {
   vcpu   = each.value.cpu
 
   autostart  = true
-  qemu_agent = true
+  qemu_agent = false # ponytail: no guest agent in Talos/k3s images; lease source covers NAT/dhcp
 
   disk {
     volume_id = libvirt_volume.resized_os_image[each.key].id
@@ -108,9 +159,9 @@ resource "libvirt_domain" "vms" {
     mac            = each.value.mac
   }
 
-  cloudinit = libvirt_cloudinit_disk.commoninit[each.key].id
+  cloudinit = local.is_talos ? null : libvirt_cloudinit_disk.commoninit[each.key].id
 
-  cpu = {
+  cpu {
     mode = "host-passthrough"
   }
 
@@ -124,28 +175,5 @@ resource "libvirt_domain" "vms" {
     type        = "vnc"
     listen_type = "address"
     autoport    = true
-  }
-
-  provisioner "remote-exec" {
-
-    inline = [
-      "echo 'Waiting for cloud-init to complete...'",
-      "cloud-init status --wait > /dev/null",
-      "echo 'Completed cloud-init!'"
-    ]
-
-    connection {
-      type = "ssh"
-      host = coalesce(
-        each.value.ip,
-        try(element([
-          for addr in self.network_interface[0].addresses :
-          addr if can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+$", addr))
-        ], 0), null),
-        local.vm_fqdns[each.key]
-      )
-      user        = var.cluster.username
-      private_key = tls_private_key.global_key.private_key_pem
-    }
   }
 }

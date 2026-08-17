@@ -1,26 +1,91 @@
-set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+set shell := ["bash", "-eu", "-o", "pipefail", "-c", "umask 077; exec bash -eu -o pipefail -c \"$1\"", "--"]
 
-ENV := env_var_or_default("ENV", "lab")
+ENV_RAW := env_var_or_default("ENV", "lab")
+ENV := if ENV_RAW =~ '^[A-Za-z0-9._-]+$' { ENV_RAW } else { error("ENV must be a nonempty workspace identifier containing only A-Za-z0-9._-") }
 ENV_TFVARS_PATH := "../../env/OVH/" + ENV + ".tfvars"
+
+[private]
+_source-openrc:
+    @for openrc in "${OPENRC:-}" {{ quote("../../env/OVH/" + ENV + ".openrc.local") }} {{ quote("../../env/OVH/" + ENV + ".openrc") }} ../../env/OVH/openrc.sh; do \
+        if test -n "$openrc" && test -f "$openrc"; then printf '%s\n' "$openrc"; exit 0; fi; \
+      done; \
+      exit 0
+
 [private]
 _workspace:
-    @tofu workspace select {{ ENV }} || tofu workspace new {{ ENV }}
+    @tofu workspace select {{ quote(ENV) }} || tofu workspace new {{ quote(ENV) }}
 
 validate:
     @tofu init -backend=false
     @tofu validate
 
-plan:
+plan NAME='':
     @tofu init
     @just _workspace
-    @tofu plan -var-file={{ ENV_TFVARS_PATH }}
+    @openrc="$(just _source-openrc)"; \
+      name={{ quote(NAME) }}; \
+      target_args=(); \
+      if test -n "$name"; then \
+        case "$name" in \
+          *[!A-Za-z0-9._-]*|'') echo "Invalid VM name: $name" >&2; exit 1 ;; \
+        esac; \
+        target_args=(-target="ovh_cloud_project_instance.vms[\"$name\"]"); \
+      fi; \
+      if test -z "${OS_AUTH_URL:-}${OS_CLOUD:-}" && test -n "$openrc"; then set -a; source "$openrc"; set +a; fi; \
+      tofu plan -var-file={{ quote(ENV_TFVARS_PATH) }} "${target_args[@]}"
 
-deploy:
+deploy NAME='':
     @tofu init
     @just _workspace
-    @tofu apply -auto-approve -var-file={{ ENV_TFVARS_PATH }}
+    @openrc="$(just _source-openrc)"; \
+      name={{ quote(NAME) }}; \
+      target_args=(); \
+      if test -n "$name"; then \
+        case "$name" in \
+          *[!A-Za-z0-9._-]*|'') echo "Invalid VM name: $name" >&2; exit 1 ;; \
+        esac; \
+        target_args=(-target="ovh_cloud_project_instance.vms[\"$name\"]"); \
+      fi; \
+      if test -z "${OS_AUTH_URL:-}${OS_CLOUD:-}" && test -n "$openrc"; then set -a; source "$openrc"; set +a; fi; \
+      tofu apply -auto-approve -var-file={{ quote(ENV_TFVARS_PATH) }} "${target_args[@]}"
 
-destroy:
+# Force rebuild one VM instance through the full dependency graph
+# NAME=bastion selects the dedicated jump host. Cluster node names resolve to
+# private_cluster in jump mode; all other names resolve to the normal vms map.
+replace NAME:
+    @openrc="$(just _source-openrc)"; \
+      name={{ quote(NAME) }}; \
+      case "$name" in \
+        *[!A-Za-z0-9._-]*|'') echo "Invalid VM name: $name" >&2; exit 1 ;; \
+      esac; \
+      tofu init; \
+      just _workspace; \
+      if test -z "${OS_AUTH_URL:-}${OS_CLOUD:-}" && test -n "$openrc"; then set -a; source "$openrc"; set +a; fi; \
+      topology="$(tofu console -var-file={{ quote(ENV_TFVARS_PATH) }} <<< 'jsonencode({ bastion_name = local.bastion_name, first_master_name = local.first_master_name, cluster_mode = var.cluster.cloud_init_selected, private_node_names = keys(local.private_cluster_vms_map) })' | jq -e 'fromjson')"; \
+      bastion_name="$(jq -r '.bastion_name' <<< "$topology")"; \
+      first_master_name="$(jq -r '.first_master_name // empty' <<< "$topology")"; \
+      cluster_mode="$(jq -r '.cluster_mode' <<< "$topology")"; \
+      if test "$name" = "$first_master_name" && { test "$cluster_mode" = k3s || test "$cluster_mode" = rke2; }; then \
+        echo "Refusing to replace bootstrap controller '$name' in $cluster_mode mode: automatic datastore rejoin is not implemented. Take and verify an etcd backup, then follow the documented backup/recovery procedure." >&2; \
+        exit 1; \
+      fi; \
+      if test "$name" = bastion || test "$name" = "$bastion_name"; then \
+        address='ovh_cloud_project_instance.bastion[0]'; \
+      elif jq -e --arg name "$name" '.private_node_names | index($name) != null' <<< "$topology" >/dev/null; then \
+        address="ovh_cloud_project_instance.private_cluster[\"$name\"]"; \
+      else \
+        address="ovh_cloud_project_instance.vms[\"$name\"]"; \
+      fi; \
+      tofu apply -var-file={{ quote(ENV_TFVARS_PATH) }} -replace="$address"
+
+# Destroy on the provider. Pass STALE=true to skip the refresh phase
+# (use when machines are broken/stale and refresh hangs on dead nodes).
+destroy STALE='':
     @tofu init
     @just _workspace
-    @tofu destroy -auto-approve -var-file={{ ENV_TFVARS_PATH }}; 
+    @stale={{ quote(STALE) }}; \
+      refresh_args=(); \
+      if test -n "$stale"; then refresh_args=(-refresh=false); fi; \
+      openrc="$(just _source-openrc)"; \
+      if test -z "${OS_AUTH_URL:-}${OS_CLOUD:-}" && test -n "$openrc"; then set -a; source "$openrc"; set +a; fi; \
+      tofu destroy -auto-approve "${refresh_args[@]}" -var-file={{ quote(ENV_TFVARS_PATH) }}

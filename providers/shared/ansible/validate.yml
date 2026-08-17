@@ -1,0 +1,223 @@
+---
+- name: Validate SSH connectivity to cluster nodes
+  hosts: K8S_CLUSTER
+  gather_facts: false
+  become: false
+
+  tasks:
+    - name: Wait for node SSH connectivity
+      ansible.builtin.wait_for_connection:
+        delay: 2
+        timeout: 120
+
+- name: Validate K3s or RKE2 cluster readiness
+  hosts: CONTROLLERS[0]
+  gather_facts: false
+  become: true
+
+  vars:
+    supported_cluster_types:
+      - k3s
+      - rke2
+    cluster_config_paths:
+      k3s: /etc/rancher/k3s/config.yaml
+      rke2: /etc/rancher/rke2/config.yaml
+    kubectl_commands:
+      k3s: /usr/local/bin/k3s kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml
+      rke2: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml
+
+  tasks:
+    - name: Validate cloud_init_selected when provided
+      ansible.builtin.assert:
+        that:
+          - cloud_init_selected in supported_cluster_types
+        fail_msg: "Unsupported cloud_init_selected: {{ cloud_init_selected }} (expected k3s or rke2)"
+      when: cloud_init_selected is defined
+
+    - name: Check for K3s configuration file
+      ansible.builtin.stat:
+        path: "{{ cluster_config_paths.k3s }}"
+      register: k3s_config
+      changed_when: false
+
+    - name: Check for RKE2 configuration file
+      ansible.builtin.stat:
+        path: "{{ cluster_config_paths.rke2 }}"
+      register: rke2_config
+      changed_when: false
+
+    - name: Build detected cluster type list
+      ansible.builtin.set_fact:
+        detected_cluster_types: >-
+          {{
+            ([] if not k3s_config.stat.exists else ['k3s'])
+            + ([] if not rke2_config.stat.exists else ['rke2'])
+          }}
+
+    - name: Ensure mixed cluster configuration files are not present
+      ansible.builtin.assert:
+        that:
+          - detected_cluster_types | length <= 1
+        fail_msg: >-
+          Found multiple cluster config files on the controller:
+          {{ detected_cluster_types | join(', ') }}
+
+    - name: Ensure exactly one cluster type can be detected when not provided
+      ansible.builtin.assert:
+        that:
+          - detected_cluster_types | length == 1
+        fail_msg: >-
+          Expected exactly one cluster config file, found {{ detected_cluster_types | length }}:
+          {{ detected_cluster_types | default([]) | join(', ') }}
+      when: cloud_init_selected is not defined
+
+    - name: Select cluster type
+      ansible.builtin.set_fact:
+        cluster_type: "{{ cloud_init_selected if cloud_init_selected is defined else detected_cluster_types[0] }}"
+
+    - name: Select kubectl command
+      ansible.builtin.set_fact:
+        kubectl_cmd: "{{ kubectl_commands[cluster_type] }}"
+
+    - name: Set expected inventory node count
+      ansible.builtin.set_fact:
+        expected_node_count: "{{ groups['K8S_CLUSTER'] | default([]) | unique | length }}"
+
+    - name: Ensure inventory contains cluster nodes
+      ansible.builtin.assert:
+        that:
+          - expected_node_count | int > 0
+        fail_msg: "Inventory group K8S_CLUSTER must contain at least one node."
+
+    - name: Ensure selected cluster configuration exists
+      ansible.builtin.assert:
+        that:
+          - >-
+            (cluster_type == 'k3s' and k3s_config.stat.exists)
+            or (cluster_type == 'rke2' and rke2_config.stat.exists)
+        fail_msg: "Selected cluster configuration file not found: {{ cluster_config_paths[cluster_type] }}"
+
+    - name: Wait for Kubernetes API to stabilize
+      ansible.builtin.command:
+        cmd: "{{ kubectl_cmd }} get --raw=/readyz"
+      register: api_ready
+      check_mode: false
+      retries: 36
+      delay: 5
+      until:
+        - api_ready.rc == 0
+        - api_ready.stdout is search('ok')
+      changed_when: false
+
+    - name: Wait for all inventory nodes to register in Kubernetes
+      ansible.builtin.command:
+        cmd: "{{ kubectl_cmd }} get nodes --no-headers"
+      register: registered_nodes
+      check_mode: false
+      retries: 30
+      delay: 10
+      failed_when: registered_nodes.rc != 0
+      until:
+        - registered_nodes.rc == 0
+        - registered_nodes.stdout_lines | length == (expected_node_count | int)
+      changed_when: false
+
+    - name: Wait for all registered nodes to become Ready
+      ansible.builtin.command:
+        cmd: "{{ kubectl_cmd }} wait --for=condition=Ready nodes --all --timeout=10s"
+      register: nodes_ready
+      check_mode: false
+      retries: 30
+      delay: 10
+      until: nodes_ready.rc == 0
+      changed_when: false
+
+    - name: Get nodes with their status
+      ansible.builtin.command:
+        cmd: "{{ kubectl_cmd }} get nodes -o json"
+      register: nodes_json
+      check_mode: false
+      changed_when: false
+
+    - name: Parse node data
+      ansible.builtin.set_fact:
+        nodes_list: "{{ (nodes_json.stdout | from_json)['items'] }}"
+        not_ready_nodes: []
+
+    - name: Ensure Kubernetes node count matches inventory
+      ansible.builtin.assert:
+        that:
+          - nodes_list | length == (expected_node_count | int)
+        fail_msg: >-
+          Kubernetes registered {{ nodes_list | length }} node(s), but inventory
+          K8S_CLUSTER contains {{ expected_node_count }} node(s).
+
+    - name: Check each node's Ready condition
+      ansible.builtin.set_fact:
+        not_ready_nodes: "{{ not_ready_nodes + [item.metadata.name] }}"
+      loop: "{{ nodes_list }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+      when: item.status.conditions | selectattr('type', 'equalto', 'Ready') | map(attribute='status') | first != 'True'
+
+    - name: Fail if any node is NotReady
+      ansible.builtin.fail:
+        msg: "The following nodes are NotReady: {{ not_ready_nodes | join(', ') }}"
+      when: not_ready_nodes | length > 0
+
+    - name: Wait for kube-system pods to become Ready or Succeeded
+      ansible.builtin.command:
+        cmd: "{{ kubectl_cmd }} wait --for=condition=Ready pods --all --field-selector=status.phase!=Succeeded -n kube-system --timeout=10s"
+      register: system_pods_ready
+      check_mode: false
+      retries: 30
+      delay: 10
+      until: system_pods_ready.rc == 0
+      changed_when: false
+
+    - name: Get system pods as JSON
+      ansible.builtin.command:
+        cmd: "{{ kubectl_cmd }} get pods -n kube-system -o json"
+      register: pods_json
+      check_mode: false
+      changed_when: false
+
+    - name: Parse pod list
+      ansible.builtin.set_fact:
+        pod_list: "{{ (pods_json.stdout | from_json)['items'] }}"
+        unhealthy_pods: []
+
+    - name: Collect unhealthy pods
+      ansible.builtin.set_fact:
+        unhealthy_pods: "{{ unhealthy_pods + [item.metadata.namespace ~ '/' ~ item.metadata.name ~ ' (' ~ item.status.phase ~ ')'] }}"
+      loop: "{{ pod_list }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+      when: >
+        item.status.phase != 'Succeeded'
+        and
+        (
+          item.status.phase != 'Running'
+          or
+          (
+            item.status.phase == 'Running' and
+            item.status.containerStatuses is defined and
+            (
+              item.status.containerStatuses
+              | rejectattr('ready', 'equalto', true)
+              | list
+              | length > 0
+            )
+          )
+        )
+
+    - name: Fail if any pod is unhealthy
+      ansible.builtin.fail:
+        msg: "Unhealthy system pods: {{ unhealthy_pods | join(', ') }}"
+      when: unhealthy_pods | length > 0
+
+    - name: Report validation summary
+      ansible.builtin.debug:
+        msg: >-
+          {{ cluster_type }} validation passed on {{ nodes_list | length }} node(s);
+          kube-system pods checked: {{ pod_list | length }}.

@@ -4,12 +4,13 @@ azure_client_secret   = "xxxxxxxxxxxxxxxxxx"
 azure_tenant_id       = "xxxxxxxxxxxxxxxxxx"
 
 cluster = {
-  id                  = "factory"
-  domain              = "lab"
-  timezone            = "Europe/Paris"
-  region              = "westeurope"
-  username            = "localadmin"
-  cloud_init_selected = "k3s"
+  id                      = "factory"
+  domain                  = "lab"
+  timezone                = "Europe/Paris"
+  region                  = "westeurope"
+  username                = "localadmin"
+  cloud_init_selected     = "k3s"
+  package_upgrade_enabled = false # Optional
 }
 
 infra = {
@@ -17,6 +18,7 @@ infra = {
     count = 1
     # instance_size = "Standard_D2s_v5"
     # disk_size     = 40
+    # user_data_enabled = true
     # extra_disks = [
     #   { size_gb = 20, mount_path = "/data", filesystem = "ext4", label = "data" }
     # ]
@@ -26,6 +28,17 @@ infra = {
     count = 0
     # instance_size = "Standard_D2s_v5"
     # disk_size     = 40
+    # user_data_enabled = true
+    # extra_disks   = []
+  }
+
+  # Standalone non-Kubernetes VMs. Use with cloud_init_selected = "default"
+  # for VM-only deployments, or alongside masters/workers when extra hosts are needed.
+  vms = {
+    count = 0
+    # instance_size = "Standard_D2s_v5"
+    # disk_size     = 40
+    # user_data_enabled = true
     # extra_disks   = []
   }
 }
@@ -69,6 +82,7 @@ nsg_rules = {
 # if cloud_init_selected=k3s
 #k3s = {
 #  version           = "v1.34.5+k3s1" # Optional
+#  data_dir          = "/data/k3s"     # Optional; mount an extra disk there first if desired
 #  token             = "shared-token" # Optional
 #  etcd_enabled      = true           # Optional
 #  traefik_enabled   = true           # Optional
@@ -80,12 +94,26 @@ nsg_rules = {
 
 # if cloud_init_selected=rke2
 #rke2 = {
-#  version        = "v1.35.1+rke2r1"  # Optional
-#  token          = "shared-token"    # Optional
-#  tls_sans       = ["dns1", "ip1"]   # Optional
-#  etcd_enabled   = true              # Optional
-#  ingress_nginx_enabled  = true      # Optional
-#  metrics_server_enabled = true      # Optional
+#  version                = "v1.35.4+rke2r1"  # Optional
+#  data_dir               = "/data/rke2"       # Optional; mount an extra disk there first if desired
+#  token                  = "shared-token"    # Optional
+#  tls_sans               = ["dns1", "ip1"]   # Optional
+#  etcd_enabled           = true              # Optional
+#  ingress_nginx_enabled  = true              # Optional
+#  metrics_server_enabled = true              # Optional
+#  cni                    = "cilium"          # Optional: "calico", "canal", "cilium", "none" (null = RKE2 default)
+#  ingress_type           = "traefik"         # Optional: "ingress-nginx", "traefik", "cilium", "none" (null = RKE2 default)
+#  kube_proxy_enabled     = true              # Optional (default: true; required false when cilium.l2announcements.enabled=true)
+#  cilium = {
+#    hubble_enabled    = true                 # Optional: Hubble observability (default: false, only with cni="cilium")
+#    operator_replicas = 1                    # Optional: Cilium operator replicas when kube_proxy_enabled=false
+#    l2announcements = {
+#      enabled           = false              # Optional: requires cni="cilium" and kube_proxy_enabled=false when true
+#      lb_pool_start     = "192.168.100.200" # Required when enabled=true
+#      lb_pool_end       = "192.168.100.220" # Required when enabled=true
+#      network_interface = "eth0"            # Required when enabled=true
+#    }
+#  }
 #}
 
 #ansible = {

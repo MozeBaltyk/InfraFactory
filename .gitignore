@@ -10,3 +10,9 @@ ansible.cfg
 kubeconfig
 .token
 .local
+.cache/
+env/OVH/*.openrc
+env/OVH/*.openrc.local
+env/OVH/openrc.sh
+talosconfig
+__pycache__/

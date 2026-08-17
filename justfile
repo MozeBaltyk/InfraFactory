@@ -6,52 +6,54 @@ mod azure "providers/azure/justfile"
 mod libvirt "providers/libvirt/justfile"
 mod ovh "providers/ovh/justfile"
 
-PROVIDER := env_var_or_default("PROVIDER", "KVM")
-ENV := env_var_or_default("ENV", "lab")
+PROVIDER_RAW := env_var_or_default("PROVIDER", "KVM")
+PROVIDER := if PROVIDER_RAW =~ '^(AZ|KVM|OVH)$' { PROVIDER_RAW } else { error("PROVIDER must be AZ, KVM, or OVH") }
+ENV_RAW := env_var_or_default("ENV", "lab")
+ENV := if ENV_RAW =~ '^[A-Za-z0-9._-]+$' { ENV_RAW } else { error("ENV must be a nonempty identifier containing only A-Za-z0-9._-") }
 
 _help:
     @just --list --unsorted
 
 [private]
 _provider-module:
-    @case "{{ PROVIDER }}" in AZ) echo azure ;; KVM) echo libvirt ;; OVH) echo ovh ;; *) echo "Unsupported PROVIDER={{ PROVIDER }}. Use KVM, AZ, or OVH." >&2; exit 1 ;; esac
-
-[private]
-_provider-tfvars:
-    @case "{{ PROVIDER }}" in AZ) echo ./env/AZ/{{ ENV }}.tfvars ;; KVM) echo ./env/KVM/{{ ENV }}.tfvars ;; OVH) echo ./env/OVH/{{ ENV }}.tfvars ;; *) echo "Unsupported PROVIDER={{ PROVIDER }}. Use KVM, AZ, or OVH." >&2; exit 1 ;; esac
+    @case {{ quote(PROVIDER) }} in AZ) echo azure ;; KVM) echo libvirt ;; OVH) echo ovh ;; esac
 
 # Print current configuration
 env:
-    @echo "Provider and config applied:"
-    @echo "  PROVIDER  = {{ PROVIDER }}"
-    @echo "  ENV       = {{ ENV }}"
-    @echo "   |-> MODULE          = $(just _provider-module)"
-    @echo "   |-> ENV_TFVARS_PATH = $(just _provider-tfvars)"
+    @bash scripts/env-status.sh {{ quote(PROVIDER) }} {{ quote(ENV) }}
 
 # Validate Opentofu scripts
 validate:
-    @just $(just _provider-module)::validate
+    @ENV={{ quote(ENV) }} just "$(just _provider-module)::validate"
 
-# Plan on Provider specified in PROVIDER env variable (default: KVM)
-plan:
-    @just $(just _provider-module)::plan
+# Plan on Provider specified in PROVIDER env variable (default: KVM). Pass NAME to target one VM.
+plan NAME='':
+    @ENV={{ quote(ENV) }} just "$(just _provider-module)::plan" {{ quote(NAME) }}
 
-# Deploy on Provider specified in PROVIDER env variable (default: KVM)
-deploy:
-    @just $(just _provider-module)::deploy
+# Deploy on Provider specified in PROVIDER env variable (default: KVM). Pass NAME to target one VM.
+deploy NAME='':
+    @ENV={{ quote(ENV) }} just "$(just _provider-module)::deploy" {{ quote(NAME) }}
 
-# Destroy on Provider specified in PROVIDER env variable (default: KVM)
-destroy:
-    @just $(just _provider-module)::destroy
+# Force rebuild one VM through the selected provider's replacement graph
+replace NAME:
+    @ENV={{ quote(ENV) }} just "$(just _provider-module)::replace" {{ quote(NAME) }}
+
+# Destroy on Provider specified in PROVIDER env variable (default: KVM). Pass STALE=true to skip refresh (dead/broken machines)
+destroy STALE='':
+    @ENV={{ quote(ENV) }} just "$(just _provider-module)::destroy" {{ quote(STALE) }}
 
 # Check Kubernetes cluster on Provider specified in PROVIDER env variable (default: KVM)
 check:
-    @KUBECONFIG=./env/{{ PROVIDER }}/{{ ENV }}/kubeconfig kubectl get nodes -o wide
+    @KUBECONFIG={{ quote("./env/" + PROVIDER + "/" + ENV + "/kubeconfig") }} kubectl get nodes -o wide
 
 # Check ansible connectivity for specified environment
 ping:
-    @ANSIBLE_CONFIG=./env/{{ PROVIDER }}/{{ ENV }}/ansible.cfg ansible K8S_CLUSTER -i ./env/{{ PROVIDER }}/{{ ENV }}/hosts.ini -m ping
+    @ANSIBLE_CONFIG={{ quote("./env/" + PROVIDER + "/" + ENV + "/ansible.cfg") }} ansible K8S_CLUSTER -i {{ quote("./env/" + PROVIDER + "/" + ENV + "/hosts.ini") }} -m ping
 
 # Run ansible playbook for specified environment (ex: just play providers/shared/ansible/check_cloudinit.yml)
+[script("bash"), positional-arguments]
 play playbook *ARGS:
-    @ANSIBLE_CONFIG=./env/{{ PROVIDER }}/{{ ENV }}/ansible.cfg ansible-playbook -i ./env/{{ PROVIDER }}/{{ ENV }}/hosts.ini {{ playbook }} {{ ARGS }}
+    export ANSIBLE_CONFIG={{ quote("./env/" + PROVIDER + "/" + ENV + "/ansible.cfg") }}
+    playbook=$1
+    shift
+    exec ansible-playbook -i {{ quote("./env/" + PROVIDER + "/" + ENV + "/hosts.ini") }} "$playbook" "$@"

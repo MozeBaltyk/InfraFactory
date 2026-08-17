@@ -5,11 +5,39 @@
   become: false
 
   tasks:
-    - name: Wait for cloud-init to finish
+    - name: Wait for SSH connection (cloud-init may temporarily disrupt it)
+      ansible.builtin.wait_for_connection:
+        delay: 5
+        timeout: 300
+
+    # Run cloud-init status --wait with a bounded timeout. RKE2/K3s may drop SSH
+    # during iptables rules installation (e.g., when rke2-install.sh runs in
+    # cloud-init's runcmd). We ignore failures here because the SSH drop is
+    # transient and does not mean cloud-init itself failed.
+    - name: Wait for cloud-init to finish (allow SSH disruption)
       ansible.builtin.command:
-        cmd: cloud-init status --wait
+        cmd: timeout 600 cloud-init status --wait
+      changed_when: false
+      ignore_unreachable: true
+      ignore_errors: true
+
+    # After cloud-init (and RKE2 iptables installation) the SSH connection
+    # might be temporarily broken. Re-establish it before checking status.
+    - name: Reconnect after potential SSH disruption
+      ansible.builtin.wait_for_connection:
+        delay: 5
+        timeout: 120
+
+    - name: Verify cloud-init completed successfully
+      ansible.builtin.command:
+        cmd: timeout 900 cloud-init status --wait
       register: cloudinit_result
       changed_when: false
+      until:
+        - cloudinit_result is succeeded
+        - cloudinit_result.stdout is search("status: done")
+      retries: 3
+      delay: 10
 
     - name: Report cloud-init status
       ansible.builtin.debug:

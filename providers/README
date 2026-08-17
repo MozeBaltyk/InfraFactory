@@ -1,94 +1,214 @@
-# Functionalities 
-Reflects expected functionalities necessary for each modules.
+# Provider Module Capabilities
 
-## Provider-specific implementation notes
+This file documents the expected functionality baseline for every provider module.
+Each provider must implement the common capabilities below, then may extend them
+with provider-specific features where technically required.
 
-### OVH: `addresses` attribute on `ovh_cloud_project_instance`
+---
 
-The `ovh_cloud_project_instance` resource exposes a computed attribute named
-**`addresses`** (NOT `ip_addresses`). Each entry in the `addresses` list has
-`ip` and `version` keys but **no `type` key** — there is no
-`type = "public"` / `type = "private"` discriminator.
+## Common Capabilities Baseline
 
-Public vs. private IP classification is done by checking
-`cidrcontains(local.private_cidr, addr.ip)`.  Any IPv4 address that does
-**not** fall inside the private CIDR is treated as a public address.
+Every provider module MUST implement all of the following:
 
-If a provider migration or update ever adds a `type` key to the address
-objects, the filtering logic in `main.tf` (both `vm_public_ipv4_addresses`
-and `vm_private_ipv4_addresses`) should be updated to prefer the explicit
-type over the CIDR-based heuristic. 
+### SSH & Secrets
+- Generate RSA 4096-bit SSH key pair
+- Write keys to `env/<PROVIDER>/<workspace>/`
+- Talos mode does not generate SSH keys or k3s/rke2 tokens
 
-## Common capabilties to all providers
-- Generate SSH keys
-- n numbers of masters and n numbers of workers
-- Add or remove VMs 
-- Separate masters/workers objects
-- Per-role:
-    - CPU / RAM / disk
-    - extra disks (structured) — **OVH**: blocked by validation (not yet supported)
-- Cloud-init choice:
-    - Set username for a root priviled user with its ssh pub key
-- Optional vars pass to cloud-init:
-  - k3s
-  - rke2
-  - Specific to k3s/rke2:
-      - Generating a Token
-      - Pulling Kubeconfig
-  - ansible-pull
-- Ansible post-deployment steps (shared playbooks):
-    - Cloud-init readiness check
-    - TLS SAN reconciliation (k3s/rke2)
-    - Kubeconfig fetch with endpoint rewrite (k3s/rke2)
-- `kube_api_endpoint` abstraction for public-facing API address
+### Compute Topology
+- N masters, N workers, and N standalone VMs, independently configurable where supported by the provider
+- Optional standalone `infra.vms` for non-cluster VMs
+- VM-only default deployments with `cluster.cloud_init_selected = "default"`, `masters.count = 0`, `workers.count = 0`, and `vms.count >= 1`
+- Separate `masters`, `workers`, and `vms` objects in the variable schema
+- Per-role compute sizing:
+  - CPU / RAM / disk size
+  - Extra disks (structured): `size_gb`, `mount_path`, `filesystem`, `label`
+- Scale up/down: adding or removing VMs
 
-## Specific Azure model
-- NSG rules 
+### Cloud-Init
+- Selectable cloud-init variant via `cluster.cloud_init_selected`:
+  - `default`, `k3s`, `rke2`; Talos replaces cloud-init and Ansible where supported
+- Cloud-init source paths MUST reference `providers/shared/cloud-init/$type/`
+- Inject username + SSH public key
+- Optional OS upgrade control via `cluster.package_upgrade_enabled`
+- Per-role `user_data_enabled` on masters, workers, and standalone VMs
+- When user data is disabled for a role, cloud-init is not injected for that role
 
-## Specific Libvirt model
-- local connexion by default or ssh connexion to QEMU
-- Per-role:
-    - optional IP/MAC (unique to Libvirt among all providers)
-- Network config
-    - NAT, Route, or Bridge
-    - DHCP or Static
-- `network.extra_dns` for custom DNS server list
+### Optional Cloud-Init Inputs
+- `extra_packages` (list of strings)
+- `k3s` block: `version`, `token`, `tls_sans`, `etcd_enabled`, `traefik_enabled`,
+  `servicelb_enabled`, `local_storage_enabled`, `metrics_server_enabled`, `flannel_enabled`
+- `rke2` block: `version`, `token`, `tls_sans`, `etcd_enabled`,
+  `ingress_nginx_enabled`, `metrics_server_enabled`
+- Cluster token auto-generation (writes `.token` file)
+- `ansible.pull` block: `repo`, `branch`, `playbook`, `token`, `timer`
+
+### Ansible Integration
+- Inventory output compatible with `providers/shared/inventory/hosts.tpl`
+- Inventory contains shared `CONTROLLERS`, `WORKERS`, and `VMS` groups
+- Generate `ansible.cfg` with remote user, inventory path, private key
+- Kubernetes post-deployment playbooks (shared, gated by Kubernetes cloud-init mode and role `user_data_enabled`):
+  - Cloud-init readiness check with bounded `timeout 600 cloud-init status --wait`
+  - TLS SAN reconciliation (k3s/rke2)
+  - Kubeconfig fetch with endpoint rewrite (k3s/rke2)
+- VM-only `default` deployments generate inventory and SSH artifacts but skip Kubernetes post-steps
+
+### Outputs
+- `cluster_nodes` — normalized connection data for all provisioned nodes:
+  - `controller_ips`
+  - `worker_ips`
+  - `vm_ips`
+  - `public_ips`
+  - `private_ips`
+- `kubeconfig_command` — command to use the generated kubeconfig when Kubernetes is enabled
+- Kubernetes API endpoint output or nested detail where supported by the provider
+
+### Cluster Identity
+- `cluster.id` for resource naming
+- `cluster.domain` for DNS naming
 - `cluster.node_name_format`: `"serial"` (shared sequence) or `"role"` (per-role sequence)
 
-## Specific OVH model
-- Public-IP-based operator access for SSH, inventory, and kubeconfig retrieval
-- Optional private networking for cluster internal traffic via `network.private_cidr`
-- Deterministic private IP assignment from `network.private_cidr`
-- Separate masters and workers, with multi-master supported when `network.private_cidr` is set
-- Dual provider model: `ovh` (API-level resources: SSH keys, instances) + `openstack` (compute instances)
-- Load balancer variable schema defined (`network.kube_api.load_balancer`) but **not yet implemented** in .tf resources
-- `checks.tf` for post-condition validation (unique to OVH)
-- Current limitations:
-    - inventory remains public-IP based even when a private network exists
-    - multi-master requires private networking
-    - custom root disk sizing not supported yet (forced to 40 GB)
-    - extra disks not supported yet (blocked by validation)
-    - OVH load balancer not yet implemented (schema only)
-    - some multi-node readiness scenarios can still be inconsistent
+---
 
+## Provider-Specific Capabilities
 
-# Test Scenario to be run
+### Azure
 
-| Provider | Infra                 | k8s type  | Config  | 
-| ---      | ---                   | ---       | ---     |
-| AZ       | 1 masters             | k3s       | default |
-| AZ       | 3 masters / 2 workers | k3s       | default |
-| AZ       | 1 masters             | rke2      | default |
-| AZ       | 3 masters / 2 workers | rke2      | default |
-| KVM      | 1 masters             | k3s       | default |
-| KVM      | 3 masters / 2 workers | k3s       | default |
-| KVM      | 1 masters             | rke2      | default |
-| KVM      | 3 masters / 2 workers | rke2      | default |
-| OVH      | 1 masters             | k3s       | default |
-| OVH      | 1 masters / 2 workers | k3s       | default |
-| OVH      | 3 masters             | k3s       | default |
-| OVH      | 1 masters             | rke2      | default |
-| OVH      | 1 masters / 2 workers | rke2      | default |
-| OVH      | 3 masters             | rke2      | default |
+| Capability | Details |
+|---|---|
+| **Credentials** | `azure_subscription_id`, `azure_client_id`, `azure_client_secret`, `azure_tenant_id` |
+| **Region** | `cluster.region` (e.g. `westeurope`) |
+| **DNS** | Azure Private DNS Zone + A records, linked to VNet |
+| **Public IPs** | Every VM gets a `Standard` SKU static public IP |
+| **Private IP** | Dynamic allocation (Azure-managed) |
+| **Standalone VMs** | `infra.vms` provisions non-cluster VMs and supports VM-only `default` deployments |
+| **NSG rules** | Configurable via `nsg_rules` map (port, name, description, source_address). Defaults for SSH (22) and K8s API (6443). Source address auto-populated from `ifconfig.me` when empty. |
+| **Subnet** | Derived from `network.cidr` via `cidrsubnet()` |
+| **Hostname prefix** | From `os_catalog.hostname_prefix` (e.g. `slaz`) |
+| **Extra disks** | Uses Azure LUN numbering |
+| **TLS SANs** | Public IP embedded at install time |
+| **Networking** | Fully ARM-managed (no cloud-init network config) |
+| **Cloud-init variables** | `current_private_ip`, `current_public_ip` (both known at plan time) |
+| **Ansible inventory** | Public IP based for Kubernetes controllers/workers and standalone `infra.vms` |
 
-OVH scenarios currently also use `network.private_cidr` with deterministic private IP assignment.
+### Libvirt
+
+| Capability | Details |
+|---|---|
+| **Connection** | Local `qemu:///system` by default, remote `qemu+ssh://` via `libvirt` config block |
+| **Network mode** | `nat`, `route`, or `bridge` — validated with mode-specific requirements |
+| **IP type** | `dhcp` or `static` |
+| **Per-role IP/MAC** | Optional `ip_addresses` and `mac_addresses` lists (unique to Libvirt) |
+| **Per-role CPU / RAM** | Defined directly on `infra.masters` / `infra.workers` (`cpu`, `memory_gb`) |
+| **Standalone VMs** | `infra.vms` provisions non-cluster VMs with optional IP/MAC lists and supports VM-only `default` deployments |
+| **Gateway** | Optional, auto-derived from CIDR for nat/route, required for bridge+static |
+| **DNS servers** | `network.extra_dns` (default `["8.8.8.8", "8.8.4.4"]`); libvirt gateway prepended in nat/route |
+| **Storage pool** | `cluster.factory_root_path` (default `/srv`) |
+| **Cloud-init delivery** | Via `libvirt_cloudinit_disk` ISO |
+| **Network config** | Shared `network_config.cfg.tftpl` — DHCP and static IP support + DNS |
+| **Artifact mode** | `gitops_artifacts_mode` in `{"manual", "gitops"}` |
+| **CPU mode** | `host-passthrough` |
+| **Ansible inventory** | Operator endpoint (coalesces static IP, runtime IP, FQDN) |
+
+### OVH
+
+| Capability | Details |
+|---|---|
+| **Credentials** | `ovh_endpoint`, `ovh_application_key`, `ovh_application_secret`, `ovh_consumer_key`, `ovh_project_service_name` |
+| **Authentication** | OVH keys use `OVH_APPLICATION_KEY`, `OVH_APPLICATION_SECRET`, and `OVH_CONSUMER_KEY`. Kubernetes modes require standard OpenStack `OS_*` or `clouds.yaml`/`OS_CLOUD` auth for security groups. OVH `just replace` also requires `jq` for safe topology lookup. |
+| **Region** | `cluster.region` (e.g. `GRA9`) |
+| **Private network** | `network.private.cidr` (required) + `network.private.vlan_id` (optional, default `0`). Creates `ovh_cloud_project_network_private` + subnet. VLAN ID allows multiple clusters in the same region (valid range: 0–4000). |
+| **Deterministic private IPs** | Computed from `cidrhost(local.private_cidr, offset)` |
+| **NIC topology** | Normal mode: masters/workers are public (`ens3`) + private (`ens4`). Dedicated-bastion mode: one public+private bastion, while masters/workers are private-only (`ens3`) with their default route through the OVH subnet gateway and DNS `213.186.33.99`. Standalone VMs remain dual-NIC. |
+| **Gateway IP (subnet)** | `enable_gateway_ip` set to `local.lb_enabled` — only reserves a gateway IP on the subnet when a load balancer is present. Eliminates unnecessary DHCP default route on `ens4` when no LB is needed. |
+| **Load balancer** | `network.kube_api.load_balancer` — creates OVH Public Cloud Load Balancer (Octavia-based) with: |
+| | - `enabled` (bool, default `false`) |
+| | - `flavor` (string: `small`, `medium`, `large`, `xl`) |
+| | - `gateway_model` (string: `s`, `m`, `l`, `xl`, `2xl` — default `s`) |
+| | - `ssh_jump_enabled` (bool, default `false`) |
+| | - TCP listener on port 6443 with health monitor |
+| | - Backend pool members: all master private IPs on port 6443 |
+| | - Floating IP managed by `ovh_cloud_floating_ip` |
+| | - Gateway managed by `ovh_cloud_gateway` |
+| **Dedicated bastion** | `ssh_jump_enabled=true` creates one deterministic smallest compatible available hourly Ubuntu 24.04 bastion flavor (vCPU/RAM/disk/name/ID order). The LB remains TCP/6443-only. `bastion` output includes public/private IPs and ready-to-use `ssh -i env/OVH/<workspace>/.key.private ... -o ProxyCommand='ssh -W %h:%p ...' <node>` commands. K3s/RKE2 nodes are reached through a self-contained `ProxyCommand` configured in `ansible.cfg` (`ssh_common_args`). |
+| **API endpoint** | `network.kube_api.endpoint` — resolution priority: LB floating IP > literal value > DNS name > first master public IP > first master private IP |
+| **Image discovery** | Search patterns matching image names in region (filters nvidia, prefers non-UEFI) |
+| **Flavor discovery** | Flavor IDs looked up by name from `data.ovh_cloud_project_flavors` |
+| **Public IP validation** | Validates all public-attached VMs received public IPv4 addresses |
+| **Standalone VMs** | Optional `infra.vms` block provisions non-cluster VMs with public and private attachment in current code. OVH supports VM-only deployments with `cloud_init_selected = "default"`, `masters.count = 0`, `workers.count = 0`, and `vms.count > 0`. In `network.private.mode = "existing"`, the provider discovers exactly one private network by `vlan_id + region` and one subnet by `cidr`; static `infra.vms.ip_addresses` are required. |
+| **Gateway/FIP lifecycle** | Native OVH resources are associated to the load balancer. OpenTofu orders load-balancer deletion before gateway/FIP deletion and gateway deletion before the managed subnet; FIP and subnet deletion are not ordered relative to each other. |
+| **Ansible inventory** | Public IP based normally; dedicated-bastion mode uses stable private-node IPs with SSH transport configured entirely in `ansible.cfg` (relative `private_key_file`, `host_key_checking = false`, and a self-contained `ssh_common_args = -o ProxyCommand='ssh -W %h:%p -q ...'` that carries its own key/host-key options through the bastion), while `[VMS]` remains direct-public. |
+| **Security group** | Normal mode is unchanged. Jump mode uses a separate bastion SG (TCP/22 from operator CIDRs) and a private cluster SG: TCP/22 only from the bastion SG, east-west TCP except 22, UDP, ICMP, and LB/backend TCP/6443. Standalone VMs are excluded. |
+| **Deploy-time checks** | `checks.tf`: multi-master requires private CIDR, LB requires private CIDR, LB flavor exists, CIDR provides enough IPs |
+| **Full-graph replace** | Root `just replace NAME` resolves normal `vms`, jump-mode `private_cluster`, or the explicit `bastion` name and applies an un-targeted `-replace` so dependent lifecycle remains included. The first K3s/RKE2 controller is rejected because automatic datastore rejoin is unsafe. |
+
+---
+
+## Current Limitations
+
+### Azure
+- No `node_name_format` option (always role-based with `os_catalog.hostname_prefix`)
+- No static IP option (`ip_type` always `"dhcp"`)
+- No gitops artifact mode (always writes local files)
+- No OVH-style load balancer (uses Azure-native constructs)
+- VM-only deployments require `cloud_init_selected = "default"`, no workers, and at least one `infra.vms` instance
+
+### Libvirt
+- No `region` concept (local hypervisor)
+- No public IP addresses (no OVH/Azure-style public IP model)
+- VM-only deployments require `cloud_init_selected = "default"`, no workers, and at least one `infra.vms` instance
+
+### OVH
+- Extra disks: blocked by validation (must be empty)
+- Custom root disk sizing: blocked at 40 GB
+- Inventory is public-IP based unless dedicated-bastion mode is enabled; standalone `infra.vms` are always emitted in `[VMS]` with direct public access
+- Standalone `infra.vms` are public-attached and private-attached in current code; do not assume private-only VMs
+- `network.private.mode = "existing"` is limited to VM-only default deployments with static `infra.vms.ip_addresses`
+- Extra/root disk support remains unavailable because the OVH instance resource does not expose a complete native create/attach/resize lifecycle
+- Enabling or disabling `ssh_jump_enabled` on an existing cluster is a disruptive rebuild: back up etcd/workloads first, schedule downtime, save/review the full authenticated plan, then apply. Root disks and node public IPs are replaced; blue/green migration is required when downtime is unacceptable.
+- Bastion recovery: use `PROVIDER=OVH ENV=<env> just replace bastion` (the generated `<cluster-id>-bastion` name also resolves). Replace non-bootstrap private nodes by their generated name. Ansible SSH uses the relative `private_key_file` from `ansible.cfg` with `host_key_checking` disabled, so replacement needs no known-hosts cleanup; reconnect with the `ssh -i env/OVH/<env>/.key.private ... -o ProxyCommand='ssh -W %h:%p ...' <ip>` command from the `bastion` output. Host-key verification is deliberately disabled for jump-mode SSH (option B): connections trust the operator network and OVH SG/ingress controls instead of a TOFU host-key anchor.
+- Bootstrap-controller recovery: `just replace` refuses the first K3s/RKE2 controller. Before losing/rebuilding it, take and verify an etcd snapshot and follow the distribution restore procedure: [K3s backup/restore](https://docs.k3s.io/datastore/backup-restore) or [RKE2 backup/restore](https://docs.rke2.io/datastore/backup_restore). Automatic etcd membership/rejoin is not implemented.
+- Dedicated-bastion mode remains plan-validated only until paid live K3s and RKE2 first-boot, ProxyCommand transport, replacement, and destroy/orphan tests pass.
+- If CIDR or bastion failure prevents SSH, use the OVH Control Panel instance console/rescue mode with scoped OVH/OpenStack credentials to repair ingress or replace the bastion. Do not add a direct-node public NIC, LB TCP/22 listener, or static password as a backdoor.
+
+### State security
+- Local OpenTofu state contains generated private keys, cluster tokens, and provider data. Production/team deployments require a user-selected encrypted remote backend with state locking; no backend is prescribed by this repository.
+
+---
+
+## Test Matrix
+
+Baseline scenarios to preserve or validate for provider-affecting changes:
+
+| Provider | Infra | Cloud-init mode | Expected post-deploy behavior |
+|---|---|---|---|
+| AZ | `0 masters / 0 workers / N vms` | `default` | Inventory + SSH artifacts; no Kubernetes post-steps |
+| AZ | `1 master` | `k3s` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| AZ | `3 masters / 2 workers` | `k3s` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| AZ | `1 master` | `rke2` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| AZ | `3 masters / 2 workers` | `rke2` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| KVM | `0 masters / 0 workers / N vms` | `default` | Inventory + SSH artifacts; no Kubernetes post-steps |
+| KVM | `1 master` | `k3s` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| KVM | `3 masters / 2 workers` | `k3s` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| KVM | `1 master` | `rke2` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| KVM | `3 masters / 2 workers` | `rke2` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| OVH | `0 masters / 0 workers / N vms` | `default` | Inventory + SSH artifacts; no Kubernetes post-steps |
+| OVH | `1 master` | `k3s` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| OVH | `3 masters / 2 workers` | `k3s` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| OVH | `1 master` | `rke2` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| OVH | `3 masters / 2 workers` | `rke2` | K8s cloud-init check, TLS SAN reconciliation, kubeconfig fetch |
+| OVH bastion | `3 private masters / 1 private worker` | `k3s` | Plan-validated only; live gateway egress, ProxyCommand, non-bootstrap replacement, bastion replacement, and destroy proof pending |
+| OVH bastion | `3 private masters / 1 private worker` | `rke2` | Plan-validated only; live gateway egress, ProxyCommand, non-bootstrap replacement, bastion replacement, and destroy proof pending |
+
+Generated inventory and kubeconfig artifacts are expected under `env/<PROVIDER>/<workspace>/` when applicable.
+Kubeconfig artifacts are only expected for Kubernetes-enabled deployments with enabled master user data.
+
+### Validation expectations
+
+At minimum, each provider change should preserve:
+
+- Single-master k3s flow
+- HA-style multi-master + workers flow
+- Both `k3s` and `rke2` cloud-init modes
+- VM-only `default` flow with standalone `infra.vms`
+- Generated inventory and kubeconfig artifacts when applicable
