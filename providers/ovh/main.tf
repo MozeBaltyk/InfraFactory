@@ -49,6 +49,10 @@ locals {
       ])
       &&
       !strcontains(lower(image.name), "nvidia")
+      &&
+      !strcontains(lower(image.name), "baremetal")
+      &&
+      !strcontains(lower(image.name), "uefi")
     )
   ]
 
@@ -59,8 +63,8 @@ locals {
   ]
 
   selected_image = try(
-    one(local.preferred_images),
-    one(local.selected_images),
+    local.preferred_images[0],
+    local.selected_images[0],
     null
   )
 
