@@ -7,7 +7,8 @@ locals {
     if lower(image.status) == "active" &&
     alltrue([for pattern in ["ubuntu", "24.04"] : strcontains(lower(image.name), pattern)]) &&
     !strcontains(lower(image.name), "nvidia") &&
-    !strcontains(lower(image.name), "uefi")
+    !strcontains(lower(image.name), "uefi") &&
+    !strcontains(lower(image.name), "baremetal")
   ]
 
   bastion_image_rank = local.lb_ssh_jump_enabled ? sort([
