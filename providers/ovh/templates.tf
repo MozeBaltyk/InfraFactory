@@ -19,6 +19,7 @@ module "cloudinit" {
   rke2                    = var.rke2
   ansible                 = var.ansible
   package_upgrade_enabled = var.cluster.package_upgrade_enabled
+  nfs                     = var.nfs
 
   vms = {
     for vm in local.all_vms_map :
@@ -31,7 +32,12 @@ module "cloudinit" {
       is_first_master     = vm.role == "master" && vm.name == local.first_master_name
       first_master_ip     = local.kube_api_bootstrap_endpoint
       current_private_ip  = vm.private_ip
-      extra_disks         = try(local.vm_disks[vm.name], [])
+      # Canal/Flannel defaults to the default-route (public) interface for its
+      # VXLAN backend, but the OVH cluster security group only fully opens
+      # node-to-node traffic on the private network (see network.tf
+      # cluster_private_ingress) — pin flannel to the private NIC instead.
+      flannel_iface = vm.private_attach ? local.ovh_private_interface_names[vm.name] : null
+      extra_disks   = try(local.vm_disks[vm.name], [])
       k3s_tls_sans = distinct(compact(concat(
         var.k3s.tls_sans,
         [local.kube_api_bootstrap_endpoint],

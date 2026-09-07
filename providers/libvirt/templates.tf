@@ -12,6 +12,7 @@ module "cloudinit" {
   rke2                = var.rke2
   ansible             = var.ansible
   package_upgrade_enabled = var.cluster.package_upgrade_enabled
+  nfs                 = var.nfs
 
   vms = local.is_talos ? {} : {
     for name, vm in local.all_vms_map :

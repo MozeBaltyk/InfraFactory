@@ -22,6 +22,10 @@ _provider-module:
 env:
     @bash scripts/env-status.sh {{ quote(PROVIDER) }} {{ quote(ENV) }}
 
+# Report provisioned infrastructure (VMs, networks, vRack, gateways, floating IPs, security groups, images/flavors) from OpenTofu state
+infra:
+    @bash scripts/infra-list.sh {{ quote(PROVIDER) }} {{ quote(ENV) }}
+
 # Validate Opentofu scripts
 validate:
     @ENV={{ quote(ENV) }} just "$(just _provider-module)::validate"

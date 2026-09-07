@@ -36,6 +36,9 @@ packages:
   - ${p}
 %{ endfor ~}
 %{ endif }
+%{ if nfs_server_enabled ~}
+  - nfs-kernel-server
+%{ endif ~}
 
 write_files:
   - path: /etc/sysctl.d/99-kubernetes.conf
@@ -242,6 +245,13 @@ write_files:
 %{ endif ~}
 %{ endif ~}
 
+%{ if nfs_server_enabled ~}
+  - path: /etc/exports.d/infrafactory.exports
+    permissions: "0644"
+    content: |
+      ${nfs_export_path} ${nfs_allowed_cidr}(${nfs_read_only ? "ro" : "rw"},sync,no_subtree_check,root_squash)
+%{ endif ~}
+
 # --- Disk setup ---
 %{ if length(extra_disks) > 0 }
   - path: /usr/local/bin/disk-setup.sh
@@ -274,6 +284,13 @@ runcmd:
   - [ systemctl, enable, qemu-guest-agent.service ]
   - [ systemctl, start, --no-block, qemu-guest-agent.service ]
   - [ domainname, ${domain} ]
+%{ if nfs_server_enabled ~}
+  - [ mkdir, -p, "${nfs_export_path}" ]
+  - [ chown, "nobody:nogroup", "${nfs_export_path}" ]
+  - [ chmod, "0755", "${nfs_export_path}" ]
+  - [ systemctl, enable, --now, nfs-server.service ]
+  - [ exportfs, -ra ]
+%{ endif ~}
   - [ /usr/local/bin/k3s-install.sh ]
 %{ if ansible_pull_repo != null && ansible_pull_repo != "" ~}
   - [ /usr/local/bin/run-ansible-pull.sh ]

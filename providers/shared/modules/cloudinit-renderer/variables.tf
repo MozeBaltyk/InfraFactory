@@ -46,6 +46,36 @@ variable "package_upgrade_enabled" {
 }
 
 ###################################
+# NFS server variables
+###################################
+variable "nfs" {
+  description = "Optional NFS server exported by the nodes listed in nfs.nodes."
+  type = object({
+    enabled      = optional(bool, false)
+    nodes        = optional(list(string), [])
+    export_path  = optional(string, "/srv/nfs/shared")
+    allowed_cidr = optional(string, "*")
+    read_only    = optional(bool, false)
+  })
+  default = {}
+
+  validation {
+    condition     = !var.nfs.enabled || length(var.nfs.nodes) > 0
+    error_message = "nfs.enabled requires at least one node name in nfs.nodes."
+  }
+
+  validation {
+    condition     = can(regex("^/[A-Za-z0-9._/-]*[A-Za-z0-9._-]$", var.nfs.export_path))
+    error_message = "nfs.export_path must be an absolute path such as /srv/nfs/shared."
+  }
+
+  validation {
+    condition     = var.nfs.allowed_cidr == "*" || can(cidrhost(var.nfs.allowed_cidr, 0))
+    error_message = "nfs.allowed_cidr must be \"*\" or a valid CIDR such as 10.0.0.0/24."
+  }
+}
+
+###################################
 # K3s specific variables
 ###################################
 variable "k3s" {
@@ -120,6 +150,10 @@ variable "vms" {
     is_first_master    = bool
     first_master_ip    = optional(string, null)
     current_private_ip = optional(string, null)
+    # Interface RKE2's Canal/Flannel backend should bind to (e.g. "ens4" on
+    # OVH's dual-NIC layout). Left null on providers where the default
+    # (public-route) interface is already fully reachable node-to-node.
+    flannel_iface = optional(string, null)
     extra_disks = list(object({
       wwn        = string
       mount_path = string

@@ -36,6 +36,9 @@ packages:
   - ${p}
 %{ endfor ~}
 %{ endif }
+%{ if nfs_server_enabled ~}
+  - nfs-kernel-server
+%{ endif ~}
 
 write_files:
   - path: /etc/sysctl.d/99-kubernetes.conf
@@ -95,6 +98,31 @@ write_files:
 %{ endif ~}
 %{ if rke2_kube_proxy_enabled != null && !rke2_kube_proxy_enabled && rke2_cni == "cilium" ~}
       disable-kube-proxy: true
+%{ endif ~}
+
+%{ if node_role == "master" && rke2_flannel_iface != null && rke2_flannel_iface != "" && rke2_cni != "cilium" ~}
+  - path: /var/lib/rancher/rke2/server/manifests/rke2-canal-config.yaml
+    permissions: "0640"
+    content: |
+      ---
+      # Pin the Canal/Flannel VXLAN backend to the private NIC instead of the
+      # default-route (public) interface, since only the private network is
+      # guaranteed full node-to-node reachability (see providers/ovh/network.tf
+      # cluster_private_ingress vs. the narrower public-facing rules).
+      #
+      # RKE2 has no --flannel-iface server flag (that's k3s-only); the
+      # rke2-canal chart's real values key is nested under flannel.iface
+      # (confirmed against the packaged chart's values.yaml), applied here
+      # via the same HelmChartConfig mechanism RKE2 uses for its own addons.
+      apiVersion: helm.cattle.io/v1
+      kind: HelmChartConfig
+      metadata:
+        name: rke2-canal
+        namespace: kube-system
+      spec:
+        valuesContent: |-
+          flannel:
+            iface: "${rke2_flannel_iface}"
 %{ endif ~}
 
 %{ if rke2_cni == "cilium" ~}
@@ -204,11 +232,11 @@ write_files:
 %{ if node_role == "master" ~}
       curl -sfL https://get.rke2.io | sh -
       systemctl enable rke2-server
-      systemctl start rke2-server
+      systemctl start --no-block rke2-server
 %{ else ~}
       curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE="agent" sh -
       systemctl enable rke2-agent
-      systemctl start rke2-agent
+      systemctl start --no-block rke2-agent
 %{ endif ~}
 
 
@@ -277,6 +305,13 @@ write_files:
 %{ endif ~}
 %{ endif ~}
 
+%{ if nfs_server_enabled ~}
+  - path: /etc/exports.d/infrafactory.exports
+    permissions: "0644"
+    content: |
+      ${nfs_export_path} ${nfs_allowed_cidr}(${nfs_read_only ? "ro" : "rw"},sync,no_subtree_check,root_squash)
+%{ endif ~}
+
 # --- Disk setup ---
 %{ if length(extra_disks) > 0 }
   - path: /usr/local/bin/disk-setup.sh
@@ -309,6 +344,13 @@ runcmd:
   - [ systemctl, enable, qemu-guest-agent.service ]
   - [ systemctl, start, --no-block, qemu-guest-agent.service ]
   - [ domainname, ${domain} ]
+%{ if nfs_server_enabled ~}
+  - [ mkdir, -p, "${nfs_export_path}" ]
+  - [ chown, "nobody:nogroup", "${nfs_export_path}" ]
+  - [ chmod, "0755", "${nfs_export_path}" ]
+  - [ systemctl, enable, --now, nfs-server.service ]
+  - [ exportfs, -ra ]
+%{ endif ~}
   - [ /usr/local/bin/rke2-install.sh ]
 %{ if ansible_pull_repo != null && ansible_pull_repo != "" ~}
   - [ /usr/local/bin/run-ansible-pull.sh ]

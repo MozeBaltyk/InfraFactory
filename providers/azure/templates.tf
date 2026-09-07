@@ -19,6 +19,7 @@ module "cloudinit" {
   rke2                = var.rke2
   ansible             = var.ansible
   package_upgrade_enabled = var.cluster.package_upgrade_enabled
+  nfs                 = var.nfs
 
   vms = {
     for vm in concat(local.master_details, local.worker_details, local.vm_details) :

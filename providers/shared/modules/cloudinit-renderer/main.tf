@@ -26,6 +26,12 @@ locals {
         extra_packages          = var.extra_packages
         package_upgrade_enabled = var.package_upgrade_enabled
 
+        # Optional NFS server
+        nfs_server_enabled = var.nfs.enabled && contains(var.nfs.nodes, vm.hostname)
+        nfs_export_path    = var.nfs.export_path
+        nfs_allowed_cidr   = var.nfs.allowed_cidr
+        nfs_read_only      = var.nfs.read_only
+
         # Optional K3s config
         k3s_token                  = var.cluster_token
         k3s_version                = var.k3s.version
@@ -49,6 +55,7 @@ locals {
         rke2_cni                            = var.rke2.cni
         rke2_ingress_type                   = var.rke2.ingress_type
         rke2_kube_proxy_enabled             = var.rke2.kube_proxy_enabled
+        rke2_flannel_iface                  = vm.flannel_iface
         rke2_cilium_hubble_enabled          = var.rke2.cilium.hubble_enabled
         rke2_cilium_operator_replicas       = var.rke2.cilium.operator_replicas
         rke2_cilium_l2announcements_enabled = var.rke2.cilium.l2announcements.enabled
@@ -70,4 +77,9 @@ locals {
 output "rendered" {
   description = "Map of VM name to rendered cloud-init user-data."
   value       = local.rendered
+
+  precondition {
+    condition     = alltrue([for node in var.nfs.nodes : contains(keys(var.vms), node)])
+    error_message = "nfs.nodes must only contain known VM names: ${join(", ", keys(var.vms))}."
+  }
 }

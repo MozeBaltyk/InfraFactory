@@ -7,6 +7,23 @@ variable "extra_packages" {
   default     = []
 }
 
+################################
+# Optional NFS server
+################################
+variable "nfs" {
+  description = "Optional NFS server exported by the nodes listed in nfs.nodes"
+
+  type = object({
+    enabled      = optional(bool, false)
+    nodes        = optional(list(string), [])
+    export_path  = optional(string, "/srv/nfs/shared")
+    allowed_cidr = optional(string, "*")
+    read_only    = optional(bool, false)
+  })
+
+  default = {}
+}
+
 ###################################
 # K3s specific variables
 ###################################
