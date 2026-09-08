@@ -18,44 +18,63 @@ _help:
 _provider-module:
     @case {{ quote(PROVIDER) }} in AZ) echo azure ;; KVM) echo libvirt ;; OVH) echo ovh ;; esac
 
+# ── Context — scripts/context/ ───────────────────────────
+
 # Print current configuration
+[group('Context')]
 env:
     @bash scripts/env-status.sh {{ quote(PROVIDER) }} {{ quote(ENV) }}
 
-# Report provisioned infrastructure (VMs, networks, vRack, gateways, floating IPs, security groups, images/flavors) from OpenTofu state
-infra:
-    @bash scripts/infra-list.sh {{ quote(PROVIDER) }} {{ quote(ENV) }}
+# Report provisioned infrastructure based on OpenTofu state
+[group('Context')]
+report:
+    @bash scripts/report.sh {{ quote(PROVIDER) }} {{ quote(ENV) }}
+
+# ── Opentofu ───────────────────────────
 
 # Validate Opentofu scripts
+[group('Opentofu')]
 validate:
     @ENV={{ quote(ENV) }} just "$(just _provider-module)::validate"
 
 # Plan on Provider specified in PROVIDER env variable (default: KVM). Pass NAME to target one VM.
+[group('Opentofu')]
 plan NAME='':
     @ENV={{ quote(ENV) }} just "$(just _provider-module)::plan" {{ quote(NAME) }}
 
-# Deploy on Provider specified in PROVIDER env variable (default: KVM). Pass NAME to target one VM.
+# Deploy Cluster. (Pass NAME to target one VM.)
+[group('Opentofu')]
 deploy NAME='':
     @ENV={{ quote(ENV) }} just "$(just _provider-module)::deploy" {{ quote(NAME) }}
 
-# Force rebuild one VM through the selected provider's replacement graph
+# Force rebuild one VM.
+[group('Opentofu')]
 replace NAME:
     @ENV={{ quote(ENV) }} just "$(just _provider-module)::replace" {{ quote(NAME) }}
 
-# Destroy on Provider specified in PROVIDER env variable (default: KVM). Pass STALE=true to skip refresh (dead/broken machines)
+# Destroy Cluster. Pass STALE=true to skip refresh (dead/broken machines)
+[group('Opentofu')]
 destroy STALE='':
     @ENV={{ quote(ENV) }} just "$(just _provider-module)::destroy" {{ quote(STALE) }}
 
-# Check Kubernetes cluster on Provider specified in PROVIDER env variable (default: KVM)
+# ── Post-Checks ───────────────────────────
+
+# Check Kubernetes cluster if reachable
+[group('Post-Checks')]
 check:
     @KUBECONFIG={{ quote("./env/" + PROVIDER + "/" + ENV + "/kubeconfig") }} kubectl get nodes -o wide
 
-# Check ansible connectivity for specified environment
+# Check ansible connectivity
+[group('Post-Checks')]
 ping:
     @ANSIBLE_CONFIG={{ quote("./env/" + PROVIDER + "/" + ENV + "/ansible.cfg") }} ansible K8S_CLUSTER -i {{ quote("./env/" + PROVIDER + "/" + ENV + "/hosts.ini") }} -m ping
 
+# ── Provisioning ───────────────────────────
+
 # Run ansible playbook for specified environment (ex: just play providers/shared/ansible/check_cloudinit.yml)
-[script("bash"), positional-arguments]
+[group('Provisioning')]
+[positional-arguments]
+[script("bash")]
 play playbook *ARGS:
     export ANSIBLE_CONFIG={{ quote("./env/" + PROVIDER + "/" + ENV + "/ansible.cfg") }}
     playbook=$1
