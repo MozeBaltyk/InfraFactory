@@ -37,7 +37,7 @@ report:
 validate:
     @ENV={{ quote(ENV) }} just "$(just _provider-module)::validate"
 
-# Plan on Provider specified in PROVIDER env variable (default: KVM). Pass NAME to target one VM.
+# Plan Cluster. (Pass NAME to target one VM.)
 [group('Opentofu')]
 plan NAME='':
     @ENV={{ quote(ENV) }} just "$(just _provider-module)::plan" {{ quote(NAME) }}
