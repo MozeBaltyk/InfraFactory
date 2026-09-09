@@ -1,3 +1,21 @@
+locals {
+  # NFS client mounts derived from infra.masters/workers/vms.nfs_mounts:
+  # role membership is the target selector, so no per-VM `nodes` list is
+  # authored in tfvars -- it's expanded here for the shared module.
+  derived_nfs_client_mounts = flatten([
+    for vm_name, vm in local.all_vms_map : [
+      for m in vm.nfs_mounts : {
+        nodes       = [vm_name]
+        server      = m.server
+        export_path = m.export_path
+        mount_path  = m.mount_path
+        options     = m.options
+        read_only   = m.read_only
+      }
+    ]
+  ])
+}
+
 # Use CloudInit ISO to add SSH key to the instances (skipped for Talos: nodes boot to maintenance mode)
 module "cloudinit" {
   source = "../shared/modules/cloudinit-renderer"
@@ -12,7 +30,7 @@ module "cloudinit" {
   rke2                    = var.rke2
   ansible                 = var.ansible
   package_upgrade_enabled = var.cluster.package_upgrade_enabled
-  nfs                     = var.nfs
+  nfs                     = { client = { mounts = local.derived_nfs_client_mounts } }
 
   vms = local.is_talos ? {} : {
     for name, vm in local.all_vms_map :

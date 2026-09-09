@@ -22,6 +22,21 @@ infra = {
     # extra_disks = [
     #   { size_gb = 20, mount_path = "/data", filesystem = "ext4", label = "data" }
     # ]
+
+    # Optional NFS client mounts, applied to every master (no per-VM `nodes`
+    # list -- role membership is the target selector). `server` can point at
+    # any reachable NFS server/endpoint, so keep TCP/UDP 2049 restricted at
+    # the NSG level. Define the same key under workers/vms below for those
+    # roles too; each role's mounts are independent.
+    # nfs_mounts = [
+    #   {
+    #     server      = "10.0.0.11"
+    #     export_path = "/srv/nfs/shared"
+    #     mount_path  = "/mnt/shared"
+    #     options     = "defaults,_netdev" # Optional
+    #     read_only   = false              # Optional
+    #   }
+    # ]
   }
 
   workers = {
@@ -30,6 +45,7 @@ infra = {
     # disk_size     = 40
     # user_data_enabled = true
     # extra_disks   = []
+    # nfs_mounts = []
   }
 
   # Standalone non-Kubernetes VMs. Use with cloud_init_selected = "default"
@@ -79,24 +95,7 @@ nsg_rules = {
 #   "open-iscsi"
 # ]
 
-# Optional NFS client mounts: any node listed under mounts[*].nodes gets
-# `nfs-common` installed and the share mounted via cloud-init's native
-# `mounts:` module. `server` can point at any reachable NFS server/endpoint,
-# so keep TCP/UDP 2049 restricted at the NSG level.
-# nfs = {
-#   client = {
-#     mounts = [
-#       {
-#         nodes       = ["factory-node02"]
-#         server      = "10.0.0.11"
-#         export_path = "/srv/nfs/shared"
-#         mount_path  = "/mnt/shared"
-#         options     = "defaults,_netdev" # Optional
-#         read_only   = false              # Optional
-#       }
-#     ]
-#   }
-# }
+# NFS client mounts: see infra.masters/workers.nfs_mounts above.
 
 # if cloud_init_selected=k3s
 #k3s = {

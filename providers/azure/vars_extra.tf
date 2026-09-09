@@ -7,28 +7,6 @@ variable "extra_packages" {
   default     = []
 }
 
-################################
-# Optional NFS client
-################################
-variable "nfs" {
-  description = "Optional NFS client mounts attached on the nodes listed in each nfs.client.mounts[*].nodes"
-
-  type = object({
-    client = optional(object({
-      mounts = optional(list(object({
-        # Target VM names that should mount this share.
-        nodes       = list(string)
-        server      = string
-        export_path = string
-        mount_path  = string
-        options     = optional(string, "defaults,_netdev")
-        read_only   = optional(bool, false)
-      })), [])
-    }), {})
-  })
-
-  default = {}
-}
 
 ###################################
 # K3s specific variables
