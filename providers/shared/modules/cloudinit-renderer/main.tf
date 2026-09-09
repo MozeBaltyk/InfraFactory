@@ -26,11 +26,30 @@ locals {
         extra_packages          = var.extra_packages
         package_upgrade_enabled = var.package_upgrade_enabled
 
-        # Optional NFS server
-        nfs_server_enabled = var.nfs.enabled && contains(var.nfs.nodes, vm.hostname)
-        nfs_export_path    = var.nfs.export_path
-        nfs_allowed_cidr   = var.nfs.allowed_cidr
-        nfs_read_only      = var.nfs.read_only
+        # Optional NFS client mounts targeting this VM
+        nfs_client_mounts = [
+          for m in var.nfs.client.mounts : {
+            server      = m.server
+            export_path = m.export_path
+            mount_path  = m.mount_path
+            options     = m.options
+            read_only   = m.read_only
+          }
+          if contains(m.nodes, vm.hostname)
+        ]
+
+        # Optional Object Storage (S3-compatible) credentials targeting this VM
+        object_storage_credentials = [
+          for c in var.object_storage_credentials : {
+            name              = c.name
+            bucket            = c.bucket
+            region            = c.region
+            endpoint          = c.endpoint
+            access_key_id     = c.access_key_id
+            secret_access_key = c.secret_access_key
+          }
+          if contains(c.nodes, vm.hostname)
+        ]
 
         # Optional K3s config
         k3s_token                  = var.cluster_token
@@ -79,7 +98,16 @@ output "rendered" {
   value       = local.rendered
 
   precondition {
-    condition     = alltrue([for node in var.nfs.nodes : contains(keys(var.vms), node)])
-    error_message = "nfs.nodes must only contain known VM names: ${join(", ", keys(var.vms))}."
+    condition = alltrue([
+      for m in var.nfs.client.mounts : alltrue([for node in m.nodes : contains(keys(var.vms), node)])
+    ])
+    error_message = "nfs.client.mounts[*].nodes must only contain known VM names: ${join(", ", keys(var.vms))}."
+  }
+
+  precondition {
+    condition = alltrue([
+      for c in var.object_storage_credentials : alltrue([for node in c.nodes : contains(keys(var.vms), node)])
+    ])
+    error_message = "object_storage_credentials[*].nodes must only contain known VM names: ${join(", ", keys(var.vms))}."
   }
 }

@@ -19,7 +19,19 @@ module "cloudinit" {
   rke2                    = var.rke2
   ansible                 = var.ansible
   package_upgrade_enabled = var.cluster.package_upgrade_enabled
-  nfs                     = var.nfs
+
+  # NFS client mounts are derived solely from infra.masters/workers/vms.nfs
+  # attachments (see storage.tf) -- there is no standalone/manual
+  # nfs.client.mounts tfvars input on OVH.
+  nfs = {
+    client = {
+      mounts = local.ovh_nfs_client_mounts
+    }
+  }
+
+  # S3 credentials derived from infra.masters/workers/vms.object_storage
+  # attachments (see storage.tf).
+  object_storage_credentials = local.ovh_object_storage_credentials
 
   vms = {
     for vm in local.all_vms_map :

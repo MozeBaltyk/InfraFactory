@@ -8,17 +8,23 @@ variable "extra_packages" {
 }
 
 ################################
-# Optional NFS server
+# Optional NFS client
 ################################
 variable "nfs" {
-  description = "Optional NFS server exported by the nodes listed in nfs.nodes"
+  description = "Optional NFS client mounts attached on the nodes listed in each nfs.client.mounts[*].nodes"
 
   type = object({
-    enabled      = optional(bool, false)
-    nodes        = optional(list(string), [])
-    export_path  = optional(string, "/srv/nfs/shared")
-    allowed_cidr = optional(string, "*")
-    read_only    = optional(bool, false)
+    client = optional(object({
+      mounts = optional(list(object({
+        # Target VM names that should mount this share.
+        nodes       = list(string)
+        server      = string
+        export_path = string
+        mount_path  = string
+        options     = optional(string, "defaults,_netdev")
+        read_only   = optional(bool, false)
+      })), [])
+    }), {})
   })
 
   default = {}

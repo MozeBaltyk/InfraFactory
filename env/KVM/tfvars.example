@@ -92,16 +92,23 @@ os = {
 #   "open-iscsi"
 # ]
 
-# Optional NFS server, installed by cloud-init on the listed nodes only.
-# nodes must match generated VM names (node_name_format=serial => <cluster.id>-node01).
-# allowed_cidr = "*" exports to every client that can reach the node, so keep
-# TCP/UDP 2049 restricted at the network level.
+# Optional NFS client mounts: any node listed under mounts[*].nodes gets
+# `nfs-common` installed and the share mounted via cloud-init's native
+# `mounts:` module. `server` can point at any reachable NFS server/endpoint,
+# so keep TCP/UDP 2049 restricted at the network level.
 # nfs = {
-#   enabled      = true
-#   nodes        = ["factory-node01"]
-#   export_path  = "/srv/nfs/shared" # Optional
-#   allowed_cidr = "*"               # Optional, e.g. "10.0.0.0/24"
-#   read_only    = false             # Optional
+#   client = {
+#     mounts = [
+#       {
+#         nodes       = ["factory-node02"]
+#         server      = "10.0.0.11"
+#         export_path = "/srv/nfs/shared"
+#         mount_path  = "/mnt/shared"
+#         options     = "defaults,_netdev" # Optional
+#         read_only   = false              # Optional
+#       }
+#     ]
+#   }
 # }
 
 # if cloud_init_selected=k3s

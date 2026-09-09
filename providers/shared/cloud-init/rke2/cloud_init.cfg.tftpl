@@ -36,11 +36,30 @@ packages:
   - ${p}
 %{ endfor ~}
 %{ endif }
-%{ if nfs_server_enabled ~}
-  - nfs-kernel-server
+%{ if length(nfs_client_mounts) > 0 ~}
+  - nfs-common
+%{ endif ~}
+
+%{ if length(nfs_client_mounts) > 0 ~}
+mounts:
+%{ for m in nfs_client_mounts ~}
+  - [ "${m.server}:${m.export_path}", "${m.mount_path}", "nfs", "${m.options}${m.read_only ? ",ro" : ""}", "0", "0" ]
+%{ endfor ~}
 %{ endif ~}
 
 write_files:
+%{ if length(object_storage_credentials) > 0 ~}
+%{ for c in object_storage_credentials ~}
+  - path: /etc/infrafactory/object-storage/${c.name}.env
+    permissions: "0600"
+    content: |
+      AWS_ACCESS_KEY_ID=${c.access_key_id}
+      AWS_SECRET_ACCESS_KEY=${c.secret_access_key}
+      AWS_DEFAULT_REGION=${c.region}
+      AWS_ENDPOINT_URL=https://${c.endpoint}
+      S3_BUCKET=${c.bucket}
+%{ endfor ~}
+%{ endif ~}
   - path: /etc/sysctl.d/99-kubernetes.conf
     content: |
       fs.inotify.max_user_watches=1048576
@@ -305,13 +324,6 @@ write_files:
 %{ endif ~}
 %{ endif ~}
 
-%{ if nfs_server_enabled ~}
-  - path: /etc/exports.d/infrafactory.exports
-    permissions: "0644"
-    content: |
-      ${nfs_export_path} ${nfs_allowed_cidr}(${nfs_read_only ? "ro" : "rw"},sync,no_subtree_check,root_squash)
-%{ endif ~}
-
 # --- Disk setup ---
 %{ if length(extra_disks) > 0 }
   - path: /usr/local/bin/disk-setup.sh
@@ -344,13 +356,6 @@ runcmd:
   - [ systemctl, enable, qemu-guest-agent.service ]
   - [ systemctl, start, --no-block, qemu-guest-agent.service ]
   - [ domainname, ${domain} ]
-%{ if nfs_server_enabled ~}
-  - [ mkdir, -p, "${nfs_export_path}" ]
-  - [ chown, "nobody:nogroup", "${nfs_export_path}" ]
-  - [ chmod, "0755", "${nfs_export_path}" ]
-  - [ systemctl, enable, --now, nfs-server.service ]
-  - [ exportfs, -ra ]
-%{ endif ~}
   - [ /usr/local/bin/rke2-install.sh ]
 %{ if ansible_pull_repo != null && ansible_pull_repo != "" ~}
   - [ /usr/local/bin/run-ansible-pull.sh ]

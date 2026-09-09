@@ -2,32 +2,32 @@
 module "cloudinit" {
   source = "../shared/modules/cloudinit-renderer"
 
-  cloud_init_selected = var.cluster.cloud_init_selected
-  node_username       = var.cluster.username
-  timezone            = var.cluster.timezone
-  extra_packages      = var.extra_packages
-  public_key          = module.ssh_keys.public_key_openssh
-  cluster_token       = module.ssh_keys.cluster_token
-  k3s                 = var.k3s
-  rke2                = var.rke2
-  ansible             = var.ansible
+  cloud_init_selected     = var.cluster.cloud_init_selected
+  node_username           = var.cluster.username
+  timezone                = var.cluster.timezone
+  extra_packages          = var.extra_packages
+  public_key              = module.ssh_keys.public_key_openssh
+  cluster_token           = module.ssh_keys.cluster_token
+  k3s                     = var.k3s
+  rke2                    = var.rke2
+  ansible                 = var.ansible
   package_upgrade_enabled = var.cluster.package_upgrade_enabled
-  nfs                 = var.nfs
+  nfs                     = var.nfs
 
   vms = local.is_talos ? {} : {
     for name, vm in local.all_vms_map :
     name => {
-      hostname           = vm.name
-      fqdn               = local.vm_fqdns[name]
-      domain             = local.subdomain
-      node_role          = vm.role
+      hostname            = vm.name
+      fqdn                = local.vm_fqdns[name]
+      domain              = local.subdomain
+      node_role           = vm.role
       cloud_init_selected = vm.role == "vm" ? "default" : null
-      is_first_master    = name == local.first_master_name
-      first_master_ip    = local.first_master_ip
-      current_private_ip = null
-      extra_disks        = local.vm_disks[vm.name]
-      k3s_tls_sans       = concat(var.k3s.tls_sans, [for master in local.master_details : local.vm_fqdns[master.name]])
-      rke2_tls_sans      = concat(var.rke2.tls_sans, [for master in local.master_details : local.vm_fqdns[master.name]])
+      is_first_master     = name == local.first_master_name
+      first_master_ip     = local.first_master_ip
+      current_private_ip  = null
+      extra_disks         = local.vm_disks[vm.name]
+      k3s_tls_sans        = concat(var.k3s.tls_sans, [for master in local.master_details : local.vm_fqdns[master.name]])
+      rke2_tls_sans       = concat(var.rke2.tls_sans, [for master in local.master_details : local.vm_fqdns[master.name]])
     }
   }
 }

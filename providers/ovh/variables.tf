@@ -178,6 +178,11 @@ variable "infra" {
         filesystem = optional(string, "ext4")
         label      = string
       })), [])
+      # References into storage.NFS / storage."Object-storage" (by key). Every
+      # VM in this role gets the matching NFS share client-mounted and/or S3
+      # credentials for the matching bucket(s) injected via cloud-init.
+      nfs            = optional(list(string), [])
+      object_storage = optional(list(string), [])
     })
 
     workers = object({
@@ -191,6 +196,8 @@ variable "infra" {
         filesystem = optional(string, "ext4")
         label      = string
       })), [])
+      nfs            = optional(list(string), [])
+      object_storage = optional(list(string), [])
     })
 
     vms = optional(object({
@@ -198,6 +205,8 @@ variable "infra" {
       instance_size     = optional(string, "b2-7")
       ip_addresses      = optional(list(string), [])
       user_data_enabled = optional(bool, true)
+      nfs               = optional(list(string), [])
+      object_storage    = optional(list(string), [])
     }), { count = 0 })
   })
 
@@ -279,6 +288,14 @@ variable "network" {
   }
 }
 
+# Caller's current public IP, used below to auto-allow kube-api/SSH ingress
+# for whoever is running `tofu apply` (see local.my_public_ip).
+data "http" "my_ip" {
+  count = local.kubernetes_enabled ? 1 : 0
+
+  url = "http://ifconfig.me/ip"
+}
+
 locals {
   env_root = abspath("${path.module}/../../env")
   env_path = "${local.env_root}/${var.infra_provider}/${terraform.workspace}"
@@ -288,6 +305,12 @@ locals {
   subdomain = "${var.cluster.id}.${var.cluster.domain}"
 
   kubernetes_enabled = contains(["k3s", "rke2"], var.cluster.cloud_init_selected)
+
+  # Auto-detected caller public IP, appended to the explicit
+  # network.kube_api.ingress_cidrs below so the operator running `tofu
+  # apply` doesn't lock themselves out; it never substitutes for an explicit
+  # entry (see the validate_operator_ingress_cidrs precondition in checks.tf).
+  my_public_ip = local.kubernetes_enabled ? "${chomp(trimspace(data.http.my_ip[0].response_body))}/32" : null
 
   ## Private handling
   private_network_mode     = var.network.private.mode
@@ -329,7 +352,12 @@ locals {
   # Jump mode makes K3s/RKE2 nodes private-only (Ansible ProxyCommand).
   lb_ssh_jump_enabled    = local.lb_enabled && local.ssh_jump_requested
   lb_floating_ip_address = try(ovh_cloud_floating_ip.kube_api[0].id, null)
-  kube_api_ingress_cidrs = try(var.network.kube_api.ingress_cidrs, [])
+  # Explicit CIDRs plus the caller's auto-detected current IP; deduplicated
+  # in case the operator already listed it explicitly.
+  kube_api_ingress_cidrs = distinct(concat(
+    try(var.network.kube_api.ingress_cidrs, []),
+    local.my_public_ip != null ? [local.my_public_ip] : [],
+  ))
   lb_flavor_id = local.lb_enabled ? one([
     for f in data.ovh_cloud_project_loadbalancer_flavors.lb[0].flavors :
     f.id if f.name == var.network.kube_api.load_balancer.flavor
@@ -351,6 +379,8 @@ locals {
       private_ip        = (cidrhost(local.private_cidr, local.private_ip_host_offset_base + i))
       private_attach    = true
       public_attach     = !local.lb_ssh_jump_enabled
+      nfs               = try(var.infra.masters.nfs, [])
+      object_storage    = try(var.infra.masters.object_storage, [])
     }
   ]
 
@@ -369,6 +399,8 @@ locals {
       private_ip        = (cidrhost(local.private_cidr, local.private_ip_host_offset_base + i + var.infra.masters.count))
       private_attach    = true
       public_attach     = !local.lb_ssh_jump_enabled
+      nfs               = try(var.infra.workers.nfs, [])
+      object_storage    = try(var.infra.workers.object_storage, [])
     }
   ]
 
@@ -395,6 +427,8 @@ locals {
       private_ip        = local.private_network_existing ? var.infra.vms.ip_addresses[i] : cidrhost(local.private_cidr, local.private_ip_host_offset_base + i + var.infra.masters.count + var.infra.workers.count)
       private_attach    = true
       public_attach     = true
+      nfs               = try(var.infra.vms.nfs, [])
+      object_storage    = try(var.infra.vms.object_storage, [])
     }
   ]
 

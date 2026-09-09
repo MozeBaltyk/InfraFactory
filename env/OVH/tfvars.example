@@ -26,6 +26,12 @@ infra = {
     # extra_disks = [    # not supported yet
     #   { size_gb = 20, mount_path = "/data", filesystem = "ext4", label = "data" }
     # ]
+
+    # Attach OVH-managed storage from `storage` below, by key. Every master
+    # gets the referenced NFS share(s) client-mounted and/or S3 credentials
+    # for the referenced bucket(s) injected via cloud-init.
+    # nfs            = ["nfs_1"]
+    # object_storage = ["object_storage_1"]
   }
 
   workers = {
@@ -83,7 +89,10 @@ os = {
 ###
 ### Kubernetes modes create a dedicated OpenStack security group. It permits
 ### private intra-cluster traffic, 6443 for all modes, and SSH for k3s/rke2,
-### restricted to ingress_cidrs.
+### restricted to ingress_cidrs. The machine running `tofu apply` has its
+### current public IP detected automatically (via ifconfig.me) and always
+### added on top of ingress_cidrs, so you don't lock yourself out -- but at
+### least one explicit entry below is still required (see "Required" note).
 ###
 
 # Minimal (private network only, no load balancer; endpoint = first master public IP)
@@ -165,16 +174,55 @@ os = {
 #   "open-iscsi"
 # ]
 
-# Optional NFS server, installed by cloud-init on the listed nodes only.
-# nodes must match generated VM names (node_name_format=serial => <cluster.id>-node01).
-# allowed_cidr = "*" exports to every client that can reach the node; the cluster
-# security group only allows NFS traffic inside network.private.cidr.
-# nfs = {
-#   enabled      = true
-#   nodes        = ["factory-node01"]
-#   export_path  = "/srv/nfs/shared" # Optional
-#   allowed_cidr = "*"               # Optional, e.g. "10.0.0.0/24"
-#   read_only    = false             # Optional
+# NFS client mounts are managed only through infra.masters/workers/vms.nfs
+# below (there is no standalone/manual nfs.client.mounts input on OVH): any
+# node in a role that lists a `storage.NFS` key gets `nfs-common` installed
+# and that share mounted via cloud-init's native `mounts:` module, with the
+# mount target resolved automatically from the created share.
+
+###
+### OVH-managed storage provisioning
+###
+### Both NFS and Object-storage are maps keyed by a logical name
+### ("nfs_1", "object_storage_1", ...); infra.masters/workers/vms above
+### reference those keys to attach a share/bucket to every VM in that role.
+###
+### NFS[key] -> Public Cloud File Storage share (ovh_cloud_storage_file_share)
+### network_id/subnet_id default to the cluster's managed private network/subnet.
+### type only supports "STANDARD_1AZ" today. The mount target is resolved
+### automatically from the created share; mount_path/options/read_only set
+### the client mount defaults for every infra.*.nfs attachment of this key.
+###
+### Object-storage[key] -> S3-compatible bucket (ovh_cloud_project_storage).
+### region is a region prefix (GRA, SBG, BHS), not a full region name like
+### GRA9. Any role that attaches a key via object_storage gets one dedicated,
+### scoped OVH IAM user + S3 credential (see providers/ovh/storage.tf),
+### injected as /etc/infrafactory/object-storage/<key>.env on its VMs.
+###
+# storage = {
+#   NFS = {
+#     nfs_1 = {
+#       name = "cluster-shared"
+#       size = 150 # GB
+#       # type       = "STANDARD_1AZ"     # Optional, only supported value today
+#       # network_id = "..."              # Optional: default = managed private network
+#       # subnet_id  = "..."              # Optional: default = managed private subnet
+#       # mount_path = "/mnt/nfs_1"       # Optional
+#       # options    = "defaults,_netdev" # Optional
+#       # read_only  = false              # Optional
+#     }
+#   }
+#
+#   Object-storage = {
+#     object_storage_1 = {
+#       name       = "lab-backups"
+#       region     = "GRA"
+#       versioning = "enabled" # enabled | disabled | suspended
+#       tags       = { env = "lab" }
+#       # object_lock = { status = "enabled", rule = { mode = "GOVERNANCE", period = 30 } }
+#       # encryption  = { sse_algorithm = "AES256" }
+#     }
+#   }
 # }
 
 # if cloud_init_selected=k3s

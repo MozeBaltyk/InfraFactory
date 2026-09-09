@@ -46,32 +46,59 @@ variable "package_upgrade_enabled" {
 }
 
 ###################################
-# NFS server variables
+# Object Storage (S3-compatible) credentials
+###################################
+variable "object_storage_credentials" {
+  description = "Optional Object Storage (S3-compatible) credentials written as an env file on the nodes listed in each entry's nodes."
+  type = list(object({
+    # VM names (from `vms`) that should receive this credential file.
+    nodes             = list(string)
+    name              = string # logical key; file is written to /etc/infrafactory/object-storage/<name>.env
+    bucket            = string
+    region            = string
+    endpoint          = string
+    access_key_id     = string
+    secret_access_key = string
+  }))
+  default   = []
+  sensitive = true
+}
+
+###################################
+# NFS client variables
 ###################################
 variable "nfs" {
-  description = "Optional NFS server exported by the nodes listed in nfs.nodes."
+  description = "Optional NFS client mounts attached on the nodes listed in each nfs.client.mounts[*].nodes."
   type = object({
-    enabled      = optional(bool, false)
-    nodes        = optional(list(string), [])
-    export_path  = optional(string, "/srv/nfs/shared")
-    allowed_cidr = optional(string, "*")
-    read_only    = optional(bool, false)
+    client = optional(object({
+      mounts = optional(list(object({
+        # VM names (from `vms`) that should mount this share.
+        nodes = list(string)
+        # NFS server address: another node's hostname/IP, or an OVH-managed
+        # Public Cloud File Storage share endpoint (see `storage.NFS`).
+        server      = string
+        export_path = string
+        mount_path  = string
+        options     = optional(string, "defaults,_netdev")
+        read_only   = optional(bool, false)
+      })), [])
+    }), {})
   })
   default = {}
 
   validation {
-    condition     = !var.nfs.enabled || length(var.nfs.nodes) > 0
-    error_message = "nfs.enabled requires at least one node name in nfs.nodes."
+    condition     = alltrue([for m in var.nfs.client.mounts : length(m.nodes) > 0])
+    error_message = "nfs.client.mounts[*].nodes must list at least one target VM name."
   }
 
   validation {
-    condition     = can(regex("^/[A-Za-z0-9._/-]*[A-Za-z0-9._-]$", var.nfs.export_path))
-    error_message = "nfs.export_path must be an absolute path such as /srv/nfs/shared."
+    condition     = alltrue([for m in var.nfs.client.mounts : can(regex("^/[A-Za-z0-9._/-]*[A-Za-z0-9._-]$", m.mount_path))])
+    error_message = "nfs.client.mounts[*].mount_path must be an absolute path."
   }
 
   validation {
-    condition     = var.nfs.allowed_cidr == "*" || can(cidrhost(var.nfs.allowed_cidr, 0))
-    error_message = "nfs.allowed_cidr must be \"*\" or a valid CIDR such as 10.0.0.0/24."
+    condition     = alltrue([for m in var.nfs.client.mounts : trimspace(m.server) != "" && trimspace(m.export_path) != ""])
+    error_message = "nfs.client.mounts[*].server and export_path must not be empty."
   }
 }
 

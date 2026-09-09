@@ -159,8 +159,105 @@ check "ovh_dns_endpoint_requires_name" {
 resource "terraform_data" "validate_operator_ingress_cidrs" {
   lifecycle {
     precondition {
-      condition     = !local.kubernetes_enabled || length(local.kube_api_ingress_cidrs) > 0
-      error_message = "Kubernetes deployments require at least one explicit network.kube_api.ingress_cidrs entry (normally your operator/VPN public CIDR, for example 203.0.113.10/32). The unsafe 0.0.0.0/0 default is intentionally disabled."
+      # Checks the explicit var, not local.kube_api_ingress_cidrs: that local
+      # also carries the auto-detected caller IP (see local.my_public_ip),
+      # which must never substitute for an explicit entry here.
+      condition     = !local.kubernetes_enabled || length(try(var.network.kube_api.ingress_cidrs, [])) > 0
+      error_message = "Kubernetes deployments require at least one explicit network.kube_api.ingress_cidrs entry (normally your operator/VPN public CIDR, for example 203.0.113.10/32). The unsafe 0.0.0.0/0 default is intentionally disabled. Your current public IP is added automatically in addition to this list."
     }
+  }
+}
+
+###
+### Storage
+###
+
+check "storage_nfs_required_fields" {
+  assert {
+    condition = alltrue([
+      for key, s in local.storage_nfs_raw :
+      try(trimspace(s.name), "") != "" && try(s.size, null) != null
+    ])
+    error_message = "storage.NFS[*] requires name and size (GB) to be set."
+  }
+}
+
+check "storage_nfs_type_supported" {
+  assert {
+    condition = alltrue([
+      for key, s in local.storage_nfs : s.type == "STANDARD_1AZ"
+    ])
+    error_message = "storage.NFS[*].type only supports \"STANDARD_1AZ\" today."
+  }
+}
+
+check "storage_object_storage_required_fields" {
+  assert {
+    condition = alltrue([
+      for key, b in local.storage_buckets_raw :
+      try(trimspace(b.name), "") != "" && try(trimspace(b.region), "") != ""
+    ])
+    error_message = "storage.\"Object-storage\"[*] requires name and region to be set."
+  }
+}
+
+check "storage_object_storage_bucket_names_unique" {
+  assert {
+    condition     = length(distinct([for key, b in local.storage_buckets : b.name])) == length(local.storage_buckets)
+    error_message = "storage.\"Object-storage\"[*].name must be unique across keys (bucket names must be globally unique per region anyway)."
+  }
+}
+
+check "storage_object_storage_region_prefix" {
+  assert {
+    condition = alltrue([
+      for key, b in local.storage_buckets_raw : contains(["GRA", "SBG", "BHS"], b.region)
+    ])
+    error_message = "storage.\"Object-storage\"[*].region must be a region prefix: GRA, SBG, or BHS (not a full region name like GRA9)."
+  }
+}
+
+check "storage_object_storage_versioning_valid" {
+  assert {
+    condition = alltrue([
+      for key, b in local.storage_buckets_raw : contains(["enabled", "disabled", "suspended"], try(b.versioning, "disabled"))
+    ])
+    error_message = "storage.\"Object-storage\"[*].versioning must be one of: enabled, disabled, suspended."
+  }
+}
+
+check "storage_object_storage_encryption_valid" {
+  assert {
+    condition = alltrue([
+      for key, b in local.storage_buckets_raw :
+      try(b.encryption.sse_algorithm, "AES256") == "AES256"
+    ])
+    error_message = "storage.\"Object-storage\"[*].encryption.sse_algorithm only supports \"AES256\" today."
+  }
+}
+
+###
+### infra.masters/workers/vms storage attachments
+###
+
+check "infra_nfs_attachments_exist" {
+  assert {
+    condition = alltrue(concat(
+      [for key in try(var.infra.masters.nfs, []) : contains(keys(local.storage_nfs), key)],
+      [for key in try(var.infra.workers.nfs, []) : contains(keys(local.storage_nfs), key)],
+      [for key in try(var.infra.vms.nfs, []) : contains(keys(local.storage_nfs), key)],
+    ))
+    error_message = "infra.masters/workers/vms.nfs may only reference keys defined in storage.NFS: ${join(", ", keys(local.storage_nfs))}."
+  }
+}
+
+check "infra_object_storage_attachments_exist" {
+  assert {
+    condition = alltrue(concat(
+      [for key in try(var.infra.masters.object_storage, []) : contains(keys(local.storage_buckets), key)],
+      [for key in try(var.infra.workers.object_storage, []) : contains(keys(local.storage_buckets), key)],
+      [for key in try(var.infra.vms.object_storage, []) : contains(keys(local.storage_buckets), key)],
+    ))
+    error_message = "infra.masters/workers/vms.object_storage may only reference keys defined in storage.\"Object-storage\": ${join(", ", keys(local.storage_buckets))}."
   }
 }

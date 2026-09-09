@@ -5,7 +5,8 @@ Azure provider is implemented following the Libvirt pattern.
 GitOps now includes `just` recipes for Flux/tofu-controller Terraform stack status, watch, logs, runner, lock, and event inspection from the `gitops/` folder.
 RKE2 Cilium cloud-init supports nested Cilium options, including configurable operator replicas for kube-proxy replacement mode.
 RKE2 Cilium L2 announcements are consistently modeled across Libvirt, Azure, and OVH providers.
-An optional NFS server can be enabled per node from tfvars (`nfs`) on all three providers through the shared cloud-init templates.
+NFS client mounts use cloud-init's native `mounts:` module and install `nfs-common` automatically on all three providers through the shared cloud-init templates; there is no cloud-init-managed NFS server role anymore. On Libvirt/Azure this is configured directly via tfvars `nfs.client.mounts`. On OVH, `nfs.client.mounts` is no longer a user-facing tfvars input at all — mounts are derived solely from `infra.masters/workers/vms.nfs` attachments (see below), so an OVH-managed NFS share is the only supported NFS source there.
+OVH now also provisions OVH-managed storage from tfvars (`storage`, a map of named NFS shares/buckets) and attaches it per role via `infra.masters/workers/vms.nfs`/`.object_storage` (by key): NFS shares use `ovh_cloud_storage_file_share`, whose `current_state.export_locations` is resolved automatically into an `nfs.client.mounts` entry for every VM in an attaching role (no manual export-path lookup needed); Object Storage buckets (`ovh_cloud_project_storage`) get one dedicated, bucket-scoped OVH IAM user + S3 credential per attaching role (`ovh_cloud_project_user`/`_s3_credential`/`_s3_policy`), injected as a `/etc/infrafactory/object-storage/<key>.env` file on each of that role's VMs.
 
 OVH now includes:
 - public-IP-based operator access
@@ -27,7 +28,7 @@ OVH now includes:
 - generated two-hop SSH config with host-key verification disabled and full-graph bastion/non-bootstrap private-node replacement recovery; first-controller replacement is refused pending etcd restore support
 - explicit `just` recipes for full-graph OVH VM replacement
 - cluster-owned OpenStack security group for k3s/rke2
-- environment-native OVH/OpenStack authentication and restrictive operator ingress CIDRs
+- environment-native OVH/OpenStack authentication and restrictive operator ingress CIDRs, with the `tofu apply` caller's current public IP auto-detected and added on top of the required explicit `network.kube_api.ingress_cidrs` entries
 
 Libvirt has been realigned with the recent OVH baseline for standalone `infra.vms`, per-role `user_data_enabled`, shared default cloud-init on standalone VMs, inventory VM groups, and normalized controller/worker/VM IP outputs.
 
@@ -92,7 +93,10 @@ Azure has been realigned with the recent OVH/Libvirt baseline for standalone `in
 ### Phase 6: Cluster Bootstrap Options + Provider module extraction
 - [X] Add nested RKE2 Cilium options with configurable operator replicas for kube-proxy replacement mode
 - [X] Align RKE2 Cilium L2 announcement inputs across Libvirt, Azure, and OVH
-- [X] Add optional per-node NFS server to shared cloud-init and all three providers
+- [X] Add optional NFS client mounts (`nfs.client.mounts`) to shared cloud-init and all three providers
+- [X] Remove the cloud-init-managed NFS server role (`nfs.server`); OVH-managed storage now provisions the NFS server side instead
+- [X] Add OVH-managed storage provisioning (`storage`, keyed maps): NFS shares (`ovh_cloud_storage_file_share`) and Object Storage buckets (`ovh_cloud_project_storage`)
+- [X] Attach OVH-managed storage per role by key (`infra.masters/workers/vms.nfs`/`.object_storage`): automatic NFS client-mount resolution and per-role scoped S3 IAM credentials
 - [X] Evaluate candidate shared modules (keys/ansible/cloud-init/talos) across libvirt/azure/ovh
 - [X] M1: extract `providers/shared/modules/ssh-keys`, migrate libvirt/azure/ovh, `tofu state mv` live libvirt cluster
 - [X] M1: full fresh-deploy validation (destroy + apply) on libvirt
