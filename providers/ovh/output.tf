@@ -83,6 +83,44 @@ output "bastion" {
   } : null
 }
 
+output "storage" {
+  description = "OVH-managed storage details (only when configured via `storage`)"
+
+  value = {
+    nfs = {
+      for key, share in ovh_cloud_storage_file_share.nfs : key => {
+        id               = share.id
+        name             = share.name
+        resource_status  = share.resource_status
+        share_network_id = share.share_network_id
+        server           = local.storage_nfs_export[key].server
+        export_path      = local.storage_nfs_export[key].export_path
+        mount_path       = local.storage_nfs[key].mount_path
+      }
+    }
+
+    object_storage = {
+      for key, bucket in ovh_cloud_project_storage.buckets : key => {
+        name         = bucket.name
+        region       = bucket.region
+        virtual_host = bucket.virtual_host
+        versioning   = bucket.versioning.status
+      }
+    }
+
+    # Per-role S3 access key IDs (secret keys stay out of plain output; read
+    # them with `tofu output -json storage` if you also need the secret, or
+    # from the object_storage_credentials env files written on the VMs).
+    object_storage_users = {
+      for role, cred in ovh_cloud_project_user_s3_credential.s3 : role => {
+        username      = ovh_cloud_project_user.s3[role].username
+        access_key_id = cred.access_key_id
+        buckets       = local.object_storage_roles[role]
+      }
+    }
+  }
+}
+
 output "kubeconfig_command" {
   value = local.k8s_master_user_data_enabled ? (<<-EOT
 kubecm add -cf env/${var.infra_provider}/${terraform.workspace}/kubeconfig --context-name ${var.cluster.cloud_init_selected}-${var.infra_provider}-${terraform.workspace} --create

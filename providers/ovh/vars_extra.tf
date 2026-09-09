@@ -115,3 +115,27 @@ variable "ansible" {
   })
   default = {}
 }
+
+###################################
+# OVH-managed storage provisioning
+###################################
+# `storage.Object-storage` is a hyphenated attribute name, which HCL's
+# `object({...})` type syntax cannot express (map keys in a type spec must be
+# plain identifiers). The variable is therefore left untyped (`any`) and
+# normalized/validated in storage.tf and checks.tf instead.
+variable "storage" {
+  description = <<-EOT
+    OVH-managed storage, keyed by a logical name that infra.masters/workers/vms
+    reference via their `nfs`/`object_storage` attachment lists:
+      NFS = optional map of Public Cloud File Storage shares (ovh_cloud_storage_file_share)
+        key => { name, size (GB), type = "STANDARD_1AZ", network_id, subnet_id, description,
+                 mount_path, options, read_only }
+        network_id/subnet_id default to the cluster's managed private network/subnet;
+        mount_path/options/read_only default the client mount for every VM that
+        attaches this key via infra.*.nfs.
+      Object-storage = optional map of S3-compatible buckets (ovh_cloud_project_storage)
+        key => { name, region ("GRA"|"SBG"|"BHS"), versioning, tags, object_lock, encryption }
+  EOT
+  type        = any
+  default     = {}
+}

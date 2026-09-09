@@ -26,6 +26,31 @@ locals {
         extra_packages          = var.extra_packages
         package_upgrade_enabled = var.package_upgrade_enabled
 
+        # Optional NFS client mounts targeting this VM
+        nfs_client_mounts = [
+          for m in var.nfs.client.mounts : {
+            server      = m.server
+            export_path = m.export_path
+            mount_path  = m.mount_path
+            options     = m.options
+            read_only   = m.read_only
+          }
+          if contains(m.nodes, vm.hostname)
+        ]
+
+        # Optional Object Storage (S3-compatible) credentials targeting this VM
+        object_storage_credentials = [
+          for c in var.object_storage_credentials : {
+            name              = c.name
+            bucket            = c.bucket
+            region            = c.region
+            endpoint          = c.endpoint
+            access_key_id     = c.access_key_id
+            secret_access_key = c.secret_access_key
+          }
+          if contains(c.nodes, vm.hostname)
+        ]
+
         # Optional K3s config
         k3s_token                  = var.cluster_token
         k3s_version                = var.k3s.version
@@ -49,6 +74,7 @@ locals {
         rke2_cni                            = var.rke2.cni
         rke2_ingress_type                   = var.rke2.ingress_type
         rke2_kube_proxy_enabled             = var.rke2.kube_proxy_enabled
+        rke2_flannel_iface                  = vm.flannel_iface
         rke2_cilium_hubble_enabled          = var.rke2.cilium.hubble_enabled
         rke2_cilium_operator_replicas       = var.rke2.cilium.operator_replicas
         rke2_cilium_l2announcements_enabled = var.rke2.cilium.l2announcements.enabled
@@ -70,4 +96,18 @@ locals {
 output "rendered" {
   description = "Map of VM name to rendered cloud-init user-data."
   value       = local.rendered
+
+  precondition {
+    condition = alltrue([
+      for m in var.nfs.client.mounts : alltrue([for node in m.nodes : contains(keys(var.vms), node)])
+    ])
+    error_message = "nfs.client.mounts[*].nodes must only contain known VM names: ${join(", ", keys(var.vms))}."
+  }
+
+  precondition {
+    condition = alltrue([
+      for c in var.object_storage_credentials : alltrue([for node in c.nodes : contains(keys(var.vms), node)])
+    ])
+    error_message = "object_storage_credentials[*].nodes must only contain known VM names: ${join(", ", keys(var.vms))}."
+  }
 }

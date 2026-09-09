@@ -36,8 +36,23 @@ packages:
   - ${p}
 %{ endfor ~}
 %{ endif }
+%{ if length(nfs_client_mounts) > 0 ~}
+  - nfs-common
+%{ endif ~}
 
 write_files:
+%{ if length(object_storage_credentials) > 0 ~}
+%{ for c in object_storage_credentials ~}
+  - path: /etc/infrafactory/object-storage/${c.name}.env
+    permissions: "0600"
+    content: |
+      AWS_ACCESS_KEY_ID=${c.access_key_id}
+      AWS_SECRET_ACCESS_KEY=${c.secret_access_key}
+      AWS_DEFAULT_REGION=${c.region}
+      AWS_ENDPOINT_URL=https://${c.endpoint}
+      S3_BUCKET=${c.bucket}
+%{ endfor ~}
+%{ endif ~}
   - path: /etc/sysctl.d/99-kubernetes.conf
     content: |
       fs.inotify.max_user_watches=1048576
@@ -95,6 +110,31 @@ write_files:
 %{ endif ~}
 %{ if rke2_kube_proxy_enabled != null && !rke2_kube_proxy_enabled && rke2_cni == "cilium" ~}
       disable-kube-proxy: true
+%{ endif ~}
+
+%{ if node_role == "master" && rke2_flannel_iface != null && rke2_flannel_iface != "" && rke2_cni != "cilium" ~}
+  - path: /var/lib/rancher/rke2/server/manifests/rke2-canal-config.yaml
+    permissions: "0640"
+    content: |
+      ---
+      # Pin the Canal/Flannel VXLAN backend to the private NIC instead of the
+      # default-route (public) interface, since only the private network is
+      # guaranteed full node-to-node reachability (see providers/ovh/network.tf
+      # cluster_private_ingress vs. the narrower public-facing rules).
+      #
+      # RKE2 has no --flannel-iface server flag (that's k3s-only); the
+      # rke2-canal chart's real values key is nested under flannel.iface
+      # (confirmed against the packaged chart's values.yaml), applied here
+      # via the same HelmChartConfig mechanism RKE2 uses for its own addons.
+      apiVersion: helm.cattle.io/v1
+      kind: HelmChartConfig
+      metadata:
+        name: rke2-canal
+        namespace: kube-system
+      spec:
+        valuesContent: |-
+          flannel:
+            iface: "${rke2_flannel_iface}"
 %{ endif ~}
 
 %{ if rke2_cni == "cilium" ~}
@@ -204,11 +244,11 @@ write_files:
 %{ if node_role == "master" ~}
       curl -sfL https://get.rke2.io | sh -
       systemctl enable rke2-server
-      systemctl start rke2-server
+      systemctl start --no-block rke2-server
 %{ else ~}
       curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE="agent" sh -
       systemctl enable rke2-agent
-      systemctl start rke2-agent
+      systemctl start --no-block rke2-agent
 %{ endif ~}
 
 
@@ -309,6 +349,18 @@ runcmd:
   - [ systemctl, enable, qemu-guest-agent.service ]
   - [ systemctl, start, --no-block, qemu-guest-agent.service ]
   - [ domainname, ${domain} ]
+%{ if length(nfs_client_mounts) > 0 ~}
+  # cloud-init's own `mounts` module runs (and would fail) before packages
+  # are installed on this image, so the fstab entry and mount are handled
+  # entirely here instead, after nfs-common is guaranteed to be present.
+  - [ apt-get, update, -qq ]
+  - [ env, DEBIAN_FRONTEND=noninteractive, apt-get, install, -y, nfs-common ]
+%{ for m in nfs_client_mounts ~}
+  - [ mkdir, -p, "${m.mount_path}" ]
+  - [ bash, -c, "grep -qF ${m.mount_path} /etc/fstab || echo '${m.server}:${m.export_path} ${m.mount_path} nfs ${m.options}${m.read_only ? ",ro" : ""} 0 0' >> /etc/fstab" ]
+%{ endfor ~}
+  - [ mount, -a ]
+%{ endif ~}
   - [ /usr/local/bin/rke2-install.sh ]
 %{ if ansible_pull_repo != null && ansible_pull_repo != "" ~}
   - [ /usr/local/bin/run-ansible-pull.sh ]
