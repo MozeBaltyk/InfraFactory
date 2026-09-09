@@ -40,13 +40,6 @@ packages:
   - nfs-common
 %{ endif ~}
 
-%{ if length(nfs_client_mounts) > 0 ~}
-mounts:
-%{ for m in nfs_client_mounts ~}
-  - [ "${m.server}:${m.export_path}", "${m.mount_path}", "nfs", "${m.options}${m.read_only ? ",ro" : ""}", "0", "0" ]
-%{ endfor ~}
-%{ endif ~}
-
 write_files:
 %{ if length(object_storage_credentials) > 0 ~}
 %{ for c in object_storage_credentials ~}
@@ -297,11 +290,15 @@ runcmd:
   - [ systemctl, start, --no-block, qemu-guest-agent.service ]
   - [ domainname, ${domain} ]
 %{ if length(nfs_client_mounts) > 0 ~}
-  # cloud-init's own `mounts` module runs before packages are installed on
-  # this image, so nfs-common isn't there yet when it tries `mount -a` (the
-  # fstab entry it wrote is still correct). Install it and mount explicitly.
+  # cloud-init's own `mounts` module runs (and would fail) before packages
+  # are installed on this image, so the fstab entry and mount are handled
+  # entirely here instead, after nfs-common is guaranteed to be present.
   - [ apt-get, update, -qq ]
   - [ env, DEBIAN_FRONTEND=noninteractive, apt-get, install, -y, nfs-common ]
+%{ for m in nfs_client_mounts ~}
+  - [ mkdir, -p, "${m.mount_path}" ]
+  - [ bash, -c, "grep -qF ${m.mount_path} /etc/fstab || echo '${m.server}:${m.export_path} ${m.mount_path} nfs ${m.options}${m.read_only ? ",ro" : ""} 0 0' >> /etc/fstab" ]
+%{ endfor ~}
   - [ mount, -a ]
 %{ endif ~}
   - [ /usr/local/bin/k3s-install.sh ]
