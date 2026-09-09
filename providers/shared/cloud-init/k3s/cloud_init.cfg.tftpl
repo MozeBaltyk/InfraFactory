@@ -296,6 +296,14 @@ runcmd:
   - [ systemctl, enable, qemu-guest-agent.service ]
   - [ systemctl, start, --no-block, qemu-guest-agent.service ]
   - [ domainname, ${domain} ]
+%{ if length(nfs_client_mounts) > 0 ~}
+  # cloud-init's own `mounts` module runs before packages are installed on
+  # this image, so nfs-common isn't there yet when it tries `mount -a` (the
+  # fstab entry it wrote is still correct). Install it and mount explicitly.
+  - [ apt-get, update, -qq ]
+  - [ env, DEBIAN_FRONTEND=noninteractive, apt-get, install, -y, nfs-common ]
+  - [ mount, -a ]
+%{ endif ~}
   - [ /usr/local/bin/k3s-install.sh ]
 %{ if ansible_pull_repo != null && ansible_pull_repo != "" ~}
   - [ /usr/local/bin/run-ansible-pull.sh ]

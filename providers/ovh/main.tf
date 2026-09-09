@@ -157,6 +157,11 @@ resource "ovh_cloud_project_instance" "vms" {
     terraform_data.validate_flavors,
     terraform_data.validate_existing_private_network,
     ovh_cloud_project_network_private_subnet_v2.cluster,
+    # The NFS share's export path is already an implicit dependency via
+    # user_data, but the access ACL isn't referenced by any value -- without
+    # this, a node can boot and attempt its mount before the ACL exists,
+    # failing with "access denied by server".
+    ovh_cloud_storage_file_share_acl.nfs,
   ]
 }
 
@@ -209,10 +214,11 @@ resource "ovh_cloud_project_instance" "private_cluster" {
     terraform_data.validate_image,
     terraform_data.validate_flavors,
     ovh_cloud_gateway.kube_api,
+    ovh_cloud_storage_file_share_acl.nfs,
   ]
 }
 
-### 
+###
 ### Topology Dynamic: Catch the ips
 ###
 resource "time_sleep" "wait_instance_networks" {

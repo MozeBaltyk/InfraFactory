@@ -46,6 +46,10 @@ locals {
       mount_path = try(s.mount_path, "/mnt/${key}")
       options    = try(s.options, "defaults,_netdev")
       read_only  = try(s.read_only, false)
+      # CIDR granted access via ovh_cloud_storage_file_share_acl below.
+      # Defaults to the cluster's private subnet; override when network_id/
+      # subnet_id point at a different network than the cluster's own.
+      allowed_cidr = try(s.allowed_cidr, local.private_cidr)
     }
   }
 
@@ -122,6 +126,17 @@ resource "ovh_cloud_storage_file_share" "nfs" {
   share_type       = each.value.type
   size             = each.value.size
   share_network_id = ovh_cloud_storage_file_share_network.nfs[each.key].id
+}
+
+# Without an explicit ACL entry the share denies every mount attempt
+# ("access denied by server"), even from clients on its own share network.
+resource "ovh_cloud_storage_file_share_acl" "nfs" {
+  for_each = local.storage_nfs
+
+  service_name = var.ovh_project_service_name
+  share_id     = ovh_cloud_storage_file_share.nfs[each.key].id
+  access_to    = each.value.allowed_cidr
+  access_level = each.value.read_only ? "READ_ONLY" : "READ_WRITE"
 }
 
 locals {

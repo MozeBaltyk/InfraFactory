@@ -191,6 +191,15 @@ check "storage_nfs_type_supported" {
   }
 }
 
+check "storage_nfs_allowed_cidr_valid" {
+  assert {
+    condition = alltrue([
+      for key, s in local.storage_nfs : can(cidrhost(s.allowed_cidr, 0))
+    ])
+    error_message = "storage.NFS[*].allowed_cidr must be a valid CIDR such as 10.0.0.0/24."
+  }
+}
+
 check "storage_object_storage_required_fields" {
   assert {
     condition = alltrue([
