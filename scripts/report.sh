@@ -190,6 +190,52 @@ print_table 'Floating IP inventory' '%-32s %-18s %-14s %s' "$floating_ip_rows" \
   'NAME' 'ADDRESS' 'REGION/SKU' 'STATUS'
 
 ###
+### OVH storage inventory
+###
+
+nfs_share_rows=$(jq -r '
+  .[]
+  | select(.mode == "managed" and .type == "ovh_cloud_storage_file_share")
+  | [
+      (.values.name // .name),
+      ((.values.size // "-") | tostring),
+      (.values.resource_status // "-")
+    ]
+  | @tsv
+' <<<"$resources")
+
+print_table 'NFS shares' '%-32s %-10s %s' "$nfs_share_rows" \
+  'NAME' 'SIZE GB' 'STATUS'
+
+bucket_rows=$(jq -r '
+  .[]
+  | select(.mode == "managed" and .type == "ovh_cloud_project_storage")
+  | [
+      (.values.name // .name),
+      (.values.region_name // "-"),
+      (.values.versioning.status // "-"),
+      (.values.virtual_host // "-")
+    ]
+  | @tsv
+' <<<"$resources")
+
+print_table 'Object Storage buckets' '%-32s %-10s %-12s %s' "$bucket_rows" \
+  'NAME' 'REGION' 'VERSIONING' 'ENDPOINT'
+
+s3_user_rows=$(jq -r '
+  .[]
+  | select(.mode == "managed" and .type == "ovh_cloud_project_user")
+  | [
+      (.values.username // .name),
+      (.values.description // "-")
+    ]
+  | @tsv
+' <<<"$resources")
+
+print_table 'S3 users' '%-24s %s' "$s3_user_rows" \
+  'USERNAME' 'DESCRIPTION'
+
+###
 ### Security groups inventory
 ###
 
