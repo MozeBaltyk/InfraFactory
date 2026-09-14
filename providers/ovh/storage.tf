@@ -66,12 +66,12 @@ locals {
       object_lock = try(b.object_lock, null) == null ? null : {
         status = try(b.object_lock.status, null)
         rule = try(b.object_lock.rule, null) == null ? null : {
-          mode   = b.object_lock.rule.mode
-          period = tostring(b.object_lock.rule.period)
+          mode   = try(b.object_lock.rule.mode, null)
+          period = try(b.object_lock.rule.period, null) == null ? null : tostring(b.object_lock.rule.period)
         }
       }
       encryption = try(b.encryption, null) == null ? null : {
-        sse_algorithm = try(b.encryption.sse_algorithm, null)
+        sse_algorithm = try(b.encryption.sse_algorithm, "AES256")
       }
     }
   }
@@ -172,6 +172,8 @@ locals {
         options     = local.storage_nfs[key].options
         read_only   = local.storage_nfs[key].read_only
       }
+      if local.storage_nfs_export[key].server != null
+      && local.storage_nfs_export[key].export_path != null
     ]
   ])
 }
