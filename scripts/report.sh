@@ -193,7 +193,8 @@ print_table 'Floating IP inventory' '%-32s %-18s %-14s %s' "$floating_ip_rows" \
 ### Security groups inventory
 ###
 
-security_group_rows=$(jq -r --argjson all "$resources" '
+security_group_rows=$(jq -r '
+  . as $all |
   def rule_count($sgid): [ $all[] | select(.type == "openstack_networking_secgroup_rule_v2" and .values.security_group_id == $sgid) ] | length;
   (
     $all[]
@@ -215,7 +216,8 @@ print_table 'Security groups inventory' '%-28s %-12s %-8s %s' "$security_group_r
 ### Available images and flavors documented (per deployed VM)
 ###
 
-images_flavors_rows=$(jq -r --argjson all "$resources" '
+images_flavors_rows=$(jq -r '
+  . as $all |
   def image_map: ([ $all[] | select(.mode == "data" and .type == "ovh_cloud_project_images") | .values.images[]? | {(.id): .name} ] | add) // {};
   def libvirt_image: ([ $all[] | select(.type == "libvirt_volume" and .name == "os_image") ] | .[0].values.name) // "-";
   (image_map) as $images
@@ -237,3 +239,40 @@ images_flavors_rows=$(jq -r --argjson all "$resources" '
 
 print_table 'Available images and flavors (in use)' '%-28s %-42s %s' "$images_flavors_rows" \
   'NAME' 'IMAGE' 'FLAVOR'
+
+###
+### Storage resources (OVH-managed NFS shares and Object Storage buckets)
+###
+
+nfs_shares_rows=$(jq -r '
+  . as $all |
+  def acl_count($share_id): [ $all[] | select(.type == "ovh_cloud_storage_file_share_acl" and .values.share_id == $share_id) ] | length;
+  $all[]
+  | select(.mode == "managed" and .type == "ovh_cloud_storage_file_share")
+  | [
+      (.values.name // .name),
+      (.values.share_type // "-"),
+      ((.values.size // "-") | tostring),
+      (.values.resource_status // "-"),
+      (acl_count(.values.id) | tostring)
+    ]
+  | @tsv
+' <<<"$resources")
+
+print_table 'NFS shares' '%-24s %-16s %-8s %-12s %s' "$nfs_shares_rows" \
+  'NAME' 'TYPE' 'SIZE GB' 'STATUS' 'ACL RULES'
+
+object_storage_rows=$(jq -r '
+  .[]
+  | select(.mode == "managed" and .type == "ovh_cloud_project_storage")
+  | [
+      (.values.name // .name),
+      (.values.region_name // .values.region // "-"),
+      (.values.versioning.status // "-"),
+      (.values.virtual_host // "-")
+    ]
+  | @tsv
+' <<<"$resources")
+
+print_table 'Object storage buckets' '%-28s %-10s %-12s %s' "$object_storage_rows" \
+  'NAME' 'REGION' 'VERSIONING' 'ENDPOINT'
