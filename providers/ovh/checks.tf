@@ -76,6 +76,15 @@ check "ovh_existing_private_subnet_has_single_match" {
   }
 }
 
+check "ovh_vlan_id_range" {
+  assert {
+    condition = (
+      var.network.private.vlan_id >= 0 && var.network.private.vlan_id <= 4000
+    )
+    error_message = "network.private.vlan_id must be between 0 and 4000."
+  }
+}
+
 check "ovh_existing_private_network_vm_only" {
   assert {
     condition = (

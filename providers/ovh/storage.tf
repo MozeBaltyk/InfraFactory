@@ -231,6 +231,8 @@ resource "ovh_cloud_project_user_s3_policy" "s3" {
 
   # Best-effort S3-style policy scoped to exactly the buckets this role
   # references; adjust the Action list to taste.
+  # ListBucket is a bucket-level action (resource = bucket ARN), while
+  # object actions apply to bucket/* (individual objects).
   policy = jsonencode({
     Statement = [
       {
@@ -240,15 +242,21 @@ resource "ovh_cloud_project_user_s3_policy" "s3" {
           "s3:GetObject",
           "s3:PutObject",
           "s3:DeleteObject",
+        ]
+        Resource = [
+          for key in each.value : "arn:aws:s3:::${local.storage_buckets[key].name}/*"
+        ]
+      },
+      {
+        Sid    = "InfraFactory${title(each.key)}ObjectStorageList"
+        Effect = "Allow"
+        Action = [
           "s3:ListBucket",
           "s3:GetBucketLocation",
         ]
-        Resource = flatten([
-          for key in each.value : [
-            "arn:aws:s3:::${local.storage_buckets[key].name}",
-            "arn:aws:s3:::${local.storage_buckets[key].name}/*",
-          ]
-        ])
+        Resource = [
+          for key in each.value : "arn:aws:s3:::${local.storage_buckets[key].name}"
+        ]
       }
     ]
   })

@@ -114,7 +114,7 @@ output "storage" {
     object_storage_users = {
       for role, cred in ovh_cloud_project_user_s3_credential.s3 : role => {
         username      = ovh_cloud_project_user.s3[role].username
-        access_key_id = cred.access_key_id
+        access_key_id = sensitive(cred.access_key_id)
         buckets       = local.object_storage_roles[role]
       }
     }
