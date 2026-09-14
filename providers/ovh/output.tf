@@ -108,6 +108,15 @@ output "storage" {
       }
     }
 
+    block_storage = {
+      for key, vol in ovh_cloud_project_volume.blocks : key => {
+        name            = vol.name
+        size            = vol.size
+        volume_type     = vol.volume_type
+        resource_status = vol.resource_status
+      }
+    }
+
     # Per-role S3 access key IDs (secret keys stay out of plain output; read
     # them with `tofu output -json storage` if you also need the secret, or
     # from the object_storage_credentials env files written on the VMs).

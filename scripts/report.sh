@@ -279,6 +279,39 @@ print_table 'S3 users' '%-24s %s' "$s3_user_rows" \
   'USERNAME' 'DESCRIPTION'
 
 ###
+### Block storage inventory
+###
+
+block_rows=$(jq -r '
+  .[]
+  | select(.mode == "managed" and .type == "ovh_cloud_project_volume")
+  | [
+      (.values.name // .name),
+      (.values.size // "-"),
+      (.values.volume_type // "-"),
+      (.values.resource_status // "-"),
+      (.values.region // "-")
+    ]
+  | @tsv
+' <<<"$resources")
+
+print_table 'Block storage volumes' '%-32s %-8s %-10s %-14s %s' "$block_rows" \
+  'NAME' 'SIZE GB' 'TYPE' 'STATUS' 'REGION'
+
+attach_rows=$(jq -r '
+  .[]
+  | select(.mode == "managed" and .type == "ovh_cloud_project_volume_attachment")
+  | [
+      (.values.volume_name // .name // "-"),
+      (.values.instance_id // "-")
+    ]
+  | @tsv
+' <<<"$resources")
+
+print_table 'Block volume attachments' '%-32s %s' "$attach_rows" \
+  'VOLUME' 'INSTANCE ID'
+
+###
 ### Security groups inventory
 ###
 

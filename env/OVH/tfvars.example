@@ -23,15 +23,16 @@ infra = {
     # Advanced test switch only: set false to omit InfraFactory cloud-init user_data from masters.
     # Disabling this skips generated user/SSH/base and k3s/rke2 bootstrap user_data.
     # user_data_enabled = true
-    # extra_disks = [    # not supported yet
-    #   { size_gb = 20, mount_path = "/data", filesystem = "ext4", label = "data" }
-    # ]
+     # extra_disks = [    # not supported yet
+     #   { size_gb = 20, mount_path = "/data", filesystem = "ext4", label = "data" }
+     # ]
 
-    # Attach OVH-managed storage from `storage` below, by key. Every master
-    # gets the referenced NFS share(s) client-mounted and/or S3 credentials
-    # for the referenced bucket(s) injected via cloud-init.
-    # nfs            = ["nfs_1"]
-    # object_storage = ["object_storage_1"]
+     # Attach OVH-managed storage from `storage` below, by key. Every master
+     # gets the referenced NFS share(s) client-mounted, S3 credentials for
+     # referenced bucket(s) injected, and block volume(s) attached.
+     # nfs            = ["nfs_1"]
+     # object_storage = ["object_storage_1"]
+     # block_storage  = ["block_storage_1"]
   }
 
   workers = {
@@ -221,6 +222,19 @@ os = {
 #       tags       = { env = "lab" }
 #       # object_lock = { status = "enabled", rule = { mode = "GOVERNANCE", period = 30 } }
 #       # encryption  = { sse_algorithm = "AES256" }
+#     }
+#   }
+#
+#   Block-storage = {
+#     block_storage_1 = {
+#       name                 = "data"        # basename; actual volume = "<vm-name>-data"
+#       size                 = 50            # GB
+#       description          = "Data volume"  # Optional
+#       volume_type          = "fast"         # Optional: fast | work | cold | bulk | ec_sas
+#       # snapshot_id          = "..."         # Optional
+#       # image_id             = "..."         # Optional
+#       # bootable             = false         # Optional
+#       # delete_on_termination = true         # Optional
 #     }
 #   }
 # }

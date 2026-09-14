@@ -5,14 +5,17 @@
 ###   storage.NFS[key]              -> Public Cloud File Storage (NFS share) -> ovh_cloud_storage_file_share
 ###                                     (+ ovh_cloud_storage_file_share_network, a prerequisite)
 ###   storage."Object-storage"[key] -> Object Storage (S3 bucket)            -> ovh_cloud_project_storage
+###   storage."Block-storage"[key]  -> Block storage volume                  -> ovh_cloud_project_volume
+###                                     (+ ovh_cloud_project_volume_attachment)
 ###
-### Both storage.NFS and storage."Object-storage" are maps keyed by a logical
-### name ("nfs_1", "object_storage_1", ...). infra.masters/workers/vms attach
-### to them by that key:
+### NFS, Object-storage, and Block-storage are maps keyed by a logical
+### name ("nfs_1", "object_storage_1", "block_storage_1", ...). infra.masters/workers/vms
+### attach to them by key:
 ###
 ###   infra.masters = {
 ###     nfs            = ["nfs_1"]              # client-mount this share on every master
 ###     object_storage = ["object_storage_1"]   # inject S3 credentials for this bucket
+###     block_storage  = ["block_storage_1"]    # attach this volume to every master
 ###   }
 ###
 ### NFS uses ovh_cloud_storage_file_share (not the older
@@ -27,6 +30,10 @@
 ### role references. The resulting S3 access key/secret are injected as an env
 ### file per bucket on every VM in that role (see the shared cloud-init
 ### templates' `object_storage_credentials`).
+###
+### Block storage is per-VM: one volume per (VM, key) pair, attached to
+### that VM's instance. No automatic cloud-init mount — format/mount via
+### Ansible or cloud-init user_data if needed.
 ###
 
 locals {
@@ -93,6 +100,34 @@ locals {
 
   object_storage_roles = {
     for role, keys in local.infra_role_object_storage : role => keys
+    if length(keys) > 0
+  }
+
+  ##
+  ## Block storage volumes
+  ##
+  storage_blocks_raw = try(var.storage["Block-storage"], {})
+  storage_blocks = {
+    for key, b in local.storage_blocks_raw : key => {
+      name                  = b.name
+      size                  = b.size
+      description           = try(b.description, null)
+      volume_type           = try(b.volume_type, "fast")
+      snapshot_id           = try(b.snapshot_id, null)
+      image_id              = try(b.image_id, null)
+      bootable              = try(b.bootable, false)
+      delete_on_termination = try(b.delete_on_termination, true)
+    }
+  }
+
+  infra_role_block_storage = {
+    masters = try(var.infra.masters.block_storage, [])
+    workers = try(var.infra.workers.block_storage, [])
+    vms     = try(var.infra.vms.block_storage, [])
+  }
+
+  block_storage_roles = {
+    for role, keys in local.infra_role_block_storage : role => keys
     if length(keys) > 0
   }
 }
@@ -279,4 +314,65 @@ locals {
       }
     ]
   ])
+
+  # One block_storage_credentials entry per (VM, attached volume) pair.
+  ovh_block_storage_credentials = flatten([
+    for vm_name, vm in local.all_vms_map : [
+      for key in vm.block_storage : {
+        nodes       = [vm_name]
+        name        = key
+        volume_name = "${vm_name}-${local.storage_blocks[key].name}"
+        size_gb     = local.storage_blocks[key].size
+        volume_type = local.storage_blocks[key].volume_type
+        instance_id = try(ovh_cloud_project_instance.vms[vm_name].id, ovh_cloud_project_instance.private_cluster[vm_name].id)
+      }
+      if contains(keys(local.storage_blocks), key)
+    ]
+  ])
+}
+
+locals {
+  # One block_volume entry per (VM, block_key) pair, for the
+  # ovh_cloud_project_volume.blocks for_each map.
+  block_volume_map = merge([
+    for vm_name, vm in local.all_vms_map : {
+      for bk in vm.block_storage :
+      "${vm_name}-${bk}" => {
+        vm_name     = vm_name
+        bk          = bk
+        block       = local.storage_blocks[bk]
+        instance_id = try(ovh_cloud_project_instance.vms[vm_name].id, ovh_cloud_project_instance.private_cluster[vm_name].id)
+      }
+      if contains(keys(local.storage_blocks), bk)
+    }
+  ]...)
+}
+
+###
+### Block storage volumes — one per (VM, key) pair
+###
+resource "ovh_cloud_project_volume" "blocks" {
+  for_each = local.block_volume_map
+
+  service_name          = var.ovh_project_service_name
+  name                  = "${each.value.vm_name}-${each.value.block.name}"
+  region                = var.cluster.region
+  size                  = each.value.block.size
+  volume_type           = each.value.block.volume_type
+  description           = each.value.block.description
+  snapshot_id           = each.value.block.snapshot_id
+  image_id              = each.value.block.image_id
+  bootable              = each.value.block.bootable
+  delete_on_termination = each.value.block.delete_on_termination
+}
+
+###
+### Block volume attachments
+###
+resource "ovh_cloud_project_volume_attachment" "blocks" {
+  for_each = ovh_cloud_project_volume.blocks
+
+  service_name = var.ovh_project_service_name
+  volume_id    = each.value.id
+  instance_id  = each.value.instance_id
 }
