@@ -263,7 +263,7 @@ locals {
         name              = key
         bucket            = local.storage_buckets[key].name
         region            = local.storage_buckets[key].region
-        endpoint          = ovh_cloud_project_storage.buckets[key].virtual_host
+        endpoint          = replace(ovh_cloud_project_storage.buckets[key].virtual_host, "https://", "")
         access_key_id     = ovh_cloud_project_user_s3_credential.s3[local.role_key_by_vm_role[vm.role]].access_key_id
         secret_access_key = ovh_cloud_project_user_s3_credential.s3[local.role_key_by_vm_role[vm.role]].secret_access_key
       }
