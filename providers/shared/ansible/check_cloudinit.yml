@@ -33,11 +33,44 @@
         cmd: timeout 900 cloud-init status --wait
       register: cloudinit_result
       changed_when: false
-      until:
-        - cloudinit_result is succeeded
-        - cloudinit_result.stdout is search("status: done")
+      until: 'cloudinit_result is succeeded and cloudinit_result.stdout is search("status: done")'
       retries: 3
       delay: 10
+      ignore_errors: true
+
+    # cloud-init may report "error" due to a D-Bus disconnection triggered by
+    # RKE2/K3s manipulating iptables while cloud-init is still running. In that
+    # case the node is operational: accept the state if the k8s service is active.
+    - name: Accept cloud-init error if k8s service is running (D-Bus false-positive)
+      when: cloudinit_result is failed
+      block:
+        - name: Check if rke2-server is active
+          ansible.builtin.command: systemctl is-active rke2-server
+          register: rke2_server_status
+          changed_when: false
+          failed_when: false
+
+        - name: Check if rke2-agent is active
+          ansible.builtin.command: systemctl is-active rke2-agent
+          register: rke2_agent_status
+          changed_when: false
+          failed_when: false
+
+        - name: Check if k3s is active
+          ansible.builtin.command: systemctl is-active k3s
+          register: k3s_status
+          changed_when: false
+          failed_when: false
+
+        - name: Fail if cloud-init errored and no k8s service is running
+          ansible.builtin.fail:
+            msg: >
+              cloud-init reported '{{ cloudinit_result.stdout }}' and no k8s service
+              (rke2-server, rke2-agent, k3s) is active. The node did not bootstrap correctly.
+          when: >
+            rke2_server_status.rc != 0 and
+            rke2_agent_status.rc != 0 and
+            k3s_status.rc != 0
 
     - name: Report cloud-init status
       ansible.builtin.debug:

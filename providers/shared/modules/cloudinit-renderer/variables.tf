@@ -46,6 +46,63 @@ variable "package_upgrade_enabled" {
 }
 
 ###################################
+# Object Storage (S3-compatible) credentials
+###################################
+variable "object_storage_credentials" {
+  description = "Optional Object Storage (S3-compatible) credentials written as an env file on the nodes listed in each entry's nodes."
+  type = list(object({
+    # VM names (from `vms`) that should receive this credential file.
+    nodes             = list(string)
+    name              = string # logical key; file is written to /etc/infrafactory/object-storage/<name>.env
+    bucket            = string
+    region            = string
+    endpoint          = string
+    access_key_id     = string
+    secret_access_key = string
+  }))
+  default   = []
+  sensitive = true
+}
+
+###################################
+# NFS client variables
+###################################
+variable "nfs" {
+  description = "Optional NFS client mounts attached on the nodes listed in each nfs.client.mounts[*].nodes."
+  type = object({
+    client = optional(object({
+      mounts = optional(list(object({
+        # VM names (from `vms`) that should mount this share.
+        nodes = list(string)
+        # NFS server address: another node's hostname/IP, or an OVH-managed
+        # Public Cloud File Storage share endpoint (see `storage.NFS`).
+        server      = string
+        export_path = string
+        mount_path  = string
+        options     = optional(string, "defaults,_netdev")
+        read_only   = optional(bool, false)
+      })), [])
+    }), {})
+  })
+  default = {}
+
+  validation {
+    condition     = alltrue([for m in var.nfs.client.mounts : length(m.nodes) > 0])
+    error_message = "nfs.client.mounts[*].nodes must list at least one target VM name."
+  }
+
+  validation {
+    condition     = alltrue([for m in var.nfs.client.mounts : can(regex("^/[A-Za-z0-9._/-]*[A-Za-z0-9._-]$", m.mount_path))])
+    error_message = "nfs.client.mounts[*].mount_path must be an absolute path."
+  }
+
+  validation {
+    condition     = alltrue([for m in var.nfs.client.mounts : trimspace(m.server) != "" && trimspace(m.export_path) != ""])
+    error_message = "nfs.client.mounts[*].server and export_path must not be empty."
+  }
+}
+
+###################################
 # K3s specific variables
 ###################################
 variable "k3s" {
@@ -120,6 +177,10 @@ variable "vms" {
     is_first_master    = bool
     first_master_ip    = optional(string, null)
     current_private_ip = optional(string, null)
+    # Interface RKE2's Canal/Flannel backend should bind to (e.g. "ens4" on
+    # OVH's dual-NIC layout). Left null on providers where the default
+    # (public-route) interface is already fully reachable node-to-node.
+    flannel_iface = optional(string, null)
     extra_disks = list(object({
       wwn        = string
       mount_path = string

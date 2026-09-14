@@ -30,6 +30,10 @@ terraform {
       source  = "hashicorp/time"
       version = "~> 0.14.0"
     }
+    http = {
+      source  = "hashicorp/http"
+      version = "~> 3.6.0"
+    }
   }
 }
 

@@ -178,6 +178,9 @@ variable "infra" {
         filesystem = optional(string, "ext4")
         label      = string
       })), [])
+      nfs            = optional(list(string), [])
+      object_storage = optional(list(string), [])
+      block_storage  = optional(list(string), [])
     })
 
     workers = object({
@@ -191,6 +194,9 @@ variable "infra" {
         filesystem = optional(string, "ext4")
         label      = string
       })), [])
+      nfs            = optional(list(string), [])
+      object_storage = optional(list(string), [])
+      block_storage  = optional(list(string), [])
     })
 
     vms = optional(object({
@@ -198,6 +204,9 @@ variable "infra" {
       instance_size     = optional(string, "b2-7")
       ip_addresses      = optional(list(string), [])
       user_data_enabled = optional(bool, true)
+      nfs               = optional(list(string), [])
+      object_storage    = optional(list(string), [])
+      block_storage     = optional(list(string), [])
     }), { count = 0 })
   })
 
@@ -227,6 +236,32 @@ variable "infra" {
     condition     = var.infra.masters.disk_size == 40 && var.infra.workers.disk_size == 40
     error_message = "OVH v1 does not support custom root disk sizing yet; keep disk_size at the default value of 40."
   }
+}
+
+###################################
+# OVH-managed storage provisioning
+###################################
+# `storage.Object-storage` is a hyphenated attribute name, which HCL's
+# `object({...})` type syntax cannot express (map keys in a type spec must be
+# plain identifiers). The variable is therefore left untyped (`any`) and
+# normalized/validated in storage.tf and checks.tf instead.
+variable "storage" {
+  description = <<-EOT
+    OVH-managed storage, keyed by a logical name that infra.masters/workers/vms
+    reference via their `nfs`/`object_storage`/`block_storage` attachment lists:
+      NFS = optional map of Public Cloud File Storage shares
+        key => { name, size (GB), type = "STANDARD_1AZ", network_id, subnet_id, description,
+                 mount_path, options, read_only }
+      Object-storage = optional map of S3-compatible buckets
+        key => { name, region ("GRA"|"SBG"|"BHS"), versioning, tags, object_lock, encryption }
+      Block-storage = optional map of block storage volumes
+        key => { name, size (GB), description, volume_type ("fast"|"work"|"cold"|"bulk"|"ec_sas"),
+                 snapshot_id, image_id, bootable, delete_on_termination }
+    Each infra.* role lists block_storage keys; one volume is created per (VM, key) pair
+    and attached to that VM's instance.
+  EOT
+  type        = any
+  default     = {}
 }
 
 ###################################
@@ -279,6 +314,14 @@ variable "network" {
   }
 }
 
+# Caller's current public IP, used below to auto-allow kube-api/SSH ingress
+# for whoever is running `tofu apply` (see local.my_public_ip).
+data "http" "my_ip" {
+  count = local.kubernetes_enabled ? 1 : 0
+
+  url = "http://ifconfig.me/ip"
+}
+
 locals {
   env_root = abspath("${path.module}/../../env")
   env_path = "${local.env_root}/${var.infra_provider}/${terraform.workspace}"
@@ -288,6 +331,12 @@ locals {
   subdomain = "${var.cluster.id}.${var.cluster.domain}"
 
   kubernetes_enabled = contains(["k3s", "rke2"], var.cluster.cloud_init_selected)
+
+  # Auto-detected caller public IP, appended to the explicit
+  # network.kube_api.ingress_cidrs below so the operator running `tofu
+  # apply` doesn't lock themselves out; it never substitutes for an explicit
+  # entry (see the validate_operator_ingress_cidrs precondition in checks.tf).
+  my_public_ip = local.kubernetes_enabled ? "${chomp(trimspace(data.http.my_ip[0].response_body))}/32" : null
 
   ## Private handling
   private_network_mode     = var.network.private.mode
@@ -329,7 +378,12 @@ locals {
   # Jump mode makes K3s/RKE2 nodes private-only (Ansible ProxyCommand).
   lb_ssh_jump_enabled    = local.lb_enabled && local.ssh_jump_requested
   lb_floating_ip_address = try(ovh_cloud_floating_ip.kube_api[0].id, null)
-  kube_api_ingress_cidrs = try(var.network.kube_api.ingress_cidrs, [])
+  # Explicit CIDRs plus the caller's auto-detected current IP; deduplicated
+  # in case the operator already listed it explicitly.
+  kube_api_ingress_cidrs = distinct(concat(
+    try(var.network.kube_api.ingress_cidrs, []),
+    local.my_public_ip != null ? [local.my_public_ip] : [],
+  ))
   lb_flavor_id = local.lb_enabled ? one([
     for f in data.ovh_cloud_project_loadbalancer_flavors.lb[0].flavors :
     f.id if f.name == var.network.kube_api.load_balancer.flavor
@@ -351,6 +405,9 @@ locals {
       private_ip        = (cidrhost(local.private_cidr, local.private_ip_host_offset_base + i))
       private_attach    = true
       public_attach     = !local.lb_ssh_jump_enabled
+      nfs               = try(var.infra.masters.nfs, [])
+      object_storage    = try(var.infra.masters.object_storage, [])
+      block_storage     = try(var.infra.masters.block_storage, [])
     }
   ]
 
@@ -369,6 +426,9 @@ locals {
       private_ip        = (cidrhost(local.private_cidr, local.private_ip_host_offset_base + i + var.infra.masters.count))
       private_attach    = true
       public_attach     = !local.lb_ssh_jump_enabled
+      nfs               = try(var.infra.workers.nfs, [])
+      object_storage    = try(var.infra.workers.object_storage, [])
+      block_storage     = try(var.infra.workers.block_storage, [])
     }
   ]
 
@@ -395,6 +455,9 @@ locals {
       private_ip        = local.private_network_existing ? var.infra.vms.ip_addresses[i] : cidrhost(local.private_cidr, local.private_ip_host_offset_base + i + var.infra.masters.count + var.infra.workers.count)
       private_attach    = true
       public_attach     = true
+      nfs               = try(var.infra.vms.nfs, [])
+      object_storage    = try(var.infra.vms.object_storage, [])
+      block_storage     = try(var.infra.vms.block_storage, [])
     }
   ]
 

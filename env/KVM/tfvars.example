@@ -22,6 +22,21 @@ infra = {
     #  { size_gb = 20, mount_path = "/data", filesystem = "ext4", label = "data" },
     #  { size_gb = 2, mount_path = "/logs", filesystem = "ext4", label = "logs" }
     #]
+
+    # Optional NFS client mounts, applied to every master (no per-VM `nodes`
+    # list -- role membership is the target selector). `server` can point at
+    # any reachable NFS server/endpoint, so keep TCP/UDP 2049 restricted at
+    # the network level. Define the same key under workers/vms below for
+    # those roles too; each role's mounts are independent.
+    #nfs_mounts = [
+    #  {
+    #    server      = "10.0.0.11"
+    #    export_path = "/srv/nfs/shared"
+    #    mount_path  = "/mnt/shared"
+    #    options     = "defaults,_netdev" # Optional
+    #    read_only   = false              # Optional
+    #  }
+    #]
   }
   workers = {
     count         = 0
@@ -29,9 +44,10 @@ infra = {
     disk_size     = 10
     memory_gb     = 4
     #user_data_enabled = true # Optional
-    #mac_addresses = []  # Optionnal 
-    #ip_addresses = []   # Optionnal 
-    #extra_disks = []    # Optionnal 
+    #mac_addresses = []  # Optionnal
+    #ip_addresses = []   # Optionnal
+    #extra_disks = []    # Optionnal
+    #nfs_mounts = []
   }
   vms = {
     count         = 0
@@ -91,6 +107,8 @@ os = {
 #   "nfs-common",
 #   "open-iscsi"
 # ]
+
+# NFS client mounts: see infra.masters/workers.nfs_mounts above.
 
 # if cloud_init_selected=k3s
 #k3s = {

@@ -7,6 +7,7 @@ variable "extra_packages" {
   default     = []
 }
 
+
 ###################################
 # K3s specific variables
 ###################################
