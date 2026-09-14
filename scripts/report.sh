@@ -49,6 +49,7 @@ fi
 
 printf 'InfraFactory infrastructure\n'
 printf 'Provider: %s\nEnvironment: %s\n' "$provider" "$environment"
+printf 'Artifacts:   env/%s/%s/\n' "$module" "$environment"
 
 ###
 ### Resource summary
@@ -235,6 +236,20 @@ nfs_share_rows=$(jq -r '
 print_table 'NFS shares' '%-32s %-10s %s' "$nfs_share_rows" \
   'NAME' 'SIZE GB' 'STATUS'
 
+nfs_acl_rows=$(jq -r '
+  .[]
+  | select(.mode == "managed" and .type == "ovh_cloud_storage_file_share_acl")
+  | [
+      (.values.name // .name),
+      (.values.access_to // "-"),
+      (.values.access_level // "-")
+    ]
+  | @tsv
+' <<<"$resources")
+
+print_table 'NFS ACLs' '%-32s %-18s %s' "$nfs_acl_rows" \
+  'SHARE' 'CIDR' 'ACCESS'
+
 bucket_rows=$(jq -r '
   .[]
   | select(.mode == "managed" and .type == "ovh_cloud_project_storage")
@@ -350,3 +365,22 @@ object_storage_rows=$(jq -r '
 
 print_table 'Object storage buckets' '%-28s %-10s %-12s %s' "$object_storage_rows" \
   'NAME' 'REGION' 'VERSIONING' 'ENDPOINT'
+
+###
+### SSH connection info
+###
+
+ssh_rows=$(jq -r --arg key_path "env/$module/$environment/.key.private" '
+  .[]
+  | select(.mode == "managed" and (.type | test("^(libvirt_domain|azurerm_linux_virtual_machine|openstack_compute_instance_v2|ovh_cloud_project_instance)$")))
+  | ((.values.addresses // []) | [.[] | select(.version == 4 and (.ip | test("^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$")))] | .[0].ip // "-") as $ip
+  | [
+      (.values.name // .name),
+      $ip,
+      $key_path
+    ]
+  | @tsv
+' <<<"$resources")
+
+print_table 'SSH connections' '%-32s %-18s %s' "$ssh_rows" \
+  'NAME' 'IP' 'KEY'
