@@ -50,6 +50,21 @@ fi
 printf 'InfraFactory infrastructure\n'
 printf 'Provider: %s\nEnvironment: %s\n' "$provider" "$environment"
 
+###
+### Resource summary
+###
+
+resource_summary=$(jq -r '
+  [.[] | .type] | group_by(.) | map([(length | tostring), .[0]] | join(" ")) | sort_by(-(split(" ")[0] | tonumber)) | .[]
+' <<<"$resources")
+
+if [[ -n $resource_summary ]]; then
+  printf '\nResource summary\n'
+  while IFS=' ' read -r count type; do
+    printf '  %-5s %s\n' "$count" "$type"
+  done <<<"$resource_summary"
+fi
+
 print_resources() {
   local title=$1 filter=$2 rows
   rows=$(jq -r --arg filter "$filter" '
@@ -116,10 +131,8 @@ print_table 'Networks inventoried' '%-28s %-32s %-20s %s' "$networks_rows" \
   'NAME' 'TYPE' 'CIDR/ADDRESS' 'DETAIL'
 
 ###
-### vRack inventory completed (OVH private networks/subnets)
+### vRack inventory (OVH private networks/subnets)
 ###
-
-printf '\nvRack inventory\n'
 
 vrack_networks_rows=$(jq -r '
   .[]
@@ -133,7 +146,7 @@ vrack_networks_rows=$(jq -r '
   | @tsv
 ' <<<"$resources")
 
-print_table '  Private networks:' '  %-24s %-12s %-16s %s' "$vrack_networks_rows" \
+print_table 'Private networks' '%-24s %-12s %-16s %s' "$vrack_networks_rows" \
   'NAME' 'VLAN' 'REGIONS' 'STATUS'
 
 vrack_subnets_rows=$(jq -r '
@@ -148,7 +161,7 @@ vrack_subnets_rows=$(jq -r '
   | @tsv
 ' <<<"$resources")
 
-print_table '  Private subnets:' '  %-24s %-20s %-12s %s' "$vrack_subnets_rows" \
+print_table 'Private subnets' '%-24s %-20s %-12s %s' "$vrack_subnets_rows" \
   'NAME' 'CIDR' 'REGION' 'GATEWAY IP'
 
 ###
@@ -192,6 +205,21 @@ print_table 'Floating IP inventory' '%-32s %-18s %-14s %s' "$floating_ip_rows" \
 ###
 ### OVH storage inventory
 ###
+
+nfs_network_rows=$(jq -r '
+  .[]
+  | select(.mode == "managed" and .type == "ovh_cloud_storage_file_share_network")
+  | [
+      (.values.name // .name),
+      (.values.network_id // "-"),
+      (.values.subnet_id // "-"),
+      (.values.status // "-")
+    ]
+  | @tsv
+' <<<"$resources")
+
+print_table 'NFS share networks' '%-32s %-36s %-36s %s' "$nfs_network_rows" \
+  'NAME' 'NETWORK ID' 'SUBNET ID' 'STATUS'
 
 nfs_share_rows=$(jq -r '
   .[]
