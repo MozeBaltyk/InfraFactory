@@ -13,8 +13,8 @@ One mutualized standalone bastion serving many clusters. Full story in
 | P0 shared IPAM | `phase-00-ipam.md` | done (`eb10003`) |
 | P1 bastion skeleton | `phase-01-skeleton.md` | done (`ef59c0e`) |
 | P2 hot-attach multi-NIC | `phase-02-hotattach.md` | done on branch (`bf06ed5`), live proof deferred to P5 |
-| P3 cluster decoupling | `phase-03-decoupling.md` | next |
-| P4 day-2 + recipes | `phase-04-day2.md` | partial (justfile done, Ansible converge pending) |
+| P3 cluster decoupling | `phase-03-decoupling.md` | offline done (validate all providers pass; authenticated plan proof pending) |
+| P4 day-2 + recipes | `phase-04-day2.md` | offline done (role + `converge` recipe, G4 green; live proof in P5) |
 | P5 live validation | `phase-05-live.md` | blocked on explicit approval |
 | P6 close-out | `phase-06-closeout.md` | pending |
 
