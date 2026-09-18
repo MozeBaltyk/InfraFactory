@@ -1,9 +1,42 @@
-ovh_endpoint           = "ovh-eu"
+ovh_endpoint             = "ovh-eu"
 ovh_project_service_name = "xxxxxxxxxxxxxxxx"
 
+# Export OVH_APPLICATION_KEY, OVH_APPLICATION_SECRET, and OVH_CONSUMER_KEY.
+# OpenStack resources also require OS_* variables or clouds.yaml/OS_CLOUD.
+
 bastion = {
-  id                      = "bastion"
-  timezone                = "Europe/Paris"
-  region                  = "GRA11"
-  username                = "localadmin"
+  id       = "bastion"
+  domain   = "local"
+  timezone = "Europe/Paris"
+  region   = "GRA11"
+  username = "localadmin"
+}
+
+# Bootstrap access: operator public key(s) seeding the bastion at birth
+# (no cluster exists yet). Cluster pubkeys are appended afterwards.
+admin_public_keys = [
+  # "ssh-ed25519 AAAA... operator@laptop",
+]
+
+# Local private key matching one of the keys above (or any later-authorized
+# key), used only by the readiness probe. Absolute path.
+probe_ssh_private_key_path = "/home/operator/.ssh/id_ed25519"
+
+# Required: explicit operator/VPN public CIDRs for bastion SSH (:22).
+# The caller's current IP is auto-added on top.
+ingress_cidrs = [
+  # "203.0.113.10/32",
+]
+
+# Served clusters, attached one by one AFTER each cluster's private network
+# exists (bastion-first workflow). Empty at birth: the bastion boots with a
+# public NIC only and no PermitOpen restriction.
+clusters = {
+  # simpl-int-nonprodlike-01 = {
+  #   cidr            = "10.0.20.0/24"
+  #   vlan_id         = 20
+  #   masters         = 1 # must match the cluster tfvars (PermitOpen recompute)
+  #   workers         = 1 # must match the cluster tfvars
+  #   public_key_file = "../../env/OVH/simpl-int-nonprodlike-01/.key.pub"
+  # }
 }

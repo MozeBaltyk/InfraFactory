@@ -14,9 +14,9 @@ variable "cidr" {
 }
 
 variable "host_offset_base" {
-  description = "First host number assigned to nodes (masters start here)"
+  description = "First host number assigned to nodes (masters start here). Null applies the shared convention: 10 when the prefix is /28 or shorter, 2 otherwise."
   type        = number
-  default     = 2
+  default     = null
 }
 
 variable "masters_count" {
