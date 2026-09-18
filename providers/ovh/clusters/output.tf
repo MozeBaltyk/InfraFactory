@@ -10,8 +10,8 @@ output "cluster_nodes" {
   description = "Cluster node connection data"
 
   value = {
-    controller_ips = [for vm in local.master_details : local.k8s_nodes ? vm.private_ip : local.vm_public_ipv4_addresses[vm.name]]
-    worker_ips     = [for vm in local.worker_details : local.k8s_nodes ? vm.private_ip : local.vm_public_ipv4_addresses[vm.name]]
+    controller_ips = compact([for vm in local.master_details : local.k8s_nodes ? vm.private_ip : local.vm_public_ipv4_addresses[vm.name]])
+    worker_ips     = compact([for vm in local.worker_details : local.k8s_nodes ? vm.private_ip : local.vm_public_ipv4_addresses[vm.name]])
     vm_ips         = compact([for vm in local.vm_details : local.vm_public_ipv4_addresses[vm.name]])
 
     ssh_first_master = local.first_master_name != null ? try(

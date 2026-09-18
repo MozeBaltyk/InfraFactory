@@ -18,6 +18,13 @@ check "workspace_identifier" {
   }
 }
 
+check "ovh_k8s_requires_masters" {
+  assert {
+    condition     = !local.kubernetes_enabled || var.infra.masters.count >= 1
+    error_message = "Kubernetes modes (k3s/rke2) require at least one master node."
+  }
+}
+
 check "ovh_lb_flavor_exists" {
   assert {
     condition = (
@@ -53,10 +60,10 @@ check "ovh_lb_ip_endpoint_requires_lb" {
   assert {
     condition = (
       !local.kubernetes_enabled ||
-      try(var.network.kube_api.endpoint, "public_ip") != "lb_ip" ||
+      try(var.network.kube_api.endpoint, "lb_ip") != "lb_ip" ||
       try(var.network.kube_api.load_balancer.enabled, false)
     )
-    error_message = "network.kube_api.endpoint = \"lb_ip\" requires network.kube_api.load_balancer.enabled = true. Use endpoint = \"public_ip\" for minimal no-LB deployments."
+    error_message = "network.kube_api.endpoint = \"lb_ip\" requires network.kube_api.load_balancer.enabled = true."
   }
 }
 
@@ -64,7 +71,7 @@ check "ovh_dns_endpoint_requires_name" {
   assert {
     condition = (
       !local.kubernetes_enabled ||
-      try(var.network.kube_api.endpoint, "public_ip") != "dns" ||
+      try(var.network.kube_api.endpoint, "lb_ip") != "dns" ||
       try(trimspace(var.network.kube_api.dns.name), "") != ""
     )
     error_message = "network.kube_api.endpoint = \"dns\" requires network.kube_api.dns.name to be set."

@@ -59,11 +59,11 @@ pre-split embedded model in places — on conflict, this file and
   pool of all master private IPs, native `ovh_cloud_gateway` +
   `ovh_cloud_floating_ip` lifecycle (LB deleted before gateway/FIP,
   gateway before subnet).
-* Endpoint resolution: LB floating IP (`lb_ip`) > DNS name (`dns` +
-  `dns.name`) > literal value > first-master private IP fallback. `lb_ip`
-  requires an enabled LB; Kubernetes requires an enabled LB, `var.bastion`
-  set, and a `lb_ip`/`dns` endpoint (guarded; public-IP endpoints do not
-  exist for private-only nodes).
+* Endpoint resolution: LB floating IP (`lb_ip`) or DNS name (`dns` +
+  `dns.name`). `lb_ip` requires an enabled LB; Kubernetes requires an
+  enabled LB, `var.bastion` set, and a `lb_ip`/`dns` endpoint (guarded;
+  public-IP endpoints do not exist for private-only nodes). `dns` is an
+  operator-managed record — no OVH DNS resource is created by the module.
 * Ingress listeners: besides TCP/6443 (API), the LB carries TCP/80 and
   TCP/443 (workload ingress) as L4 passthrough pools over the master
   private IPs. Backend ports are inputs defaulting to 80/443 (stock k3s

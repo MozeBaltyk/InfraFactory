@@ -98,9 +98,10 @@ resource "openstack_compute_keypair_v2" "bastion" {
 }
 
 ###
-### Bastion VM. NIC order defines guest interface order: Ext-Net first keeps
-### ens3 (public); attached clusters follow in sorted key order
-### (ens4, ens5, ...), matching templates.tf.
+### Bastion VM. `ens3` is the public NIC (Ext-Net first). Attached clusters
+### add private NICs by sorted key order, but their guest names are NOT
+### predictable (hot-attach); day-2 netplan matches each Neutron port MAC and
+### renames to a conventional iface via the converge role.
 ###
 ### Private NICs are hot-attached ports (below), never inline network blocks:
 ### adding another cluster creates only a port + attach, the VM (and its
@@ -128,8 +129,7 @@ resource "openstack_compute_instance_v2" "bastion" {
   }
 
   # Day-2 convergence (keys, NICs, PermitOpen) is Ansible-owned, never a
-  # replacement: there is deliberately NO replace_triggered_by here (unlike
-  # the former embedded bastion).
+  # replacement: no replace_triggered_by here.
   lifecycle {
     ignore_changes = [user_data]
   }

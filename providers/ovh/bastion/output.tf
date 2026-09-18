@@ -36,6 +36,10 @@ output "converge" {
         iface   = local.cluster_ifaces[name]
         address = module.ipam[name].bastion_ip
         prefix  = split("/", var.clusters[name].cidr)[1]
+        # Hot-attached NICs enumerate unpredictably in the guest (seen:
+        # ens7, never the boot-order ens4), so day-2 netplan matches by
+        # MAC and renames to the conventional iface.
+        mac = openstack_networking_port_v2.bastion_private[name].mac_address
       }
     }
     permit_open    = local.permit_open

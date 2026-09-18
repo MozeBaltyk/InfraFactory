@@ -18,9 +18,12 @@ output on the bastion stack, and `just ovh::bastion::converge KEY`.
 Gate G4 green (playbook `--syntax-check`, recipe parses, `validate` both
 root modules). Live proof deferred to P5.
 
-Pending: nothing offline. Documented bootstrap order:
+Pending: nothing offline. Documented bootstrap order (corrected live
+2026-09-18: converge must precede the cluster's Ansible phase):
 bastion `apply` (empty) → cluster keys + network via targeted apply →
-bastion `apply` with the entry → cluster full `apply`.
+bastion `apply` with the entry → bastion `converge` (admin key; the
+attach is state-only, the guest still has birth-time keys) → cluster
+full `apply`.
 
 Gate G4 (offline): recipe syntax, role `--syntax-check`, `validate` both
 root modules. No cloud contact.

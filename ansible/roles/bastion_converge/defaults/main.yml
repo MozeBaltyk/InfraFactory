@@ -16,9 +16,11 @@ bastion_converge_host: null
 bastion_converge_admin_keys: []
 bastion_converge_cluster_keys: []
 
-# Private NICs, one entry per attached cluster:
+# Private NICs, one entry per attached cluster (MAC from the Neutron port —
+# hot-attached NICs enumerate unpredictably, so netplan matches the MAC and
+# renames to the conventional iface):
 #   bastion_converge_nics:
-#     mycluster: { iface: ens4, address: 10.0.20.254, prefix: 24 }
+#     mycluster: { iface: ens4, address: 10.0.20.254, prefix: 24, mac: fa:16:3e:00:00:01 }
 bastion_converge_nics: {}
 
 # SSH-jump allowlist ("ip:22 ..."); empty while no cluster is attached (an

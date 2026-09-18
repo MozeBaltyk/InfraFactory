@@ -25,6 +25,10 @@ check "bastion_cluster_vlan_id_range" {
   }
 }
 
+# Only masters + workers are sized here: standalone `infra.vms` are not
+# declared in the bastion `clusters` map (they are public-attached and
+# jumped directly), so the cluster stack's own `ovh_reserved_bastion_ip_clear_of_nodes`
+# is authoritative for the vms portion of the CIDR allocation.
 check "bastion_cluster_counts_match_ipam" {
   assert {
     condition = alltrue([

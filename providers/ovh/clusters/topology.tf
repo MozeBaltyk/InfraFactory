@@ -137,30 +137,19 @@ locals {
   }
 
   all_vms_map = merge(local.masters_map, local.workers_map, local.vms_map)
-  # K8s masters/workers (private-only; see moved.tf for the state-mv note
-  # from the single-resource merge).
-  private_cluster_vms_map = local.k8s_nodes ? local.cluster_vms_map : {}
 
   first_master_name = try(local.master_details[0].name, null)
   first_master_fqdn = local.first_master_name != null ? "${local.first_master_name}.${local.subdomain}" : null
 
   ## Kubernetes API bootstrap endpoint (first master private IP); overridden by LB when present
   kube_api_bootstrap_endpoint = try(local.master_details[0].private_ip, null)
-  ## Public-facing API endpoint for kubeconfig
-  ## Resolution order:
-  ##   1. Load Balancer floating IP when network.kube_api.endpoint == "lb_ip" and LB exists
-  ##   2. DNS name when network.kube_api.endpoint == "dns" and dns.name is set
-  ##   3. First master's public IP when endpoint == "public_ip" or as fallback
-  ##   4. Literal value when network.kube_api.endpoint is not a known mode
-  ##   5. First master's private IP (last resort)
+  ## Public-facing API endpoint for kubeconfig. Kubernetes is jump-only:
+  ## endpoint is validated to "lb_ip" (LB required) or "dns" (name required),
+  ## so no public-IP or literal endpoint exists for private-only nodes.
   public_kube_api_endpoint = (
     var.network.kube_api.endpoint == "lb_ip" && local.lb_floating_ip_address != null
-    ) ? local.lb_floating_ip_address : (
-    var.network.kube_api.endpoint == "dns" && try(var.network.kube_api.dns.name, "") != ""
-    ) ? var.network.kube_api.dns.name : (
-    var.network.kube_api.endpoint == "public_ip" || contains(["lb_ip", "dns"], var.network.kube_api.endpoint)
-    ? try(local.vm_public_ipv4_addresses[local.first_master_name], local.kube_api_bootstrap_endpoint, null)
-    : var.network.kube_api.endpoint
+    ? local.lb_floating_ip_address
+    : try(var.network.kube_api.dns.name, "")
   )
 
 }

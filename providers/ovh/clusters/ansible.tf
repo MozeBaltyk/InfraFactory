@@ -39,7 +39,9 @@ module "ansible" {
   # Self-contained ProxyCommand: the inner ssh must carry its own flags because
   # ProxyJump does not forward -i/-o to the jump connection (fresh bastion host
   # keys then fail strict verification without a tty).
-  proxy_jump = local.k8s_nodes ? {
+  # Null-safe on purpose: when the k8s guard fails (no bastion), this yields
+  # null instead of a second, confusing interpolation error beside it.
+  proxy_jump = local.k8s_nodes && local.bastion_public_ipv4_address != null ? {
     common_args = "-o ProxyCommand='ssh -W %h:%p -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ${abspath("${local.env_path}/.key.private")} ${var.cluster.username}@${local.bastion_public_ipv4_address}'"
   } : null
 

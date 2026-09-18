@@ -49,6 +49,15 @@ packages:
 %{ if (ansible_pull_repo != null && ansible_pull_repo != "") || length(extra_disks) > 0 || length(object_storage_credentials) > 0 ~}
 write_files:
 %{ endif ~}
+  # Bound apt fetches: a stalled mirror must fail fast (2026-09-18: an
+  # unattended apt-get update wedged two first boots for 85+ min with no
+  # timeout, parking cloud-init forever). Applies to every apt run.
+  - path: /etc/apt/apt.conf.d/99-infrafactory-timeouts
+    permissions: "0644"
+    content: |
+      Acquire::http::Timeout "30";
+      Acquire::https::Timeout "30";
+      Acquire::Retries "3";
 %{ if length(object_storage_credentials) > 0 ~}
 %{ for c in object_storage_credentials ~}
   - path: /etc/infrafactory/object-storage/${c.name}.env

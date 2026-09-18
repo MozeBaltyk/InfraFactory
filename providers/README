@@ -115,7 +115,7 @@ Every provider module MUST implement all of the following:
 | Capability | Details |
 |---|---|
 | **Credentials** | `ovh_endpoint`, `ovh_application_key`, `ovh_application_secret`, `ovh_consumer_key`, `ovh_project_service_name` |
-| **Authentication** | OVH keys use `OVH_APPLICATION_KEY`, `OVH_APPLICATION_SECRET`, and `OVH_CONSUMER_KEY`. Kubernetes modes require standard OpenStack `OS_*` or `clouds.yaml`/`OS_CLOUD` auth for security groups. OVH `just replace` also requires `jq` for safe topology lookup. |
+| **Authentication** | OVH keys use `OVH_APPLICATION_KEY`, `OVH_APPLICATION_SECRET`, and `OVH_CONSUMER_KEY`. Kubernetes modes require standard OpenStack `OS_*` or `clouds.yaml`/`OS_CLOUD` auth for security groups. OVH `just ovh::bastion::converge` requires `jq` (it reads `tofu output -json converge`). |
 | **Region** | `cluster.region` (e.g. `GRA9`) |
 | **Private network** | `network.private.cidr` (required) + `network.private.vlan_id` (optional, default `0`). Creates `ovh_cloud_project_network_private` + subnet. VLAN ID allows multiple clusters in the same region (valid range: 0–4000). |
 | **Deterministic private IPs** | Computed from `cidrhost(local.private_cidr, offset)` |
@@ -130,7 +130,7 @@ Every provider module MUST implement all of the following:
 | | - Floating IP managed by `ovh_cloud_floating_ip` |
 | | - Gateway managed by `ovh_cloud_gateway` |
 | **Dedicated bastion** | `var.bastion = { public_ip }` (required for Kubernetes) points the cluster at the standalone bastion (`providers/ovh/bastion/`, own state, serves many clusters). The LB carries TCP/6443 (API) plus TCP/80+443 workload ingress as L4 passthrough to the masters (TLS at the ingress controller). K3s/RKE2 nodes are reached through a self-contained `ProxyCommand` configured in `ansible.cfg` (`ssh_common_args`); day-2 keys/netplan/`PermitOpen` converge via the `bastion_converge` role (`just ovh::bastion::converge KEY`). |
-| **API endpoint** | `network.kube_api.endpoint` — resolution priority: LB floating IP > literal value > DNS name > first master public IP > first master private IP |
+| **API endpoint** | `network.kube_api.endpoint` — Kubernetes is jump-only, so the endpoint is `lb_ip` (LB floating IP) or `dns` (`dns.name`); no public-IP endpoint exists for private-only nodes. |
 | **Image discovery** | Search patterns matching image names in region (filters nvidia, prefers non-UEFI) |
 | **Flavor discovery** | Flavor IDs looked up by name from `data.ovh_cloud_project_flavors` |
 | **Public IP validation** | Validates all public-attached VMs received public IPv4 addresses |

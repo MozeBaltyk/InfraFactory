@@ -45,12 +45,14 @@ converge KEY:
     @eval "$(just _source-openrc)"; \
       key={{ quote(KEY) }}; \
       test -n "$key" || { echo "converge requires KEY=<private-key-path>" >&2; exit 1; }; \
+      command -v jq >/dev/null 2>&1 || { echo "converge requires jq (apt install jq)" >&2; exit 1; }; \
       tmp=$(mktemp); trap 'rm -f "$tmp"' EXIT; \
-      tofu output -json converge >"$tmp"; \
+      tofu output -json converge | jq '{converge: .}' >"$tmp"; \
       ip=$(tofu output -raw public_ip); \
-      ANSIBLE_ROLES_PATH="../../../../ansible/roles" ANSIBLE_HOST_KEY_CHECKING=False \
+      user=$(jq -r .converge.username "$tmp"); \
+      ANSIBLE_ROLES_PATH="../../../ansible/roles" ANSIBLE_HOST_KEY_CHECKING=False \
         ansible-playbook ../../shared/ansible/converge_bastion.yml \
-          -i "$ip," --private-key "$key" -e "@$tmp"
+          -i "$ip," -u "$user" --private-key "$key" -e "@$tmp"
 
 # VM only: ports (and their fixed IPs) are separate resources, so they are
 # kept and re-attached on redeploy with identical private IPs.

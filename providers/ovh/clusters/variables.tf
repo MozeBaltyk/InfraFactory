@@ -267,7 +267,7 @@ variable "network" {
       vlan_id = optional(number, 0)
     })
     kube_api = optional(object({
-      endpoint = optional(string, "public_ip")
+      endpoint = optional(string, "lb_ip")
       # Operator CIDRs allowed to reach SSH/Kubernetes APIs as applicable.
       ingress_cidrs = optional(list(string), [])
 

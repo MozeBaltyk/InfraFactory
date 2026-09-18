@@ -29,11 +29,20 @@
   changed_when: true
   when: netplan_files is changed
 
-- name: Re-run the private-network verify service after netplan apply
+- name: Refresh the private-network verify script (birth bakes an empty interface set)
+  ansible.builtin.template:
+    src: private-netplan.sh.j2
+    dest: /usr/local/sbin/infrafactory-ovh-private-netplan.sh
+    mode: "0755"
+  vars:
+    nics: "{{ bastion_converge_nics }}"
+  register: verify_script
+
+- name: Re-run the private-network verify service after convergence
   ansible.builtin.systemd:
     name: infrafactory-ovh-private-netplan.service
     state: started
-  when: netplan_files is changed
+  when: netplan_files is changed or verify_script is changed
 
 - name: Update bastion sshd policy
   ansible.builtin.template:

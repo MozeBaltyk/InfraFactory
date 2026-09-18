@@ -1,0 +1,67 @@
+#!/bin/bash
+# {{ ansible_managed }} — private-network verify (same logic as the birth
+# oneshot in providers/ovh/bastion/templates.tf, but with the converged
+# interface set: birth bakes IFACES at first boot while clusters attach
+# later, so the role owns this file day-2).
+set -euo pipefail
+
+IFACES="{{ nics.values() | map(attribute='iface') | join(' ') }}"
+NETPLAN_DIR="/etc/netplan"
+
+chmod 0600 "$NETPLAN_DIR"/99-infrafactory-ovh-*.yaml 2>/dev/null || true
+
+for IFACE in $IFACES; do
+  if ! ip link show dev "$IFACE" >/dev/null 2>&1; then
+    echo "Private interface $IFACE not found" >&2
+    exit 1
+  fi
+
+  ip link set dev "$IFACE" up
+done
+
+netplan generate
+
+addrs_ok() {
+  for IFACE in $IFACES; do
+    FILE=""
+    for f in "$NETPLAN_DIR"/99-infrafactory-ovh-*.yaml; do
+      if grep -Fq "$IFACE" "$f" 2>/dev/null; then FILE="$f"; break; fi
+    done
+    [ -n "$FILE" ] || { echo "No netplan file for $IFACE" >&2; return 1; }
+    want="$(grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+' "$FILE" | head -n 1)"
+    [ -n "$want" ] || { echo "No address in $FILE" >&2; return 1; }
+    ip -4 addr show dev "$IFACE" | grep -Fq " $want" || return 1
+  done
+}
+
+routes_ok() {
+  for IFACE in $IFACES; do
+    ip -4 route show default dev "$IFACE" | grep -q . && return 1
+  done
+}
+
+if ! addrs_ok || ! routes_ok; then
+  echo "Network state differs from netplan, running netplan apply once" >&2
+  netplan apply
+  sleep 2
+fi
+
+if ! addrs_ok; then
+  echo "Private addresses still missing after netplan apply" >&2
+  exit 1
+fi
+
+# Without this scrub, return traffic for public inbound SSH leaves
+# via a private NIC (asymmetric routing) and the bastion is
+# unreachable from the internet. A systemd service (not just runcmd)
+# so a reboot — which re-applies netplan from files — cannot
+# re-break SSH.
+if ! routes_ok; then
+  echo "Removing stale default routes via private interfaces ($IFACES)" >&2
+  for IFACE in $IFACES; do
+    ip -4 route show default dev "$IFACE" | while read -r route; do
+      [ -n "$route" ] || continue
+      ip -4 route del $route || true
+    done
+  done
+fi
