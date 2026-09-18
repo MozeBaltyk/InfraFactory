@@ -28,8 +28,8 @@ infra = {
      # ]
 
      # Attach OVH-managed storage from `storage` below, by key. Every master
-     # gets the referenced NFS share(s) client-mounted, S3 credentials for
-     # referenced bucket(s) injected, and block volume(s) attached.
+     # gets the referenced NFS share(s) client-mounted and S3 credentials for
+     # referenced bucket(s) injected. (Block volumes are not implemented yet.)
      # nfs            = ["nfs_1"]
      # object_storage = ["object_storage_1"]
   }
