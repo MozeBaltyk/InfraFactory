@@ -111,6 +111,7 @@ only content file at root. It orchestrates the repo rules and this map.
 |---|---|
 | `00-repo-contract.md` | this file — repo rules, orchestration |
 | `plan/` | work backlog: `summary.md` index + one file per implementation phase |
+| `specs/` | normative target-state specs: shared `baseline.md` plus one sub-directory per provider (`ovh/`, `azure/`, `libvirt/`) holding that provider's spec and workstream specs; implementation status lives in `plan/` |
 | `architectures/` | system architecture + per-provider docs (`00-general`, `ovh/`, `azure/`, `libvirt/`) |
 | `procedures/` | operational how-tos (bootstrap, recovery, destroy) |
 | `troubleshooting/` | symptom → cause → fix notes |
@@ -119,6 +120,11 @@ only content file at root. It orchestrates the repo rules and this map.
 Rules for docs:
 
 - One topic, one place. Never duplicate the contract or another doc — link.
+- A workstream with a cross-file contract gets one spec in `specs/`
+  (scope, interfaces, lifecycle, constraints, acceptance). The spec states
+  the target; `plan/` tracks execution, `architectures/` describes the
+  build, `procedures/` tells operators how, `decisions/` records why. On
+  conflict, the spec wins on *what*.
 - Decisions get a dated record in `decisions/` (context, options, outcome).
   Work logs may live in a dated directory while in flight, but must be
   distilled or deleted when the work lands — never left to rot.
