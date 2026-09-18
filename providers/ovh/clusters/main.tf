@@ -102,8 +102,22 @@ resource "terraform_data" "validate_flavors" {
 ###                 as the OVH SSH key which Nova cannot see)
 ###
 
+### Single Nova resource over all_vms_map (masters + workers + standalone
+### VMs). The per-node public_attach/private_attach flags drive the dynamic
+### NIC blocks below, so jump-mode nodes are private-only (single NIC, the
+### private network first — same guest ens3 as before) while normal-mode and
+### standalone VMs stay dual-NIC. This merges the former `vms` +
+### `private_cluster` pair with no state change on existing deployments
+### (see moved.tf; jump-mode masters/workers move into this address).
+###
+### No depends_on the kube-api gateway here, on purpose: the gateway's
+### replace_triggered_by reads these VM ids, so a gateway edge would be a
+### dependency cycle. Private-only first boot therefore does not wait for
+### the gateway resource (public nodes never did); the subnet gateway IP it
+### routes via exists from subnet creation.
+
 resource "openstack_compute_instance_v2" "vms" {
-  for_each = local.public_vms_map
+  for_each = local.all_vms_map
 
   region            = var.cluster.region
   availability_zone = "nova"
@@ -152,43 +166,6 @@ resource "openstack_compute_instance_v2" "vms" {
     # user_data, but the access ACL isn't referenced by any value -- without
     # this, a node can boot and attempt its mount before the ACL exists,
     # failing with "access denied by server".
-    ovh_cloud_storage_file_share_acl.nfs,
-  ]
-}
-
-resource "openstack_compute_instance_v2" "private_cluster" {
-  for_each = local.private_cluster_vms_map
-
-  region            = var.cluster.region
-  availability_zone = "nova"
-
-  name        = each.value.name
-  image_id    = local.selected_image.id
-  flavor_name = each.value.instance_size
-  key_pair    = openstack_compute_keypair_v2.cluster.name
-  user_data   = each.value.user_data_enabled ? local.cloudinit_user_data[each.key] : null
-
-  config_drive = true
-
-  # Single NIC: the private network is the guest's first (and only)
-  # interface (ens3), matching templates.tf.
-  network {
-    uuid        = local.private_network_id
-    fixed_ip_v4 = each.value.private_ip
-  }
-
-  timeouts {
-    create = "20m"
-  }
-
-  lifecycle {
-    ignore_changes = [user_data]
-  }
-
-  depends_on = [
-    terraform_data.validate_image,
-    terraform_data.validate_flavors,
-    ovh_cloud_gateway.kube_api,
     ovh_cloud_storage_file_share_acl.nfs,
   ]
 }

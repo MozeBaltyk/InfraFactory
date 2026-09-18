@@ -55,9 +55,9 @@ infra = {
   }
 }
 
-# Standalone bastion (own state, serves many clusters). Omit/null = public
-# topology. Set to jump through the bastion (nodes become private-only,
-# Ansible uses ProxyJump). Convention: bastion username == cluster username.
+# Standalone bastion (own state, serves many clusters). Required for
+# Kubernetes modes (nodes are private-only); omit for VM-only deployments.
+# Convention: bastion username == cluster username.
 # bastion = {
 #   public_ip = "203.0.113.10"
 # }
@@ -98,21 +98,14 @@ os = {
 ### least one explicit entry below is still required (see "Required" note).
 ###
 
-# Minimal (private network only, no load balancer; endpoint = first master public IP)
-# network = {
-#   private = {
-#     cidr    = "10.0.0.0/24"
-#     mode    = "managed"
-#   }
-#
-#   kube_api = {
-#     endpoint = "public_ip"
-#     # Required: operator/VPN public CIDRs; there is no public-open default.
-#     ingress_cidrs = ["203.0.113.10/32"]
-#   }
-# }
+### Kubernetes modes are jump-only: masters/workers are private-only and
+### reachable solely through the standalone bastion (`bastion.public_ip`
+### below, required). There is no public-topology Kubernetes on OVH. The
+### API is served through the load balancer (`lb_ip` or `dns` endpoint);
+### a VM-only `default` deployment needs neither.
+###
 
-# With load balancer for the Kubernetes API (endpoint = LB floating IP)
+# Kubernetes API via the load balancer (endpoint = LB floating IP)
 # LB flavors: small, medium, large, xl
 # Gateway models: s (200 Mbps), m (500 Mbps), l (2 Gbps), xl (4 Gbps), 2xl (8 Gbps)
 #
@@ -130,13 +123,22 @@ os = {
 #       enabled       = true
 #       flavor        = "small"
 #       gateway_model = "s"
-#       # Jump mode via the standalone bastion: set top-level `bastion.public_ip`
-#       # instead. Masters/workers become private-only: Ansible reaches K3s/RKE2
-#       # nodes through ProxyJump. The LB exposes TCP/6443 only.
-#       # Toggling jump on an existing cluster replaces masters/workers: back up
-#       # etcd/workloads, schedule downtime, and review a saved full plan first.
-#       # `just replace` refuses the first controller; recover it only through a
-#       # verified K3s/RKE2 etcd snapshot and the distribution restore procedure.
+#       # Masters/workers are private-only: Ansible reaches K3s/RKE2 nodes
+#       # through ProxyJump via `bastion.public_ip` (required, top-level).
+#       # The LB exposes TCP/6443 (API) plus TCP/80+443 workload ingress as
+#       # L4 passthrough to the masters (TLS terminates at the ingress
+#       # controller). Backend ports default to the stock k3s
+#       # traefik+servicelb host ports; override per distro as needed:
+#       # ingress_http_port  = 80
+#       # ingress_https_port = 443
+#       # Workload audience defaults to ingress_cidrs below (no public-open
+#       # default); set explicitly when users differ from operators:
+#       # ingress_cidrs = ["203.0.113.0/24"]
+#       # Migrating a pre-existing public cluster to this mode replaces
+#       # masters/workers: back up etcd/workloads, schedule downtime, and
+#       # review a saved full plan first. `just replace` refuses the first
+#       # controller; recover it only through a verified K3s/RKE2 etcd
+#       # snapshot and the distribution restore procedure.
 #     }
 #   }
 # }
@@ -159,7 +161,8 @@ os = {
 #       enabled       = true
 #       flavor        = "small"
 #       gateway_model = "s"
-#       # Jump mode via top-level `bastion.public_ip`; not an LB SSH listener.
+#       # Private-only nodes via top-level `bastion.public_ip` (required);
+#       # not an LB SSH listener.
 #     }
 #   }
 # }

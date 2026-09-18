@@ -5,12 +5,12 @@ output "cluster_nodes" {
   description = "Cluster node connection data"
 
   value = {
-    controller_ips = [for vm in local.master_details : local.lb_ssh_jump_enabled ? vm.private_ip : local.vm_public_ipv4_addresses[vm.name]]
-    worker_ips     = [for vm in local.worker_details : local.lb_ssh_jump_enabled ? vm.private_ip : local.vm_public_ipv4_addresses[vm.name]]
+    controller_ips = [for vm in local.master_details : local.k8s_nodes ? vm.private_ip : local.vm_public_ipv4_addresses[vm.name]]
+    worker_ips     = [for vm in local.worker_details : local.k8s_nodes ? vm.private_ip : local.vm_public_ipv4_addresses[vm.name]]
     vm_ips         = compact([for vm in local.vm_details : local.vm_public_ipv4_addresses[vm.name]])
 
     ssh_first_master = local.first_master_name != null ? try(
-      local.lb_ssh_jump_enabled ? format(
+      local.k8s_nodes ? format(
         "ssh -i env/%s/%s/.key.private -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ProxyCommand='ssh -W %%h:%%p -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i %s/.key.private %s@%s' %s@%s",
         var.infra_provider,
         terraform.workspace,

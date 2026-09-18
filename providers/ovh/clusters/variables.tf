@@ -276,9 +276,14 @@ variable "network" {
       }))
 
       load_balancer = optional(object({
-        enabled       = optional(bool, false)
-        flavor        = optional(string, "small")
-        gateway_model = optional(string, "s")
+        enabled            = optional(bool, false)
+        flavor             = optional(string, "small")
+        gateway_model      = optional(string, "s")
+        ingress_http_port  = optional(number, 80)
+        ingress_https_port = optional(number, 443)
+        # Explicit CIDRs for workload ingress (80/443). Null falls back
+        # to the API ingress CIDRs; there is no public-open default.
+        ingress_cidrs = optional(list(string))
       }), {})
     }), {})
   })
@@ -295,6 +300,24 @@ variable "network" {
       can(cidrnetmask(cidr)) && !strcontains(cidr, ":")
     ])
     error_message = "network.kube_api.ingress_cidrs must contain valid IPv4 CIDR blocks."
+  }
+
+  validation {
+    condition = alltrue([
+      for cidr in coalesce(try(var.network.kube_api.load_balancer.ingress_cidrs, null), []) :
+      can(cidrnetmask(cidr)) && !strcontains(cidr, ":")
+    ])
+    error_message = "network.kube_api.load_balancer.ingress_cidrs must contain valid IPv4 CIDR blocks."
+  }
+
+  validation {
+    condition = alltrue([
+      for p in [
+        try(var.network.kube_api.load_balancer.ingress_http_port, 80),
+        try(var.network.kube_api.load_balancer.ingress_https_port, 443),
+      ] : p >= 1 && p <= 65535
+    ])
+    error_message = "network.kube_api.load_balancer.ingress_http_port/ingress_https_port must be valid TCP ports (1-65535)."
   }
 }
 
@@ -348,10 +371,13 @@ locals {
   private_gateway_ip = ovh_cloud_project_network_private_subnet_v2.cluster.gateway_ip
 
   ## Load Balancer
-  ssh_jump_requested = var.bastion != null
-  lb_enabled         = local.kubernetes_enabled && var.infra.masters.count > 0 && try(var.network.kube_api.load_balancer.enabled, false)
-  # Jump mode makes K3s/RKE2 nodes private-only (Ansible ProxyCommand).
-  lb_ssh_jump_enabled = local.lb_enabled && local.ssh_jump_requested
+  # Kubernetes nodes are ALWAYS jump-mode (private-only, via the standalone
+  # bastion): there is no public topology for k3s/rke2 on OVH anymore.
+  # Enforced by the validate_k8s_topology preconditions in bastion.tf
+  # (bastion set + LB enabled + lb_ip/dns endpoint); plain VM-only shapes
+  # evaluate exactly as before.
+  k8s_nodes  = local.kubernetes_enabled && var.infra.masters.count > 0
+  lb_enabled = local.k8s_nodes && try(var.network.kube_api.load_balancer.enabled, false)
   # Standalone bastion addresses: public IP is the input, private IP is the
   # shared reserved address (last usable host of the CIDR, no shared state).
   bastion_public_ipv4_address = try(var.bastion.public_ip, null)
@@ -362,6 +388,12 @@ locals {
   kube_api_ingress_cidrs = distinct(concat(
     try(var.network.kube_api.ingress_cidrs, []),
     local.my_public_ip != null ? [local.my_public_ip] : [],
+  ))
+  # Workload ingress (80/443) audience: explicit per-LB override, else the
+  # API audience. Never public-open by default.
+  lb_ingress_cidrs = distinct(coalesce(
+    try(var.network.kube_api.load_balancer.ingress_cidrs, null),
+    try(var.network.kube_api.ingress_cidrs, []),
   ))
   lb_flavor_id = local.lb_enabled ? one([
     for f in data.ovh_cloud_project_loadbalancer_flavors.lb[0].flavors :
@@ -383,7 +415,7 @@ locals {
       user_data_enabled = var.infra.masters.user_data_enabled
       private_ip        = module.ipam.master_ips[i]
       private_attach    = true
-      public_attach     = !local.lb_ssh_jump_enabled
+      public_attach     = !local.k8s_nodes
       nfs               = try(var.infra.masters.nfs, [])
       object_storage    = try(var.infra.masters.object_storage, [])
     }
@@ -403,7 +435,7 @@ locals {
       user_data_enabled = var.infra.workers.user_data_enabled
       private_ip        = module.ipam.worker_ips[i]
       private_attach    = true
-      public_attach     = !local.lb_ssh_jump_enabled
+      public_attach     = !local.k8s_nodes
       nfs               = try(var.infra.workers.nfs, [])
       object_storage    = try(var.infra.workers.object_storage, [])
     }
@@ -441,9 +473,10 @@ locals {
     for vm in local.vm_details : vm.name => vm
   }
 
-  all_vms_map             = merge(local.masters_map, local.workers_map, local.vms_map)
-  public_vms_map          = local.lb_ssh_jump_enabled ? local.vms_map : local.all_vms_map
-  private_cluster_vms_map = local.lb_ssh_jump_enabled ? local.cluster_vms_map : {}
+  all_vms_map = merge(local.masters_map, local.workers_map, local.vms_map)
+  # K8s masters/workers (private-only; see moved.tf for the state-mv note
+  # from the single-resource merge).
+  private_cluster_vms_map = local.k8s_nodes ? local.cluster_vms_map : {}
 
   first_master_name = try(local.master_details[0].name, null)
   first_master_fqdn = local.first_master_name != null ? "${local.first_master_name}.${local.subdomain}" : null

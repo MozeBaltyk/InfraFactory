@@ -42,53 +42,13 @@ resource "openstack_networking_secgroup_v2" "cluster" {
   name                 = "${var.cluster.id}-${terraform.workspace}"
   description          = "InfraFactory ${var.cluster.id} cluster"
   region               = var.cluster.region
-  delete_default_rules = local.lb_ssh_jump_enabled
+  delete_default_rules = local.k8s_nodes
 
   depends_on = [terraform_data.validate_operator_ingress_cidrs]
 }
 
-locals {
-  cluster_public_ingress_rules = local.kubernetes_enabled ? merge(
-    local.lb_ssh_jump_enabled ? {} : {
-      for cidr in local.kube_api_ingress_cidrs : "kube-api-${cidr}" => {
-        port = 6443
-        cidr = cidr
-      }
-    },
-    local.lb_ssh_jump_enabled ? {} : {
-      for cidr in local.kube_api_ingress_cidrs : "ssh-${cidr}" => {
-        port = 22
-        cidr = cidr
-      }
-    }
-  ) : {}
-}
-
-resource "openstack_networking_secgroup_rule_v2" "cluster_public_ingress" {
-  for_each = local.cluster_public_ingress_rules
-
-  direction         = "ingress"
-  ethertype         = "IPv4"
-  protocol          = "tcp"
-  port_range_min    = each.value.port
-  port_range_max    = each.value.port
-  remote_ip_prefix  = each.value.cidr
-  security_group_id = openstack_networking_secgroup_v2.cluster[0].id
-  region            = var.cluster.region
-}
-
-resource "openstack_networking_secgroup_rule_v2" "cluster_private_ingress" {
-  count = local.kubernetes_enabled && !local.lb_ssh_jump_enabled ? 1 : 0
-
-  direction         = "ingress"
-  ethertype         = "IPv4"
-  remote_ip_prefix  = local.private_cidr
-  security_group_id = openstack_networking_secgroup_v2.cluster[0].id
-  region            = var.cluster.region
-}
-
 resource "openstack_networking_secgroup_rule_v2" "cluster_ssh_from_bastion" {
-  count = local.lb_ssh_jump_enabled ? 1 : 0
+  count = local.k8s_nodes ? 1 : 0
 
   direction         = "ingress"
   ethertype         = "IPv4"
@@ -101,7 +61,7 @@ resource "openstack_networking_secgroup_rule_v2" "cluster_ssh_from_bastion" {
 }
 
 locals {
-  jump_cluster_east_west_rules = local.lb_ssh_jump_enabled ? {
+  jump_cluster_east_west_rules = local.k8s_nodes ? {
     tcp-low  = { protocol = "tcp", min = 1, max = 21 }
     tcp-high = { protocol = "tcp", min = 23, max = 65535 }
     udp      = { protocol = "udp", min = 1, max = 65535 }
@@ -123,7 +83,7 @@ resource "openstack_networking_secgroup_rule_v2" "cluster_east_west" {
 }
 
 resource "openstack_networking_secgroup_rule_v2" "cluster_lb_backend" {
-  count = local.lb_ssh_jump_enabled ? 1 : 0
+  count = local.lb_enabled ? 1 : 0
 
   direction         = "ingress"
   ethertype         = "IPv4"
@@ -136,39 +96,20 @@ resource "openstack_networking_secgroup_rule_v2" "cluster_lb_backend" {
 }
 
 resource "openstack_networking_secgroup_rule_v2" "cluster_egress" {
-  count             = local.lb_ssh_jump_enabled ? 1 : 0
+  count             = local.k8s_nodes ? 1 : 0
   direction         = "egress"
   ethertype         = "IPv4"
   security_group_id = openstack_networking_secgroup_v2.cluster[0].id
   region            = var.cluster.region
 }
 
-data "openstack_networking_port_v2" "cluster_public" {
-  for_each = local.kubernetes_enabled && !local.lb_ssh_jump_enabled ? local.cluster_vms_map : {}
-
-  device_id = openstack_compute_instance_v2.vms[each.key].id
-  fixed_ip  = local.vm_public_ipv4_addresses[each.key]
-  region    = var.cluster.region
-
-  depends_on = [terraform_data.validate_public_ips]
-}
-
 data "openstack_networking_port_v2" "cluster_private" {
   for_each = local.kubernetes_enabled ? local.cluster_vms_map : {}
 
-  device_id  = local.lb_ssh_jump_enabled ? openstack_compute_instance_v2.private_cluster[each.key].id : openstack_compute_instance_v2.vms[each.key].id
+  device_id  = openstack_compute_instance_v2.vms[each.key].id
   network_id = local.private_network_id
   fixed_ip   = each.value.private_ip
   region     = var.cluster.region
-}
-
-resource "openstack_networking_port_secgroup_associate_v2" "cluster_public" {
-  for_each = local.kubernetes_enabled && !local.lb_ssh_jump_enabled ? local.cluster_vms_map : {}
-
-  port_id            = data.openstack_networking_port_v2.cluster_public[each.key].id
-  security_group_ids = [openstack_networking_secgroup_v2.cluster[0].id]
-  enforce            = true
-  region             = var.cluster.region
 }
 
 resource "openstack_networking_port_secgroup_associate_v2" "cluster_private" {
@@ -284,13 +225,71 @@ resource "ovh_cloud_project_loadbalancer" "kube_api" {
           }
         ]
       }
-    }
+    },
+    # Workload ingress as L4 passthrough (TLS terminates at the ingress
+    # controller, never at Octavia). Backend ports default to the stock
+    # k3s traefik+servicelb host ports; override per distro as needed.
+    {
+      port          = 80
+      protocol      = "tcp"
+      name          = "http-ingress"
+      allowed_cidrs = local.lb_ingress_cidrs
+
+      pool = {
+        algorithm = "roundRobin"
+        protocol  = "tcp"
+        name      = "http-ingress-pool"
+
+        health_monitor = {
+          name         = "${var.cluster.id}-http-ingress-hm"
+          delay        = 5
+          max_retries  = 3
+          timeout      = 3
+          monitor_type = "tcp"
+        }
+
+        members = [
+          for m in local.master_details : {
+            address       = m.private_ip
+            protocol_port = var.network.kube_api.load_balancer.ingress_http_port
+            weight        = 1
+          }
+        ]
+      }
+    },
+    {
+      port          = 443
+      protocol      = "tcp"
+      name          = "https-ingress"
+      allowed_cidrs = local.lb_ingress_cidrs
+
+      pool = {
+        algorithm = "roundRobin"
+        protocol  = "tcp"
+        name      = "https-ingress-pool"
+
+        health_monitor = {
+          name         = "${var.cluster.id}-https-ingress-hm"
+          delay        = 5
+          max_retries  = 3
+          timeout      = 3
+          monitor_type = "tcp"
+        }
+
+        members = [
+          for m in local.master_details : {
+            address       = m.private_ip
+            protocol_port = var.network.kube_api.load_balancer.ingress_https_port
+            weight        = 1
+          }
+        ]
+      }
+    },
   ]
 
   depends_on = [
     ovh_cloud_project_network_private_subnet_v2.cluster,
     openstack_compute_instance_v2.vms,
-    openstack_compute_instance_v2.private_cluster,
     openstack_networking_port_secgroup_associate_v2.cluster_private,
   ]
 }
