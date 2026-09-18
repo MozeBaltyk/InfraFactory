@@ -15,10 +15,13 @@ module "ipam" {
 locals {
   bastion_subdomain = "${var.bastion.id}.${var.bastion.domain}"
 
-  cluster_public_keys = compact([
+  cluster_public_keys = [
     for name, c in var.clusters :
-    c.public_key_file != null ? trimspace(file(c.public_key_file)) : ""
-  ])
+    trimspace(file(coalesce(
+      c.public_key_file,
+      "${path.module}/../../../env/${var.infra_provider}/${name}/.key.pub",
+    )))
+  ]
 
   # Every served node address, for the SSH-jump allowlist. Empty while no
   # cluster is attached (bastion-first birth): the PermitOpen line is then

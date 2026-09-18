@@ -53,6 +53,21 @@ deploy NAME='':
       fi; \
       tofu apply -auto-approve -var-file={{ quote(ENV_TFVARS_PATH) }} "${target_args[@]}"
 
+# Create the cluster's private network + SSH keys only, so the standalone
+# bastion can be attached and converged BEFORE the full cluster apply. The
+# workspace (ENV) name is the bastion `clusters` map key; the bastion reads
+# env/OVH/<ENV>/.key.pub by convention after this runs.
+bootstrap:
+    @tofu init
+    @just _workspace
+    @eval "$(just _source-openrc)"; \
+      tofu apply -auto-approve -var-file={{ quote(ENV_TFVARS_PATH) }} \
+        -target=module.ssh_keys \
+        -target=random_id.ssh_key_suffix \
+        -target=openstack_compute_keypair_v2.cluster \
+        -target=ovh_cloud_project_network_private.cluster \
+        -target=ovh_cloud_project_network_private_subnet_v2.cluster
+
 # Force rebuild one VM instance (un-targeted dependents included). Refuses
 # the first K3s/RKE2 controller: automatic datastore rejoin is unsafe,
 # recover it only through a verified etcd snapshot and the distribution

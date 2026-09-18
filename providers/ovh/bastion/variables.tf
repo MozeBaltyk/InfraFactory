@@ -110,10 +110,16 @@ variable "ingress_cidrs" {
 variable "clusters" {
   description = "K8s clusters served by this bastion, attached one by one after their private network exists. bastion_ip per cluster is the shared reserved address (last usable host of the CIDR): both stacks agree with no shared state."
   type = map(object({
-    cidr            = string
-    vlan_id         = optional(number, 0)
-    masters         = optional(number, 1)
-    workers         = optional(number, 0)
+    cidr    = string
+    vlan_id = optional(number, 0)
+    masters = optional(number, 1)
+    workers = optional(number, 0)
+
+    # Optional override. Defaults to the cluster's generated public key at
+    # env/<PROVIDER>/<cluster>/.key.pub (the shared ssh-keys artifact
+    # convention); the map KEY must equal the cluster workspace/ENV name.
+    # The cluster stack generates the key, so its keys + network targeted
+    # apply runs BEFORE this stack reads it.
     public_key_file = optional(string, null)
   }))
   default = {}
@@ -122,9 +128,10 @@ variable "clusters" {
 locals {
   cluster_names_sorted = sort(keys(var.clusters))
 
-  # NIC order defines guest interface order: Ext-Net first (ens3 = public),
-  # then one private NIC per attached cluster in sorted key order
-  # (ens4, ens5, ...). Matches the netplan files rendered in templates.tf.
+  # Conventional per-cluster iface names (ens3 = public, then ens4+ per
+  # cluster in sorted key order). These are netplan *rename targets*:
+  # hot-attached NICs do not enumerate predictably, so day-2 netplan matches
+  # the Neutron port MAC and renames to these names (see output.tf converge).
   cluster_ifaces = {
     for i, name in local.cluster_names_sorted :
     name => "ens${4 + i}"

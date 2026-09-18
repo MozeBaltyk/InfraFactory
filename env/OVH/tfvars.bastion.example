@@ -33,10 +33,11 @@ ingress_cidrs = [
 # public NIC only and no PermitOpen restriction.
 clusters = {
   # simpl-int-nonprodlike-01 = {
-  #   cidr            = "10.0.20.0/24"
-  #   vlan_id         = 20
-  #   masters         = 1 # must match the cluster tfvars (PermitOpen recompute)
-  #   workers         = 1 # must match the cluster tfvars
-  #   public_key_file = "../../env/OVH/simpl-int-nonprodlike-01/.key.pub"
+  #   cidr    = "10.0.20.0/24"
+  #   vlan_id = 20
+  #   masters = 1 # must match the cluster tfvars (PermitOpen recompute)
+  #   workers = 1 # must match the cluster tfvars
+  #   # public_key_file is optional: defaults to env/OVH/<key>/.key.pub
+  #   # (the key above the map KEY — equals the cluster workspace name).
   # }
 }

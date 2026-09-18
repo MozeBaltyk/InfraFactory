@@ -15,6 +15,10 @@ plan NAME='':
 deploy NAME='':
     @just clusters::deploy {{ quote(NAME) }}
 
+# Deploy only the cluster private network + SSH keys (bastion attach prerequisite).
+bootstrap:
+    @just clusters::bootstrap
+
 # Force rebuild one cluster VM (first controller refused, see clusters recipe).
 replace NAME:
     @just clusters::replace {{ quote(NAME) }}
