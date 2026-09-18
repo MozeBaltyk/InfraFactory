@@ -110,11 +110,11 @@ resource "terraform_data" "validate_flavors" {
 ### `private_cluster` pair with no state change on existing deployments
 ### (see moved.tf; jump-mode masters/workers move into this address).
 ###
-### No depends_on the kube-api gateway here, on purpose: the gateway's
-### replace_triggered_by reads these VM ids, so a gateway edge would be a
-### dependency cycle. Private-only first boot therefore does not wait for
-### the gateway resource (public nodes never did); the subnet gateway IP it
-### routes via exists from subnet creation.
+### Dependencies (see depends_on below): the VMs wait for the egress gateway
+### (created before them and READY before returning), the image/flavor
+### validation, the subnet, and the NFS ACL. Private-only nodes need egress at
+### first boot for apt/rke2.
+###
 
 resource "openstack_compute_instance_v2" "vms" {
   for_each = local.all_vms_map
@@ -162,6 +162,10 @@ resource "openstack_compute_instance_v2" "vms" {
     terraform_data.validate_image,
     terraform_data.validate_flavors,
     ovh_cloud_project_network_private_subnet_v2.cluster,
+    # Private-only nodes boot only after the egress gateway is READY — the
+    # gateway resource waits for READY before returning, so first-boot
+    # package installs (apt/rke2) have internet. No-op when LB is disabled.
+    ovh_cloud_gateway.kube_api,
     # The NFS share's export path is already an implicit dependency via
     # user_data, but the access ACL isn't referenced by any value -- without
     # this, a node can boot and attempt its mount before the ACL exists,

@@ -24,5 +24,5 @@ VMs, no bastion needed).
   replaces masters/workers (etcd backup, downtime, reviewed saved plan).
 * `local.k8s_nodes` replaces every jump conditional; non-Kubernetes
   evaluation paths are byte-identical to before.
-* The merged single Nova resource keeps no gateway edge (it would cycle
-  with the gateway's id-based replace trigger); see `main.tf`.
+* The merged single Nova resource `depends_on` the egress gateway (created
+  first, READY before nodes boot); see `main.tf`.

@@ -124,14 +124,11 @@ resource "openstack_networking_port_secgroup_associate_v2" "cluster_private" {
 ###
 ### Gateway and floating IP for the Kubernetes API load balancer
 ###
-
-resource "terraform_data" "gateway_vm_generation" {
-  count = local.lb_enabled ? 1 : 0
-
-  input = {
-    for name, vm in openstack_compute_instance_v2.vms : name => vm.id
-  }
-}
+### The gateway is created BEFORE the VMs (the VMs depend on it — see main.tf):
+### private-only nodes need working egress at first boot for apt/rke2, and the
+### gateway resource only returns once it is READY. It is subnet-scoped NAT —
+### it has no dependency on the VM set, so no replace trigger is needed.
+###
 
 resource "ovh_cloud_gateway" "kube_api" {
   count = local.lb_enabled ? 1 : 0
@@ -146,14 +143,6 @@ resource "ovh_cloud_gateway" "kube_api" {
   }
 
   subnet_ids = [local.private_subnet_id]
-
-  lifecycle {
-    replace_triggered_by = [terraform_data.gateway_vm_generation[count.index]]
-  }
-
-  depends_on = [
-    openstack_compute_instance_v2.vms,
-  ]
 }
 
 resource "ovh_cloud_floating_ip" "kube_api" {

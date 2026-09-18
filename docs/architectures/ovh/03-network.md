@@ -52,7 +52,7 @@ IPs, unattended, and surviving reboots.
 | Actor | Role | Lives in |
 |---|---|---|
 | Neutron | Private net/subnet (`cidr`, `vlan_id`), gateway `.1`, `dhcp = false`, Ext-Net public net | `clusters/network.tf` |
-| Nova (`openstack_compute_instance_v2`) | One resource over all nodes, ports with fixed IPs, **config-drive** (virtual CD-ROM carrying `user_data` + `network_data.json`) | `clusters/main.tf` (single `vms` resource; no gateway edge — it would cycle with the gateway's id-based replace trigger) |
+| Nova (`openstack_compute_instance_v2`) | One resource over all nodes, ports with fixed IPs, **config-drive** (virtual CD-ROM carrying `user_data` + `network_data.json`) | `clusters/main.tf` (single `vms` resource; nodes `depends_on` the gateway so they boot only after egress is READY) |
 | cloud-init | 3 stages: **network** (renders `50-cloud-init.yaml` from `network_data.json`) → **config** (`write_files`, `runcmd`) → **final** | shared `cloud-init/*/cloud_init.cfg.tftpl` + OVH merge |
 | netplan | Applies the **merge** of all `/etc/netplan/*.yaml`, alphabetically. No syntax exists to *remove* something another file added | guest `/etc/netplan/` |
 | Our guest files | `99-infrafactory-ovh-private.yaml` (intent), `infrafactory-ovh-private-netplan.sh` + `.service` (reconciliation), sshd hardening | `clusters/templates.tf` (nodes) + `providers/ovh/bastion/templates.tf` (same trio, plus `PermitOpen` verify) |
@@ -74,10 +74,14 @@ netplan template hard-code this mapping.
 3. OVH merge per node: base cloud-config + `write_files` (netplan `99` file,
    scrub script + service, sshd config) + `runcmd` (`netplan generate/apply`,
    `daemon-reload`, enable service, `sysctl`, sshd verify).
-4. Instances boot with `config_drive = true`, NICs in fixed order, fixed
-   private IPs. Public IPv4s come back in Nova state (no re-read needed).
-5. Port lookups → SG association (`enforce = true`), gateway → LB → FIP.
-6. Standalone bastion readiness probe (in the bastion module:
+4. Gateway is created and waits for READY (private-only nodes need it).
+   The FIP is provisioned alongside (no edge; independent).
+5. Instances boot with `config_drive = true`, NICs in fixed order, fixed
+   private IPs — **after** the gateway is READY, so first-boot egress works.
+   Public IPv4s come back in Nova state (no re-read needed).
+6. Port lookups → SG association (`enforce = true`), then the LB (created
+   after the instances; it references gateway + FIP).
+7. Standalone bastion readiness probe (in the bastion module:
    `cloud-init status --wait`, ~10 min fail-fast). Then Ansible artifacts.
 
 ### 2b. Boot time (guest, every boot)
@@ -218,9 +222,7 @@ service deletes exactly one known-stale route family per boot.
    gateway-less topology is ever needed.
 2. Subnet-level `dns_nameservers` so `50-cloud-init.yaml` carries DNS from
    the network stage (removes first-boot DNS dependence on our files).
-3. First-boot egress before the gateway resource exists: since the
-   single-resource merge the nodes carry no gateway edge (it would cycle
-   with the gateway's id-based replace trigger), so private-only first
-   boot (package installs, `get.rke2.io`) races gateway readiness. Watch
-   P5 first boots; if it bites, add a readiness wait (poll) before nodes
-   boot or move node package install after convergence checks.
+3. First-boot egress: resolved by ordering the gateway before the VMs (the
+   nodes `depends_on` the gateway, which returns only once READY) — see
+   `clusters/main.tf`. If private nodes ever boot without a gateway (LB
+   disabled), egress must be revisited.
