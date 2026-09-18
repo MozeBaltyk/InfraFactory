@@ -1,14 +1,16 @@
-# P6 — Docs + parity close-out — pending
+# P6 — Docs + parity close-out — pending (two items done early, see below)
 
 After P5 is green:
 
 - `providers/README`: OVH split as provider-specific extension + updated
   test matrix; slim the baseline/matrix sections to link `docs/specs/`
-  (normative home) instead of duplicating them.
+  (normative home) instead of duplicating them. (OVH rows already
+  realigned jump-only on the branch; matrix + slimming remain.)
 - `env/OVH/tfvars.bastion.example`: final reference with a 2-cluster example.
-- `docs/architectures/ovh/03-network.md`: rewrite the embedded-bastion
-  sections (bastion VM/SG/ports/probe in `clusters/`) for the standalone
-  model; keep the incident history, mark pre-split entries as such.
+- `docs/architectures/ovh/03-network.md`: embedded-bastion sections
+  already realigned jump-only on the branch (standalone ownership,
+  single-resource note, gateway-race open question); re-verify against
+  P5 outcomes.
 - `docs/procedures/ovh-bastion.md`: already drafted (two states/workspaces,
   `var.bastion` wiring, birth/attach order, multi-cluster constraints,
   embedded→standalone migration); verify against P5 outcomes and fix drift.

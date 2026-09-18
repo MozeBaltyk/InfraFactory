@@ -32,9 +32,11 @@ pre-split embedded model in places — on conflict, this file and
 
 ## 3. Node topology
 
-* Normal mode: masters/workers public (`ens3`, DHCP) + private (`ens4`,
-  static). Jump mode (`var.bastion` set): masters/workers private-only.
-  Standalone `infra.vms` are always public + private.
+* Kubernetes modes are jump-only (see `2026-09-18-ovh-jump-only.md`):
+  masters/workers are private-only, reachable solely via the bastion.
+  There is no public Kubernetes topology on OVH.
+* Standalone `infra.vms` are always public + private, including in
+  VM-only `default` deployments (no bastion needed there).
 * Images: active non-UEFI Ubuntu matching `os.image.search_patterns`
   (nvidia/bare-metal excluded). Flavors: requested `instance_size` names
   looked up in-region; missing image/flavor fails fast with a clear
@@ -58,9 +60,21 @@ pre-split embedded model in places — on conflict, this file and
   `ovh_cloud_floating_ip` lifecycle (LB deleted before gateway/FIP,
   gateway before subnet).
 * Endpoint resolution: LB floating IP (`lb_ip`) > DNS name (`dns` +
-  `dns.name`) > first-master public IP (`public_ip`) > literal value >
-  first-master private IP fallback. `lb_ip` requires an enabled LB; jump
-  mode requires `lb_ip`.
+  `dns.name`) > literal value > first-master private IP fallback. `lb_ip`
+  requires an enabled LB; Kubernetes requires an enabled LB, `var.bastion`
+  set, and a `lb_ip`/`dns` endpoint (guarded; public-IP endpoints do not
+  exist for private-only nodes).
+* Ingress listeners: besides TCP/6443 (API), the LB carries TCP/80 and
+  TCP/443 (workload ingress) as L4 passthrough pools over the master
+  private IPs. Backend ports are inputs defaulting to 80/443 (stock k3s
+  traefik+servicelb host ports); non-default ingress exposures override
+  them, and rke2 NodePort pinning via HelmChartConfig is a P5-proven
+  follow-up. TLS terminates at the ingress controller, never at Octavia
+  (no OVH certificate management; ACME HTTP-01 keeps working end to
+  end). `allowed_cidrs` defaults to `ingress_cidrs` with an explicit
+  per-LB `ingress_cidrs` override for the operator-vs-users split — no
+  public-open default. Single-master clusters behave identically
+  (one-member pools).
 * Operator access requires at least one explicit
   `network.kube_api.ingress_cidrs` entry (no public-open default); the
   caller's current public IP is auto-added on top, never as a

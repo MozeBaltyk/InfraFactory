@@ -35,11 +35,13 @@ blast radius and churn gateway/LB on bastion replacement.
 
 Cluster → bastion (hand-typed, no backend link):
 
-* `bastion = { public_ip }` in the cluster tfvars; `null`/omitted means
-  public topology, unchanged from before the split.
+* `bastion = { public_ip }` in the cluster tfvars, required for
+  Kubernetes (private-only nodes have no other path; see
+  `../../decisions/2026-09-18-ovh-jump-only.md`).
 * Convention: bastion username == cluster username.
-* Jump mode additionally requires an enabled load balancer with
-  `network.kube_api.endpoint = "lb_ip"` (guarded in-stack).
+* Kubernetes additionally requires an enabled load balancer with
+  `network.kube_api.endpoint = "lb_ip"` (or `"dns"` with `dns.name`
+  set) — guarded in-stack.
 
 Bastion → cluster (hand-typed):
 

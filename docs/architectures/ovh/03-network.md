@@ -3,10 +3,12 @@
 Migrated from `.local/network_ovh.md` during the docs cleanup. Path note: the
 cluster stack now lives in `providers/ovh/clusters/` (moved from
 `providers/ovh/`); bare `providers/ovh/<file>.tf` references below mean
-`providers/ovh/clusters/<file>.tf`. The embedded bastion
-(`clusters/bastion.tf`) is migrating to the standalone
-`providers/ovh/bastion/` module — see `docs/plan/` (bastion split phases)
-and `docs/decisions/2026-09-18-ovh-bastion-split.md`.
+`providers/ovh/clusters/<file>.tf`. The bastion split is landed:
+`clusters/bastion.tf` keeps only the Kubernetes-topology guard while the
+standalone `providers/ovh/bastion/` module owns the VM, ports, SG, and
+readiness probe — see `docs/decisions/2026-09-18-ovh-bastion-split.md`
+and `docs/decisions/2026-09-18-ovh-jump-only.md` (Kubernetes is
+jump-only; there is no public k3s/rke2 topology anymore).
 
 ## 0. Context: what are we trying to achieve?
 
@@ -19,17 +21,20 @@ directories and stay minimal.
 On OVH that means, concretely:
 
 * A private Neutron network (`10.0.20.0/24`-style, per-env CIDR) where every
-  node gets a **deterministic static IP** (`cidrhost(...)`: masters first,
-  then workers, then extra VMs, then bastion). Deterministic because the
+  node gets a **deterministic static IP** (`providers/shared/modules/ipam`:
+  masters first, then workers, then extra VMs; bastion reserved at the last
+  usable host). Deterministic because the
   inventory, TLS SANs, flannel interface pinning, and `PermitOpen` rules all
   derive from those IPs.
-* Two topologies from the same code:
-  * **Normal** — every node is dual-homed: `ens3` = public (Ext-Net, DHCP),
-    `ens4` = private (static). SSH straight from the internet.
-  * **LB + ssh-jump** — cluster nodes are **private-only** (`ens3` = private,
-    no public NIC at all) and a **bastion** keeps the public entry. All node
-    SSH goes through the bastion (`ProxyCommand`), kube API goes through an
-    Octavia LB with a floating IP.
+* One topology per mode from the same code:
+  * **k3s/rke2 (jump-only)** — cluster nodes are **private-only** (`ens3` =
+    private, no public NIC at all) and the **standalone bastion** keeps the
+    public entry. All node SSH goes through the bastion (`ProxyCommand`),
+    kube API goes through an Octavia LB with a floating IP. Guarded
+    in-stack: no bastion, LB, or `lb_ip`/`dns` endpoint means no plan.
+  * **`default` (VM-only/plain)** — nodes are dual-homed: `ens3` = public
+    (Ext-Net, DHCP), `ens4` = private (static). SSH straight from the
+    internet. Standalone `infra.vms` are always dual-homed.
 * A bastion that is SSH-jump only, never a router (`ip_forward=0`,
   `AllowTcpForwarding local`, `PermitOpen <nodes>:22`).
 * Internet egress for private-only nodes via the Neutron gateway (router
@@ -47,11 +52,11 @@ IPs, unattended, and surviving reboots.
 | Actor | Role | Lives in |
 |---|---|---|
 | Neutron | Private net/subnet (`cidr`, `vlan_id`), gateway `.1`, `dhcp = false`, Ext-Net public net | `clusters/network.tf` |
-| Nova (`openstack_compute_instance_v2`) | VMs, ports with fixed IPs, **config-drive** (virtual CD-ROM carrying `user_data` + `network_data.json`) | `clusters/main.tf`, `clusters/bastion.tf` |
+| Nova (`openstack_compute_instance_v2`) | One resource over all nodes, ports with fixed IPs, **config-drive** (virtual CD-ROM carrying `user_data` + `network_data.json`) | `clusters/main.tf` (single `vms` resource; no gateway edge — it would cycle with the gateway's id-based replace trigger) |
 | cloud-init | 3 stages: **network** (renders `50-cloud-init.yaml` from `network_data.json`) → **config** (`write_files`, `runcmd`) → **final** | shared `cloud-init/*/cloud_init.cfg.tftpl` + OVH merge |
 | netplan | Applies the **merge** of all `/etc/netplan/*.yaml`, alphabetically. No syntax exists to *remove* something another file added | guest `/etc/netplan/` |
-| Our guest files | `99-infrafactory-ovh-private.yaml` (intent), `infrafactory-ovh-private-netplan.sh` + `.service` (reconciliation), sshd hardening | `clusters/templates.tf`, `clusters/bastion.tf` |
-| Security groups | Bastion SG (`:22` from ingress CIDRs, incl. operator IP) and cluster SG, attached via `port_secgroup_associate` resources | `clusters/network.tf`, `clusters/bastion.tf` |
+| Our guest files | `99-infrafactory-ovh-private.yaml` (intent), `infrafactory-ovh-private-netplan.sh` + `.service` (reconciliation), sshd hardening | `clusters/templates.tf` (nodes) + `providers/ovh/bastion/templates.tf` (same trio, plus `PermitOpen` verify) |
+| Security groups | Standalone bastion SG (`:22` from ingress CIDRs, incl. operator IP) in the bastion module; cluster SG (SSH only from the bastion's reserved IP, east-west, LB backend) attached via `port_secgroup_associate` resources | `providers/ovh/bastion/network.tf`, `clusters/network.tf` |
 | LB + FIP + gateway | Octavia LB (`:6443`) on the private net, floating IP (stable endpoint), gateway required by the LB | `clusters/network.tf` |
 
 NIC order is load-bearing: Nova attaches NICs in the order of the `network`
@@ -72,8 +77,8 @@ netplan template hard-code this mapping.
 4. Instances boot with `config_drive = true`, NICs in fixed order, fixed
    private IPs. Public IPv4s come back in Nova state (no re-read needed).
 5. Port lookups → SG association (`enforce = true`), gateway → LB → FIP.
-6. `bastion_cloudinit_ready` provisioner SSH-probes the bastion
-   (`cloud-init status --wait`, ~10 min fail-fast). Then Ansible artifacts.
+6. Standalone bastion readiness probe (in the bastion module:
+   `cloud-init status --wait`, ~10 min fail-fast). Then Ansible artifacts.
 
 ### 2b. Boot time (guest, every boot)
 
@@ -182,9 +187,10 @@ service deletes exactly one known-stale route family per boot.
   single-NIC base + optional `public_iface` DHCP block.
 * `providers/ovh/clusters/templates.tf` — cluster nodes: `99` via shared
   template, scrub trio, service `runcmd`. No `network.config` key.
-* `providers/ovh/clusters/bastion.tf` — embedded bastion: same trio for
-  `ens4` (+ sshd `PermitOpen` verify, `ip_forward=0`). Migrating to the
-  standalone `providers/ovh/bastion/` module (hot-attach ports, N clusters).
+* `providers/ovh/clusters/bastion.tf` — Kubernetes-topology guard only
+  (`var.bastion` + LB + endpoint required for k3s/rke2). The standalone
+  `providers/ovh/bastion/` module owns VM, hot-attach ports (N clusters),
+  SG, and probe.
 * `providers/ovh/clusters/network.tf` — `dhcp = false`, gateway iff LB, SGs,
   LB/FIP.
 * `providers/ovh/clusters/main.tf` — Nova instances, `config_drive = true`,
@@ -212,5 +218,9 @@ service deletes exactly one known-stale route family per boot.
    gateway-less topology is ever needed.
 2. Subnet-level `dns_nameservers` so `50-cloud-init.yaml` carries DNS from
    the network stage (removes first-boot DNS dependence on our files).
-3. Readiness wait (poll) before nodes boot during gateway churn, or move
-   node package install after convergence checks.
+3. First-boot egress before the gateway resource exists: since the
+   single-resource merge the nodes carry no gateway edge (it would cycle
+   with the gateway's id-based replace trigger), so private-only first
+   boot (package installs, `get.rke2.io`) races gateway readiness. Watch
+   P5 first boots; if it bites, add a readiness wait (poll) before nodes
+   boot or move node package install after convergence checks.

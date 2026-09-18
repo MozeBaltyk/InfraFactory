@@ -6,7 +6,11 @@ sections below (everything else). Decisions in `../decisions/`.
 ## OVH bastion split (`ovh-refactor`)
 
 One mutualized standalone bastion serving many clusters. Full story in
-`../decisions/2026-09-18-ovh-bastion-split.md`.
+`../decisions/2026-09-18-ovh-bastion-split.md`. Follow-up consolidation
+on the branch: jump-only Kubernetes (decision
+`2026-09-18-ovh-jump-only.md`: guards + deleted public branches) and the
+single-resource merge (`vms` + `private_cluster`, state-mv note in
+`moved.tf`) — both offline-validated on the branch.
 
 | Phase | File | Status |
 |---|---|---|
@@ -24,10 +28,10 @@ One mutualized standalone bastion serving many clusters. Full story in
 - [ ] Additional Ansible post-provisioning playbooks
 - [ ] OVH storage per-role attach by key (`nfs`/`object_storage`/`block_storage`)
 - [ ] OVH `just replace` recipes (full-graph VM replacement; first-controller stays blocked)
-- [ ] OVH: merge `vms` + `private_cluster` into one resource over `all_vms_map` (no behavior change)
+- [x] OVH: merge `vms` + `private_cluster` into one resource over `all_vms_map` (single `vms` resource; normal-mode states need no moves, jump-mode needs one `state mv` per node — see `moved.tf`)
 - [ ] OVH: split `clusters/variables.tf` (vars only, locals to `topology.tf`)
 - [ ] Talos support status: documented provider mode or experimental (module + libvirt wiring exist, no eval branch anymore)
 - [ ] Bastion shutdown = stop/shelve or delete?
 - [ ] VPN to replace the bastion later?
-- [ ] Ingress path: Octavia NodePorts vs MetalLB/Cilium-L2 VIP? TLS at LB or controller?
+- [x] Ingress path: Octavia TCP NodePort pools (80/443, TLS at controller) — decided, spec in `ovh/provider.md` §4; MetalLB/Cilium-L2 VIP stays out (no public IPs to announce under jump-only)
 - [ ] Golden images (bake level, CI Packer, regions)?

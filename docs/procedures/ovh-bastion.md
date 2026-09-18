@@ -21,7 +21,7 @@ churn on bastion replacement).
 ```bash
 just ovh::bastion-validate
 BASTION_ENV=bastion just ovh::bastion-plan
-ENV=<cluster> just ovh::clusters-plan
+ENV=<cluster> just ovh::plan
 ```
 
 There is deliberately no `terraform_remote_state` and no shared backend:
@@ -33,7 +33,7 @@ cluster → bastion.
 In `env/OVH/<cluster>.tfvars`:
 
 ```hcl
-bastion = { public_ip = "203.0.113.10" }  # omit or null = public topology
+bastion = { public_ip = "203.0.113.10" }  # required for Kubernetes; omit only for VM-only deployments
 ```
 
 The rest is convention, not wiring:
@@ -47,9 +47,12 @@ The rest is convention, not wiring:
   `network.kube_api.endpoint = "lb_ip"` (guarded by
   `validate_ssh_jump_topology`).
 
-Warning: the old `network.kube_api.load_balancer.ssh_jump_enabled` flag no
-longer exists and is **silently ignored** — a stale flag means public nodes
-while you believe jump mode is on.
+Warning: Kubernetes on OVH is jump-only (see
+`../decisions/2026-09-18-ovh-jump-only.md`). The old
+`network.kube_api.load_balancer.ssh_jump_enabled` flag no longer exists
+and is **silently ignored**, and a Kubernetes workspace without
+`bastion.public_ip` fails fast — there is no public topology for k3s/rke2
+anymore.
 
 ## Birth a bastion, attach clusters
 
@@ -91,6 +94,43 @@ same `public_ip`. Constraints, all by design:
   is guarded on both sides).
 * Detach by emptying the entry and applying *before* destroying the
   bastion, otherwise ports strand (`destroy-all`).
+
+## N-cluster runbook (same jumphost, different ENVs)
+
+One bastion workspace, one workspace per cluster. End to end:
+
+1. Birth the bastion once: `clusters = {}` in `env/OVH/<BASTION_ENV>.tfvars`,
+   `BASTION_ENV=<bastion> just ovh::bastion-deploy`, SSH-check with the
+   admin key.
+2. Per cluster `<env>` (repeat for each):
+   1. Create `env/OVH/<env>.tfvars` with its own `network.private.cidr`
+      and `vlan_id`, same `cluster.region` and `cluster.username` as the
+      bastion. Deploy keys + network first (targeted apply), so the
+      private network exists.
+   2. Append the entry to the bastion tfvars and
+      `BASTION_ENV=<bastion> just ovh::bastion-deploy`. One port + one
+      hot-attach; the VM, its public IP, and all previously attached
+      clusters are untouched. Several entries may be registered before
+      this single apply.
+   3. Set `bastion = { public_ip = "<same-ip>" }` in `env/OVH/<env>.tfvars`
+      and `ENV=<env> just ovh::deploy`.
+   4. Converge the bastion (`just ovh::bastion::converge KEY`) so keys and
+      `PermitOpen` cover the new nodes; verify jump SSH to a private node.
+3. Recheck after every attach: `tofu output` private IPs, `PermitOpen`
+   covers all clusters' nodes, previously attached clusters still jump
+   cleanly.
+
+Conventions (not enforced in code — verified by inspection, no
+cross-stack check exists):
+
+* Key the `clusters` entry exactly like the cluster's `ENV`/workspace
+  name. The key is bastion-local (port names, netplan filenames), but it
+  is the only thread tracing NIC → cluster.
+* Treat keys as immutable once attached: NIC order (`ens4`, `ens5`, …)
+  follows *sorted key* order, so renaming a key renumbers interfaces.
+* `vlan_id` values must be distinct per cluster per region: discovery
+  requires *exactly one* network per (vlan, region), and a duplicate
+  fails the precondition instead of attaching wrong.
 
 ## Migrate an embedded-bastion cluster
 

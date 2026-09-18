@@ -152,8 +152,11 @@ Available commands:
 
 ### Configuration Files
 
-OVH dedicated-bastion migration is intentionally disruptive. Before changing
-`ssh_jump_enabled` on an existing cluster, back up etcd and workloads, schedule
+OVH Kubernetes is jump-only and the migration from a public cluster is
+intentionally disruptive. Kubernetes modes require `bastion.public_ip`,
+an enabled load balancer, and a `lb_ip`/`dns` endpoint (guarded
+in-stack); nodes are private-only. Before migrating a pre-existing
+public cluster, back up etcd and workloads, schedule
 downtime, and save/review the authenticated full plan. There is no `just replace`
 recipe for OVH yet (AZ/KVM only); replacing the first K3s/RKE2 controller
 safely requires a verified etcd snapshot and the
@@ -367,7 +370,7 @@ In this context, GitOps bootstrap is different from cloud-init bootstrap:
 |----------|--------|-------|
 | Libvirt | ✅ Implemented | Core functionality complete, tested |
 | Azure | ✅ Implemented | Full implementation with NSG, DNS, and cloud-init |
-| OVH | ✅ Implemented; bastion live validation pending | Public-IP-based normal mode plus plan-validated dedicated bastion/private-only Kubernetes nodes, deterministic private IP assignment, standalone VMs, kube-api-only load balancer with native gateway/floating-IP lifecycle, guarded full-graph VM replacement, Ansible cloud-init check, TLS SAN reconciliation, and kubeconfig fetch |
+| OVH | ✅ Implemented; bastion live validation pending | Jump-only Kubernetes (private nodes via standalone bastion, load balancer for API 6443 + ingress 80/443 passthrough), deterministic private IP assignment, standalone VMs, native gateway/floating-IP lifecycle, Ansible cloud-init check, TLS SAN reconciliation, and kubeconfig fetch |
 
 ---
 
@@ -386,8 +389,8 @@ See [AGENTS.md](AGENTS.md) for AI assistant context and full governance rules.
 
 ## Known Limitations
 
-- OVH uses public-IP-based operator access normally; `ssh_jump_enabled=true` uses a dedicated bastion and private Kubernetes node IPs: K3s/RKE2 nodes via a self-contained ProxyCommand in `ansible.cfg`
-- OVH dedicated-bastion mode is plan-validated only; live K3s/RKE2 first boot, replacement, and destroy proofs remain pending
+- OVH Kubernetes is jump-only: private K3s/RKE2 node IPs via the standalone bastion, self-contained ProxyCommand in `ansible.cfg`
+- OVH jump-only mode is plan-validated only; live K3s/RKE2 first boot, replacement, and destroy proofs remain pending
 - OVH has no `just replace` recipe yet; when it lands, replacing the first K3s/RKE2 controller must stay blocked pending a verified etcd snapshot and restore procedure
 - OVH standalone `infra.vms` are public-attached and private-attached in current code
 - OVH custom root disk sizing and extra disks are not supported yet
