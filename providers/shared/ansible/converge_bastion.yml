@@ -1,0 +1,22 @@
+---
+# Day-2 convergence for the standalone OVH bastion (P4). Run ONLY via the
+# bastion stack recipe (`just ovh::bastion::converge KEY`), which supplies a
+# single-host inline inventory (`-i <public-ip>,`). Never run against a
+# cluster inventory: `hosts: all` would converge every host it is given.
+- name: Converge bastion keys, netplan and PermitOpen
+  hosts: all
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: Apply the bastion converge role
+      ansible.builtin.include_role:
+        name: bastion_converge
+      vars:
+        bastion_converge_user: "{{ converge.username }}"
+        bastion_converge_host: "{{ converge.host }}"
+        bastion_converge_admin_keys: "{{ converge.admin_keys }}"
+        bastion_converge_cluster_keys: "{{ converge.cluster_keys }}"
+        bastion_converge_nics: "{{ converge.nics }}"
+        bastion_converge_permit_open: "{{ converge.permit_open }}"
+        bastion_converge_test_addresses: "{{ converge.test_addresses }}"

@@ -35,6 +35,23 @@ deploy:
     @eval "$(just _source-openrc)"; \
       tofu apply -auto-approve -var-file={{ quote(BASTION_TFVARS_PATH) }}
 
+# Day-2 convergence (P4): merge cluster keys, netplan NICs and PermitOpen via
+# the shared bastion_converge role. KEY is the private key matching an
+# authorized key (admin key at birth, cluster key later). Roles resolve via
+# ANSIBLE_ROLES_PATH (recipe cwd is this justfile's directory).
+converge KEY:
+    @tofu init
+    @just _workspace
+    @eval "$(just _source-openrc)"; \
+      key={{ quote(KEY) }}; \
+      test -n "$key" || { echo "converge requires KEY=<private-key-path>" >&2; exit 1; }; \
+      tmp=$(mktemp); trap 'rm -f "$tmp"' EXIT; \
+      tofu output -json converge >"$tmp"; \
+      ip=$(tofu output -raw public_ip); \
+      ANSIBLE_ROLES_PATH="../../../../ansible/roles" ANSIBLE_HOST_KEY_CHECKING=False \
+        ansible-playbook ../../shared/ansible/converge_bastion.yml \
+          -i "$ip," --private-key "$key" -e "@$tmp"
+
 # VM only: ports (and their fixed IPs) are separate resources, so they are
 # kept and re-attached on redeploy with identical private IPs.
 destroy-vm STALE='':

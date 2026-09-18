@@ -26,6 +26,25 @@ output "cluster_node_ips" {
   }
 }
 
+output "converge" {
+  description = "Day-2 convergence inputs for the Ansible bastion_converge role (P4), fed via `tofu output -json converge`"
+  value = {
+    username = var.bastion.username
+    host     = var.bastion.id
+    nics = {
+      for name in local.cluster_names_sorted : name => {
+        iface   = local.cluster_ifaces[name]
+        address = module.ipam[name].bastion_ip
+        prefix  = split("/", var.clusters[name].cidr)[1]
+      }
+    }
+    permit_open    = local.permit_open
+    test_addresses = local.sshd_test_addresses
+    admin_keys     = var.admin_public_keys
+    cluster_keys   = local.cluster_public_keys
+  }
+}
+
 output "ssh_command" {
   description = "Direct SSH command to the bastion (use the private key matching an authorized key)"
   value = format(

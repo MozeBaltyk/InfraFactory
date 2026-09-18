@@ -1,0 +1,16 @@
+# {{ ansible_managed }} — per-cluster private NIC (mirrors birth cloud-init).
+network:
+  version: 2
+  ethernets:
+    ens3:
+      match:
+        name: "ens3"
+      optional: true
+      dhcp4: true
+    {{ nic.iface }}:
+      match:
+        name: "{{ nic.iface }}"
+      optional: true
+      dhcp4: false
+      addresses:
+        - {{ nic.address }}/{{ nic.prefix }}

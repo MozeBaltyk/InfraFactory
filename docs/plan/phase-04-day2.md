@@ -8,10 +8,17 @@ Done: `providers/ovh/bastion/justfile` (`validate/plan/deploy`,
 `BASTION_ENV` decoupled from cluster workspaces, explicit `bastion-*`
 recipes on the ovh router.
 
-Pending: Ansible converge role for the bastion — merge cluster pubkeys into
-`authorized_keys`, write per-NIC netplan + `netplan apply`, update
-`PermitOpen` with `sshd -T` verify + `systemctl reload ssh` (pattern: the
-former `infrafactory-verify-bastion-sshd`). Documented bootstrap order:
+Done (offline): Ansible `bastion_converge` role (`ansible/roles/`) —
+merge admin + cluster pubkeys into `authorized_keys`, write per-NIC
+netplan + `netplan apply` + verify-service re-run, update `PermitOpen`
+with `sshd -T` effective-policy verify + `systemctl reload ssh` +
+re-verify (pattern: the former `infrafactory-verify-bastion-sshd`).
+Wired via `providers/shared/ansible/converge_bastion.yml`, a `converge`
+output on the bastion stack, and `just ovh::bastion::converge KEY`.
+Gate G4 green (playbook `--syntax-check`, recipe parses, `validate` both
+root modules). Live proof deferred to P5.
+
+Pending: nothing offline. Documented bootstrap order:
 bastion `apply` (empty) → cluster keys + network via targeted apply →
 bastion `apply` with the entry → cluster full `apply`.
 

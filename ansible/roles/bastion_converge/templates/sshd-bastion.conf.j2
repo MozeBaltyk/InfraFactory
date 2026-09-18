@@ -1,0 +1,5 @@
+# {{ ansible_managed }} — bastion sshd policy (mirrors birth cloud-init).
+{{ bastion_converge_sshd_base -}}
+{% if bastion_converge_permit_open | length > 0 -%}
+PermitOpen {{ bastion_converge_permit_open }}
+{% endif -%}

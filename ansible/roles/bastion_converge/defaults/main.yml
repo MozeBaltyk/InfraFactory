@@ -1,0 +1,41 @@
+---
+# Day-2 convergence for the standalone OVH bastion. Mirrors what birth
+# cloud-init installs (see providers/ovh/bastion/templates.tf); never a
+# replacement. All cloud-derived values arrive as vars (no cloud lookups
+# here) so the role stays syntax-checkable offline.
+#
+# Required (fail fast when unset): bastion_converge_user, bastion_converge_host.
+
+# Remote login user (convention: equals the served clusters' username).
+bastion_converge_user: null
+# Bastion short hostname, used for `sshd -T -C user=,host=,addr=` checks.
+bastion_converge_host: null
+
+# Public keys ensuring presence in the user's authorized_keys (merged, never
+# exclusive: removal of a detached cluster's key stays a manual step).
+bastion_converge_admin_keys: []
+bastion_converge_cluster_keys: []
+
+# Private NICs, one entry per attached cluster:
+#   bastion_converge_nics:
+#     mycluster: { iface: ens4, address: 10.0.20.254, prefix: 24 }
+bastion_converge_nics: {}
+
+# SSH-jump allowlist ("ip:22 ..."); empty while no cluster is attached (an
+# empty PermitOpen would lock out forwarding, same as at birth).
+bastion_converge_permit_open: ""
+# Ingress test addresses for the effective-sshd verification.
+bastion_converge_test_addresses: []
+
+# Identical base policy for bastion and cluster nodes (S1, shared sshd
+# hardening). The bastion additionally appends PermitOpen below.
+bastion_converge_sshd_base: |
+  PasswordAuthentication no
+  KbdInteractiveAuthentication no
+  PubkeyAuthentication yes
+  PermitRootLogin no
+  AllowAgentForwarding no
+  X11Forwarding no
+  PermitTunnel no
+  GatewayPorts no
+  AllowTcpForwarding local

@@ -1,0 +1,99 @@
+---
+- name: Fail when required variables are unset
+  ansible.builtin.fail:
+    msg: "bastion_converge_user and bastion_converge_host are required"
+  when: bastion_converge_user is none or bastion_converge_host is none
+
+- name: Merge admin and cluster public keys into authorized_keys
+  ansible.builtin.authorized_key:
+    user: "{{ bastion_converge_user }}"
+    key: "{{ item }}"
+    state: present
+  loop: "{{ bastion_converge_admin_keys + bastion_converge_cluster_keys }}"
+
+- name: Write per-cluster private netplan files
+  ansible.builtin.template:
+    src: netplan-nic.yaml.j2
+    dest: "/etc/netplan/99-infrafactory-ovh-{{ item.key }}.yaml"
+    mode: "0600"
+  loop: "{{ bastion_converge_nics | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  vars:
+    nic: "{{ item.value }}"
+  register: netplan_files
+
+- name: Apply netplan when files changed
+  ansible.builtin.command:
+    cmd: netplan apply
+  changed_when: true
+  when: netplan_files is changed
+
+- name: Re-run the private-network verify service after netplan apply
+  ansible.builtin.systemd:
+    name: infrafactory-ovh-private-netplan.service
+    state: started
+  when: netplan_files is changed
+
+- name: Update bastion sshd policy
+  ansible.builtin.template:
+    src: sshd-bastion.conf.j2
+    dest: /etc/ssh/sshd_config.d/00-infrafactory-bastion.conf
+    mode: "0644"
+    validate: sshd -t -f %s
+  register: sshd_policy
+
+- name: Check sshd configuration syntax
+  ansible.builtin.command:
+    cmd: sshd -t
+  changed_when: false
+  when: bastion_converge_permit_open | length > 0
+
+# Same effective-policy verification as the birth
+# infrafactory-verify-bastion-sshd script: what sshd -T reports per
+# ingress address is what the jump connection gets.
+- name: Read effective sshd policy per ingress address
+  ansible.builtin.command:
+    cmd: >-
+      sshd -T -C
+      "user={{ bastion_converge_user }},host={{ bastion_converge_host }},addr={{ item }}"
+  loop: "{{ bastion_converge_test_addresses }}"
+  register: sshd_effective
+  changed_when: false
+  when: bastion_converge_permit_open | length > 0
+
+- name: Assert effective PermitOpen matches
+  ansible.builtin.assert:
+    that:
+      - "'permitopen {{ bastion_converge_permit_open }}' in item.stdout_lines"
+    fail_msg: "Effective sshd PermitOpen mismatch for {{ item.item }}"
+  loop: "{{ sshd_effective.results | default([]) }}"
+  when: bastion_converge_permit_open | length > 0
+
+- name: Reload sshd when policy changed
+  ansible.builtin.systemd:
+    name: ssh
+    state: reloaded
+  when: sshd_policy is changed
+
+- name: Re-verify effective PermitOpen after reload
+  ansible.builtin.command:
+    cmd: >-
+      sshd -T -C
+      "user={{ bastion_converge_user }},host={{ bastion_converge_host }},addr={{ item }}"
+  loop: "{{ bastion_converge_test_addresses }}"
+  register: sshd_effective_reloaded
+  changed_when: false
+  when:
+    - bastion_converge_permit_open | length > 0
+    - sshd_policy is changed
+
+- name: Assert reloaded PermitOpen matches
+  ansible.builtin.assert:
+    that:
+      - "'permitopen {{ bastion_converge_permit_open }}' in item.stdout_lines"
+    fail_msg: "Reloaded sshd PermitOpen mismatch for {{ item.item }}"
+  loop: "{{ sshd_effective_reloaded.results | default([]) }}"
+  when:
+    - bastion_converge_permit_open | length > 0
+    - sshd_policy is changed
