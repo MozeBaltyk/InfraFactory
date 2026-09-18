@@ -98,6 +98,28 @@ same `public_ip`. Constraints, all by design:
 * Detach by emptying the entry and applying *before* destroying the
   bastion, otherwise ports strand (`destroy-all`).
 
+## Scaling a served cluster
+
+When a cluster's `masters`/`workers` counts change (the cluster tfvars), you
+must **also** update the matching `clusters[]` entry in the bastion tfvars and
+re-run converge — in this order:
+
+```bash
+# 1. scale the cluster (new nodes boot + join)
+ENV=<env> just ovh::deploy
+# 2. sync the bastion's counts for that cluster, then:
+BASTION_ENV=<bastion> just ovh::bastion-deploy
+# 3. converge so PermitOpen covers the new node IPs
+just ovh::bastion::converge <admin-key>
+# 4. re-run the cluster deploy so its Ansible phase reaches the new nodes
+ENV=<env> just ovh::deploy
+```
+
+Skipping step 2–3 leaves the new nodes' SSH outside `PermitOpen`, so cluster
+Ansible fails with `Connection closed by UNKNOWN port 65535`. Note: in `serial`
+naming, master-count changes renumber workers — treat `serial` as stable only
+while the master count is fixed (see README).
+
 ## N-cluster runbook (same jumphost, different ENVs)
 
 One bastion workspace, one workspace per cluster. End to end:

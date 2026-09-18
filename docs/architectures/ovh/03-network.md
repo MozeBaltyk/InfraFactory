@@ -220,8 +220,13 @@ service deletes exactly one known-stale route family per boot.
 1. `enable_gateway_ip` is coupled to `lb_enabled`: LB off = no gateway =
    private-only nodes routeless. Deliberate for now; revisit if a
    gateway-less topology is ever needed.
-2. Subnet-level `dns_nameservers` so `50-cloud-init.yaml` carries DNS from
-   the network stage (removes first-boot DNS dependence on our files).
+2. First-boot DNS race (confirmed — see
+   `../troubleshooting/ovh-cloud-init-dns-race.md`): cloud-init's early
+   `package_update_upgrade_install` runs before the node's DNS is configured,
+   so apt fails with `Temporary failure resolving archive.ubuntu.com` (rke2 +
+   nfs-common still install via `runcmd`). Fix either by moving base packages
+   into `runcmd`, or by setting subnet `dns_nameservers` so
+   `50-cloud-init.yaml` carries DNS from the network stage.
 3. First-boot egress: resolved by ordering the gateway before the VMs (the
    nodes `depends_on` the gateway, which returns only once READY) — see
    `clusters/main.tf`. If private nodes ever boot without a gateway (LB

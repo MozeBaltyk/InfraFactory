@@ -35,3 +35,9 @@ single-resource merge (`vms` + `private_cluster`, state-mv note in
 - [ ] VPN to replace the bastion later?
 - [x] Ingress path: Octavia TCP NodePort pools (80/443, TLS at controller) — decided, spec in `ovh/provider.md` §4; MetalLB/Cilium-L2 VIP stays out (no public IPs to announce under jump-only)
 - [ ] Golden images (bake level, CI Packer, regions)?
+- [ ] First-boot DNS race: move base packages out of `packages:` into `runcmd`
+      (or set subnet `dns_nameservers`) so cloud-init's early package install
+      runs after DNS converges — see `../troubleshooting/ovh-cloud-init-dns-race.md`
+- [ ] Scale runbook: document the "sync bastion `clusters` counts + re-`converge`
+      after scaling" step (PermitOpen must cover new node IPs); consider a recipe
+      or a `converge` pre/post hint
