@@ -64,8 +64,6 @@ infra = {
 # infra.masters.count = 0
 # infra.workers.count = 0
 # infra.vms.count = 2
-# infra.vms.ip_addresses = ["10.0.30.50", "10.0.30.51"]
-# network.private.mode = "existing"
 # network.private.vlan_id = 30
 # network.private.cidr = "10.0.30.0/24"
 
@@ -84,9 +82,7 @@ os = {
 ### network.private.vlan_id is optional (default 0). Use a different VLAN ID
 ### per cluster to deploy multiple clusters in the same OVH region.
 ### Valid range: 0-4000.
-### network.private.mode = "managed" creates and owns the OVH private network
-### and subnet. mode = "existing" reuses the matching VLAN/CIDR and leaves
-### lifecycle ownership outside InfraFactory.
+### The cluster always creates and owns its OVH private network and subnet.
 ###
 ### Internet → Floating IP → Gateway → LB → masters:6443
 ### The gateway and floating IP are explicit OVH resources owned by OpenTofu.

@@ -162,7 +162,6 @@ resource "openstack_compute_instance_v2" "vms" {
   depends_on = [
     terraform_data.validate_image,
     terraform_data.validate_flavors,
-    terraform_data.validate_existing_private_network,
     ovh_cloud_project_network_private_subnet_v2.cluster,
     # The NFS share's export path is already an implicit dependency via
     # user_data, but the access ACL isn't referenced by any value -- without

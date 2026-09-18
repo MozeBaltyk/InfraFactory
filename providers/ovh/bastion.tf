@@ -375,7 +375,6 @@ resource "openstack_compute_instance_v2" "bastion" {
 
   depends_on = [
     terraform_data.validate_bastion,
-    terraform_data.validate_existing_private_network,
     ovh_cloud_project_network_private_subnet_v2.cluster,
   ]
 }

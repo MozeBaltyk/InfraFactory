@@ -200,7 +200,6 @@ variable "infra" {
     vms = optional(object({
       count             = number
       instance_size     = optional(string, "b2-7")
-      ip_addresses      = optional(list(string), [])
       user_data_enabled = optional(bool, true)
       nfs               = optional(list(string), [])
       object_storage    = optional(list(string), [])
@@ -266,7 +265,6 @@ variable "network" {
     private = object({
       cidr    = string
       vlan_id = optional(number, 0)
-      mode    = optional(string, "managed")
     })
     kube_api = optional(object({
       endpoint = optional(string, "public_ip")
@@ -290,11 +288,6 @@ variable "network" {
     private = {
       cidr = "10.0.0.0/24"
     }
-  }
-
-  validation {
-    condition     = contains(["managed", "existing"], var.network.private.mode)
-    error_message = "network.private.mode must be either \"managed\" or \"existing\"."
   }
 
   validation {
@@ -330,39 +323,13 @@ locals {
   # entry (see the validate_operator_ingress_cidrs precondition in checks.tf).
   my_public_ip = local.kubernetes_enabled ? "${chomp(trimspace(data.http.my_ip[0].response_body))}/32" : null
 
-  ## Private handling
-  private_network_mode     = var.network.private.mode
-  private_network_managed  = local.private_network_mode == "managed"
-  private_network_existing = local.private_network_mode == "existing"
-
+  ## Private handling (managed only: the cluster always owns its network)
   private_cidr                = var.network.private.cidr
   private_ip_host_offset_base = (tonumber(split("/", local.private_cidr)[1]) <= 28 ? 10 : 2)
 
-  existing_private_network_matches = local.private_network_existing ? [
-    for network in data.ovh_cloud_project_network_privates.existing[0].networks : network
-    if network.vlan_id == var.network.private.vlan_id && length([
-      for region in network.regions : region
-      if region.region == var.cluster.region
-    ]) == 1
-  ] : []
-
-  existing_private_network_global_id = local.private_network_existing ? try(local.existing_private_network_matches[0].id, null) : null
-
-  existing_private_network_openstack_id = local.private_network_existing ? try(one([
-    for region in local.existing_private_network_matches[0].regions : region.openstack_id
-    if region.region == var.cluster.region
-  ]), null) : null
-
-  existing_private_subnet_matches = local.private_network_existing && local.existing_private_network_global_id != null ? [
-    for subnet in data.ovh_cloud_project_network_private_subnets.existing[0].subnets : subnet
-    if subnet.cidr == local.private_cidr
-  ] : []
-
-  existing_private_subnet_id = local.private_network_existing ? try(local.existing_private_subnet_matches[0].id, null) : null
-
-  private_network_id = local.private_network_managed ? ovh_cloud_project_network_private.cluster[0].regions_openstack_ids[var.cluster.region] : local.existing_private_network_openstack_id
-  private_subnet_id  = local.private_network_managed ? ovh_cloud_project_network_private_subnet_v2.cluster[0].id : local.existing_private_subnet_id
-  private_gateway_ip = local.private_network_managed ? ovh_cloud_project_network_private_subnet_v2.cluster[0].gateway_ip : try(local.existing_private_subnet_matches[0].gateway_ip, null)
+  private_network_id = ovh_cloud_project_network_private.cluster.regions_openstack_ids[var.cluster.region]
+  private_subnet_id  = ovh_cloud_project_network_private_subnet_v2.cluster.id
+  private_gateway_ip = ovh_cloud_project_network_private_subnet_v2.cluster.gateway_ip
 
   ## Load Balancer
   ssh_jump_requested = try(var.network.kube_api.load_balancer.ssh_jump_enabled, false)
@@ -442,7 +409,7 @@ locals {
       role              = "vm"
       instance_size     = var.infra.vms.instance_size
       user_data_enabled = var.infra.vms.user_data_enabled
-      private_ip        = local.private_network_existing ? var.infra.vms.ip_addresses[i] : module.ipam.vm_ips[i]
+      private_ip        = module.ipam.vm_ips[i]
       private_attach    = true
       public_attach     = true
       nfs               = try(var.infra.vms.nfs, [])
