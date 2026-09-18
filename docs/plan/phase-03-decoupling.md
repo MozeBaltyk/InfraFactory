@@ -1,4 +1,4 @@
-# P3 — Cluster decoupling — next
+# P3 — Cluster decoupling — offline done (authenticated plan proof pending)
 
 Remove the embedded bastion from `providers/ovh/clusters/` and point the
 cluster at the standalone bastion. All in the cluster stack; `bastion/`

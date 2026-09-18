@@ -5,9 +5,9 @@
 ### the host offset base, then workers, then managed extra VMs. Values are
 ### byte-identical to the previous inline math, so only the source moved.
 ###
-### Phase 0 of the bastion split: the embedded bastion keeps its legacy
-### base+counts address until Phase 3 removes it; the new bastion module
-### (Phase 1+) consumes module.ipam.bastion_ip (last usable host of the CIDR).
+### Phase 3: the cluster consumes module.ipam.bastion_ip (last usable host of
+### the CIDR) for the standalone bastion's address on this network — same
+### convention as the bastion stack, no shared state.
 ###
 
 module "ipam" {

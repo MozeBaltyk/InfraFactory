@@ -276,10 +276,9 @@ variable "network" {
       }))
 
       load_balancer = optional(object({
-        enabled          = optional(bool, false)
-        flavor           = optional(string, "small")
-        gateway_model    = optional(string, "s")
-        ssh_jump_enabled = optional(bool, false)
+        enabled       = optional(bool, false)
+        flavor        = optional(string, "small")
+        gateway_model = optional(string, "s")
       }), {})
     }), {})
   })
@@ -296,6 +295,23 @@ variable "network" {
       can(cidrnetmask(cidr)) && !strcontains(cidr, ":")
     ])
     error_message = "network.kube_api.ingress_cidrs must contain valid IPv4 CIDR blocks."
+  }
+}
+
+# Standalone bastion (own state, serves many clusters). Null = no jump mode,
+# public topology unchanged. Convention: bastion username == cluster username;
+# bastion private IP is the shared reserved address (module.ipam.bastion_ip).
+variable "bastion" {
+  description = "Standalone bastion reference (null disables SSH jump mode)"
+  type = object({
+    public_ip = string
+  })
+  default  = null
+  nullable = true
+
+  validation {
+    condition     = var.bastion == null || can(cidrhost("${var.bastion.public_ip}/32", 0))
+    error_message = "bastion.public_ip must be a valid IPv4 address."
   }
 }
 
@@ -332,11 +348,15 @@ locals {
   private_gateway_ip = ovh_cloud_project_network_private_subnet_v2.cluster.gateway_ip
 
   ## Load Balancer
-  ssh_jump_requested = try(var.network.kube_api.load_balancer.ssh_jump_enabled, false)
+  ssh_jump_requested = var.bastion != null
   lb_enabled         = local.kubernetes_enabled && var.infra.masters.count > 0 && try(var.network.kube_api.load_balancer.enabled, false)
   # Jump mode makes K3s/RKE2 nodes private-only (Ansible ProxyCommand).
-  lb_ssh_jump_enabled    = local.lb_enabled && local.ssh_jump_requested
-  lb_floating_ip_address = try(ovh_cloud_floating_ip.kube_api[0].id, null)
+  lb_ssh_jump_enabled = local.lb_enabled && local.ssh_jump_requested
+  # Standalone bastion addresses: public IP is the input, private IP is the
+  # shared reserved address (last usable host of the CIDR, no shared state).
+  bastion_public_ipv4_address = try(var.bastion.public_ip, null)
+  bastion_private_ip          = module.ipam.bastion_ip
+  lb_floating_ip_address      = try(ovh_cloud_floating_ip.kube_api[0].id, null)
   # Explicit CIDRs plus the caller's auto-detected current IP; deduplicated
   # in case the operator already listed it explicitly.
   kube_api_ingress_cidrs = distinct(concat(

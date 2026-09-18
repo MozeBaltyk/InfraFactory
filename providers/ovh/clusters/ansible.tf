@@ -55,12 +55,8 @@ module "ansible" {
   depends_on = [
     openstack_compute_instance_v2.vms,
     openstack_compute_instance_v2.private_cluster,
-    openstack_compute_instance_v2.bastion,
     openstack_networking_port_secgroup_associate_v2.cluster_public,
     openstack_networking_port_secgroup_associate_v2.cluster_private,
-    openstack_networking_port_secgroup_associate_v2.bastion_public,
-    openstack_networking_port_secgroup_associate_v2.bastion_private,
     ovh_cloud_project_loadbalancer.kube_api,
-    terraform_data.bastion_cloudinit_ready,
   ]
 }

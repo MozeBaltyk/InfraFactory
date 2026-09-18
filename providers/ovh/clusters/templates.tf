@@ -334,9 +334,10 @@ locals {
 }
 
 #
-# Shared sshd hardening (S1): identical base policy for the bastion and all
-# cluster nodes. The bastion additionally appends PermitOpen (see bastion.tf);
-# cluster nodes are full SSH servers and must not carry it.
+# Shared sshd hardening (S1): identical base policy for the standalone bastion
+# and all cluster nodes. The bastion additionally appends PermitOpen
+# (see providers/ovh/bastion/templates.tf); cluster nodes are full SSH
+# servers and must not carry it.
 #
 locals {
   sshd_hardening_base = <<-EOT

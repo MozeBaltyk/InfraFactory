@@ -45,44 +45,6 @@ output "kube_api_load_balancer" {
   } : null
 }
 
-output "bastion" {
-  description = "Dedicated OVH SSH bastion details (only when jump mode is enabled)"
-
-  value = local.lb_ssh_jump_enabled ? {
-    name       = local.bastion_name
-    public_ip  = local.bastion_public_ipv4_address
-    private_ip = local.bastion_private_ip
-    flavor = {
-      id    = local.bastion_flavor.id
-      name  = local.bastion_flavor.name
-      vcpus = local.bastion_flavor.vcpus
-      ram   = local.bastion_flavor.ram
-      disk  = local.bastion_flavor.disk
-    }
-    command = format(
-      "ssh -i env/%s/%s/.key.private -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes %s@%s",
-      var.infra_provider,
-      terraform.workspace,
-      var.cluster.username,
-      local.bastion_public_ipv4_address,
-    )
-    cluster_private_ips = {
-      controllers = [for vm in local.master_details : vm.private_ip]
-      workers     = [for vm in local.worker_details : vm.private_ip]
-    }
-    first_master_command = format(
-      "ssh -i env/%s/%s/.key.private -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ProxyCommand='ssh -W %%h:%%p -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i %s/.key.private %s@%s' %s@%s",
-      var.infra_provider,
-      terraform.workspace,
-      local.env_path,
-      var.cluster.username,
-      local.bastion_public_ipv4_address,
-      var.cluster.username,
-      local.master_details[0].private_ip,
-    )
-  } : null
-}
-
 output "storage" {
   description = "OVH-managed storage details (only when configured via `storage`)"
 

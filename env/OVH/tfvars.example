@@ -53,11 +53,14 @@ infra = {
     # OVH ssh_key injection may still depend on image/cloud behavior.
     # user_data_enabled = true
   }
-
-  bastion = {
-    
-  }
 }
+
+# Standalone bastion (own state, serves many clusters). Omit/null = public
+# topology. Set to jump through the bastion (nodes become private-only,
+# Ansible uses ProxyJump). Convention: bastion username == cluster username.
+# bastion = {
+#   public_ip = "203.0.113.10"
+# }
 
 # VM-only deployment example:
 # cluster.cloud_init_selected = "default"
@@ -127,14 +130,13 @@ os = {
 #       enabled       = true
 #       flavor        = "small"
 #       gateway_model = "s"
-#       # Optional: create one hardened dual-NIC Ubuntu bastion. Masters/workers
-#       # become private-only: Ansible reaches K3s/RKE2 nodes through ProxyJump.
-#       # The LB exposes TCP/6443 only.
-#       # Toggling this on an existing cluster replaces masters/workers: back up
+#       # Jump mode via the standalone bastion: set top-level `bastion.public_ip`
+#       # instead. Masters/workers become private-only: Ansible reaches K3s/RKE2
+#       # nodes through ProxyJump. The LB exposes TCP/6443 only.
+#       # Toggling jump on an existing cluster replaces masters/workers: back up
 #       # etcd/workloads, schedule downtime, and review a saved full plan first.
 #       # `just replace` refuses the first controller; recover it only through a
 #       # verified K3s/RKE2 etcd snapshot and the distribution restore procedure.
-#       # ssh_jump_enabled = true
 #     }
 #   }
 # }
@@ -157,8 +159,7 @@ os = {
 #       enabled       = true
 #       flavor        = "small"
 #       gateway_model = "s"
-#       # Optional dedicated bastion/private-node mode; not an LB SSH listener.
-#       # ssh_jump_enabled = true
+#       # Jump mode via top-level `bastion.public_ip`; not an LB SSH listener.
 #     }
 #   }
 # }

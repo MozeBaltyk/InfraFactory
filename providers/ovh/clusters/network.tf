@@ -95,7 +95,7 @@ resource "openstack_networking_secgroup_rule_v2" "cluster_ssh_from_bastion" {
   protocol          = "tcp"
   port_range_min    = 22
   port_range_max    = 22
-  remote_group_id   = openstack_networking_secgroup_v2.bastion[0].id
+  remote_ip_prefix  = "${local.bastion_private_ip}/32"
   security_group_id = openstack_networking_secgroup_v2.cluster[0].id
   region            = var.cluster.region
 }
@@ -187,10 +187,9 @@ resource "openstack_networking_port_secgroup_associate_v2" "cluster_private" {
 resource "terraform_data" "gateway_vm_generation" {
   count = local.lb_enabled ? 1 : 0
 
-  input = merge(
-    { for name, vm in openstack_compute_instance_v2.vms : name => vm.id },
-    local.lb_ssh_jump_enabled ? { (local.bastion_name) = openstack_compute_instance_v2.bastion[0].id } : {},
-  )
+  input = {
+    for name, vm in openstack_compute_instance_v2.vms : name => vm.id
+  }
 }
 
 resource "ovh_cloud_gateway" "kube_api" {
@@ -213,7 +212,6 @@ resource "ovh_cloud_gateway" "kube_api" {
 
   depends_on = [
     openstack_compute_instance_v2.vms,
-    openstack_compute_instance_v2.bastion,
   ]
 }
 
@@ -293,8 +291,6 @@ resource "ovh_cloud_project_loadbalancer" "kube_api" {
     ovh_cloud_project_network_private_subnet_v2.cluster,
     openstack_compute_instance_v2.vms,
     openstack_compute_instance_v2.private_cluster,
-    openstack_compute_instance_v2.bastion,
     openstack_networking_port_secgroup_associate_v2.cluster_private,
-    openstack_networking_port_secgroup_associate_v2.bastion_private,
   ]
 }
