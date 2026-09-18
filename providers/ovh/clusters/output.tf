@@ -1,6 +1,11 @@
 ###
 ### Display
 ###
+output "first_master_name" {
+  description = "Name of the first master (etcd bootstrap node); empty when there are no masters. The replace recipe refuses this name."
+  value       = var.infra.masters.count > 0 ? local.first_master_name : ""
+}
+
 output "cluster_nodes" {
   description = "Cluster node connection data"
 
