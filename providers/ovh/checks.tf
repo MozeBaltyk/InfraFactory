@@ -67,6 +67,17 @@ check "ovh_private_network_cidr_has_enough_addresses" {
   }
 }
 
+check "ovh_reserved_bastion_ip_clear_of_nodes" {
+  assert {
+    condition = (
+      try(trimspace(var.network.private.cidr), "") == "" ||
+      module.ipam.last_node_hostnum < module.ipam.bastion_hostnum
+    )
+
+    error_message = "OVH node allocation (masters + workers + vms from the host offset base) reaches the reserved bastion IP (last usable host of network.private.cidr): widen the CIDR or reduce node counts."
+  }
+}
+
 check "ovh_existing_private_network_has_single_match" {
   assert {
     condition = (

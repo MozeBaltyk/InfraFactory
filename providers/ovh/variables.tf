@@ -394,7 +394,7 @@ locals {
       disk_size         = var.infra.masters.disk_size
       extra_disks       = try(var.infra.masters.extra_disks, [])
       user_data_enabled = var.infra.masters.user_data_enabled
-      private_ip        = (cidrhost(local.private_cidr, local.private_ip_host_offset_base + i))
+      private_ip        = module.ipam.master_ips[i]
       private_attach    = true
       public_attach     = !local.lb_ssh_jump_enabled
       nfs               = try(var.infra.masters.nfs, [])
@@ -414,7 +414,7 @@ locals {
       disk_size         = var.infra.workers.disk_size
       extra_disks       = try(var.infra.workers.extra_disks, [])
       user_data_enabled = var.infra.workers.user_data_enabled
-      private_ip        = (cidrhost(local.private_cidr, local.private_ip_host_offset_base + i + var.infra.masters.count))
+      private_ip        = module.ipam.worker_ips[i]
       private_attach    = true
       public_attach     = !local.lb_ssh_jump_enabled
       nfs               = try(var.infra.workers.nfs, [])
@@ -442,7 +442,7 @@ locals {
       role              = "vm"
       instance_size     = var.infra.vms.instance_size
       user_data_enabled = var.infra.vms.user_data_enabled
-      private_ip        = local.private_network_existing ? var.infra.vms.ip_addresses[i] : cidrhost(local.private_cidr, local.private_ip_host_offset_base + i + var.infra.masters.count + var.infra.workers.count)
+      private_ip        = local.private_network_existing ? var.infra.vms.ip_addresses[i] : module.ipam.vm_ips[i]
       private_attach    = true
       public_attach     = true
       nfs               = try(var.infra.vms.nfs, [])
