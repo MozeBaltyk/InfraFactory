@@ -9,6 +9,19 @@ check "ovh_multi_master_requires_private_network" {
   }
 }
 
+check "ovh_private_only_vms_require_gateway" {
+  assert {
+    condition = (
+      local.private_gateway_ip != null ||
+      length([
+        for name, vm in local.all_vms_map : name
+        if vm.private_attach && !vm.public_attach
+      ]) == 0
+    )
+    error_message = "Private-only OVH VMs (no public interface) require a subnet gateway IP for egress: with a managed private network, enable network.kube_api.load_balancer so the gateway is created."
+  }
+}
+
 check "ovh_lb_requires_private_network" {
   assert {
     condition = (
@@ -251,40 +264,6 @@ check "storage_object_storage_encryption_valid" {
       try(b.encryption.sse_algorithm, "AES256") == "AES256"
     ])
     error_message = "storage.\"Object-storage\"[*].encryption.sse_algorithm only supports \"AES256\" today."
-  }
-}
-
-###
-### Block storage
-###
-
-check "storage_blocks_required_fields" {
-  assert {
-    condition = alltrue([
-      for key, b in local.storage_blocks_raw :
-      try(trimspace(b.name), "") != "" && try(b.size, null) != null
-    ])
-    error_message = "storage.\"Block-storage\"[*] requires name and size (GB) to be set."
-  }
-}
-
-check "storage_blocks_volume_type_valid" {
-  assert {
-    condition = alltrue([
-      for key, b in local.storage_blocks : contains(["fast", "work", "cold", "bulk", "ec_sas"], b.volume_type)
-    ])
-    error_message = "storage.\"Block-storage\"[*].volume_type must be one of: fast, work, cold, bulk, ec_sas."
-  }
-}
-
-check "infra_block_storage_attachments_exist" {
-  assert {
-    condition = alltrue(concat(
-      [for key in try(var.infra.masters.block_storage, []) : contains(keys(local.storage_blocks), key)],
-      [for key in try(var.infra.workers.block_storage, []) : contains(keys(local.storage_blocks), key)],
-      [for key in try(var.infra.vms.block_storage, []) : contains(keys(local.storage_blocks), key)],
-    ))
-    error_message = "infra.masters/workers/vms.block_storage may only reference keys defined in storage.\"Block-storage\": ${join(", ", keys(local.storage_blocks))}."
   }
 }
 

@@ -299,7 +299,7 @@ runcmd:
   - [ mkdir, -p, "${m.mount_path}" ]
   - [ bash, -c, "grep -qF ${m.mount_path} /etc/fstab || echo '${m.server}:${m.export_path} ${m.mount_path} nfs ${m.options}${m.read_only ? ",ro" : ""} 0 0' >> /etc/fstab" ]
 %{ endfor ~}
-   - [ bash, -c, "for i in 1 2 3 4 5; do mount -a && break; sleep 5; done" ]
+  - [ bash, -c, "for i in 1 2 3 4 5; do mount -a && break; sleep 5; done" ]
 %{ endif ~}
   - [ /usr/local/bin/k3s-install.sh ]
 %{ if ansible_pull_repo != null && ansible_pull_repo != "" ~}

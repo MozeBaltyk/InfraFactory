@@ -180,7 +180,6 @@ variable "infra" {
       })), [])
       nfs            = optional(list(string), [])
       object_storage = optional(list(string), [])
-      block_storage  = optional(list(string), [])
     })
 
     workers = object({
@@ -196,7 +195,6 @@ variable "infra" {
       })), [])
       nfs            = optional(list(string), [])
       object_storage = optional(list(string), [])
-      block_storage  = optional(list(string), [])
     })
 
     vms = optional(object({
@@ -206,7 +204,6 @@ variable "infra" {
       user_data_enabled = optional(bool, true)
       nfs               = optional(list(string), [])
       object_storage    = optional(list(string), [])
-      block_storage     = optional(list(string), [])
     }), { count = 0 })
   })
 
@@ -248,17 +245,12 @@ variable "infra" {
 variable "storage" {
   description = <<-EOT
     OVH-managed storage, keyed by a logical name that infra.masters/workers/vms
-    reference via their `nfs`/`object_storage`/`block_storage` attachment lists:
+    reference via their `nfs`/`object_storage` attachment lists:
       NFS = optional map of Public Cloud File Storage shares
         key => { name, size (GB), type = "STANDARD_1AZ", network_id, subnet_id, description,
                  mount_path, options, read_only }
       Object-storage = optional map of S3-compatible buckets
         key => { name, region ("GRA"|"SBG"|"BHS"), versioning, tags, object_lock, encryption }
-      Block-storage = optional map of block storage volumes
-        key => { name, size (GB), description, volume_type ("fast"|"work"|"cold"|"bulk"|"ec_sas"),
-                 snapshot_id, image_id, bootable, delete_on_termination }
-    Each infra.* role lists block_storage keys; one volume is created per (VM, key) pair
-    and attached to that VM's instance.
   EOT
   type        = any
   default     = {}
@@ -407,7 +399,6 @@ locals {
       public_attach     = !local.lb_ssh_jump_enabled
       nfs               = try(var.infra.masters.nfs, [])
       object_storage    = try(var.infra.masters.object_storage, [])
-      block_storage     = try(var.infra.masters.block_storage, [])
     }
   ]
 
@@ -428,7 +419,6 @@ locals {
       public_attach     = !local.lb_ssh_jump_enabled
       nfs               = try(var.infra.workers.nfs, [])
       object_storage    = try(var.infra.workers.object_storage, [])
-      block_storage     = try(var.infra.workers.block_storage, [])
     }
   ]
 
@@ -457,7 +447,6 @@ locals {
       public_attach     = true
       nfs               = try(var.infra.vms.nfs, [])
       object_storage    = try(var.infra.vms.object_storage, [])
-      block_storage     = try(var.infra.vms.block_storage, [])
     }
   ]
 

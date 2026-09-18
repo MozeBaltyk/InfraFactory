@@ -32,7 +32,6 @@ infra = {
      # referenced bucket(s) injected, and block volume(s) attached.
      # nfs            = ["nfs_1"]
      # object_storage = ["object_storage_1"]
-     # block_storage  = ["block_storage_1"]
   }
 
   workers = {
@@ -53,6 +52,10 @@ infra = {
     # When false, no generated localadmin user/SSH key from InfraFactory is sent for these VMs;
     # OVH ssh_key injection may still depend on image/cloud behavior.
     # user_data_enabled = true
+  }
+
+  bastion = {
+    
   }
 }
 
@@ -224,19 +227,6 @@ os = {
 #       # encryption  = { sse_algorithm = "AES256" }
 #     }
 #   }
-#
-#   Block-storage = {
-#     block_storage_1 = {
-#       name                 = "data"        # basename; actual volume = "<vm-name>-data"
-#       size                 = 50            # GB
-#       description          = "Data volume"  # Optional
-#       volume_type          = "fast"         # Optional: fast | work | cold | bulk | ec_sas
-#       # snapshot_id          = "..."         # Optional
-#       # image_id             = "..."         # Optional
-#       # bootable             = false         # Optional
-#       # delete_on_termination = true         # Optional
-#     }
-#   }
 # }
 
 # if cloud_init_selected=k3s
@@ -278,7 +268,6 @@ os = {
 
 # if os.selected = "ubuntu24"
 # OVH extra disks are not supported.
-
 
 # ansible = {
 #   pull = {

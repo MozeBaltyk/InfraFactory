@@ -45,7 +45,7 @@ module "ansible" {
 
   node_generation = {
     for name in keys(local.cluster_vms_map) :
-    name => local.lb_ssh_jump_enabled ? ovh_cloud_project_instance.private_cluster[name].id : ovh_cloud_project_instance.vms[name].id
+    name => local.lb_ssh_jump_enabled ? openstack_compute_instance_v2.private_cluster[name].id : openstack_compute_instance_v2.vms[name].id
   }
 
   cloudinit_check_enabled = local.k8s_cloudinit_check_enabled
@@ -53,10 +53,9 @@ module "ansible" {
   write_local_artifacts   = true
 
   depends_on = [
-    ovh_cloud_project_instance.vms,
-    ovh_cloud_project_instance.private_cluster,
-    ovh_cloud_project_instance.bastion,
-    data.ovh_cloud_project_instance.vms,
+    openstack_compute_instance_v2.vms,
+    openstack_compute_instance_v2.private_cluster,
+    openstack_compute_instance_v2.bastion,
     openstack_networking_port_secgroup_associate_v2.cluster_public,
     openstack_networking_port_secgroup_associate_v2.cluster_private,
     openstack_networking_port_secgroup_associate_v2.bastion_public,

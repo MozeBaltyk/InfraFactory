@@ -26,6 +26,15 @@ resource "ovh_cloud_project_ssh_key" "cluster" {
   public_key   = trimspace(module.ssh_keys.public_key_openssh)
 }
 
+# Nova keypair for openstack_compute_instance_v2: the OVH SSH key above is
+# NOT visible to Nova (Invalid key_name), so register the same public key
+# natively. // ponytail: two keys, same material; drop the OVH one once green.
+resource "openstack_compute_keypair_v2" "cluster" {
+  region     = var.cluster.region
+  name       = "${terraform.workspace}-${random_id.ssh_key_suffix.hex}"
+  public_key = trimspace(module.ssh_keys.public_key_openssh)
+}
+
 locals {
   requested_flavors = toset(compact([
     var.infra.masters.instance_size,
@@ -97,49 +106,47 @@ resource "terraform_data" "validate_flavors" {
 }
 
 ###
-### Create VMs
+### Create VMs via Nova with config_drive: user_data reaches the guest via
+### the attached config-drive, so private subnets run with dhcp = false and
+### static guest netplan instead of the 169.254.169.254 metadata proxy.
+###
+### Image/flavor mapping from the OVH catalog above:
+###   image_id    = OVH image id (Glance image UUID, same namespace)
+###   flavor_name = requested instance_size (Nova flavor name, e.g. "b2-7")
+###   key_pair    = Nova keypair (openstack_compute_keypair_v2, same public key
+###                 as the OVH SSH key which Nova cannot see)
 ###
 
-resource "ovh_cloud_project_instance" "vms" {
+resource "openstack_compute_instance_v2" "vms" {
   for_each = local.public_vms_map
 
-  service_name   = var.ovh_project_service_name
-  region         = var.cluster.region
-  billing_period = "hourly"
+  region            = var.cluster.region
+  availability_zone = "nova"
 
-  name      = each.value.name
-  user_data = each.value.user_data_enabled ? local.cloudinit_user_data[each.key] : null
+  name        = each.value.name
+  image_id    = local.selected_image.id
+  flavor_name = each.value.instance_size
+  key_pair    = openstack_compute_keypair_v2.cluster.name
+  user_data   = each.value.user_data_enabled ? local.cloudinit_user_data[each.key] : null
 
-  boot_from {
-    image_id = local.selected_image.id
-  }
+  config_drive = true
 
-  flavor {
-    flavor_id = local.flavor_map[each.value.instance_size].id
-  }
-
-  dynamic "ssh_key" {
-    for_each = [ovh_cloud_project_ssh_key.cluster.name]
+  # NIC order defines guest interface order: Ext-Net first preserves the
+  # ens3(public)/ens4(private) mapping used by templates.tf.
+  dynamic "network" {
+    for_each = each.value.public_attach ? [each.value] : []
 
     content {
-      name = ssh_key.value
+      uuid = data.openstack_networking_network_v2.ext_net.id
     }
   }
 
-  network {
-    public = each.value.public_attach
+  dynamic "network" {
+    for_each = each.value.private_attach ? [each.value] : []
 
-    dynamic "private" {
-      for_each = each.value.private_attach ? [each.value] : []
-      iterator = private_network
-
-      content {
-        ip = private_network.value.private_ip
-        network {
-          id        = local.private_network_id
-          subnet_id = local.private_subnet_id
-        }
-      }
+    content {
+      uuid        = local.private_network_id
+      fixed_ip_v4 = network.value.private_ip
     }
   }
 
@@ -165,41 +172,25 @@ resource "ovh_cloud_project_instance" "vms" {
   ]
 }
 
-resource "ovh_cloud_project_instance" "private_cluster" {
+resource "openstack_compute_instance_v2" "private_cluster" {
   for_each = local.private_cluster_vms_map
 
-  service_name   = var.ovh_project_service_name
-  region         = var.cluster.region
-  billing_period = "hourly"
+  region            = var.cluster.region
+  availability_zone = "nova"
 
-  name      = each.value.name
-  user_data = each.value.user_data_enabled ? local.cloudinit_user_data[each.key] : null
+  name        = each.value.name
+  image_id    = local.selected_image.id
+  flavor_name = each.value.instance_size
+  key_pair    = openstack_compute_keypair_v2.cluster.name
+  user_data   = each.value.user_data_enabled ? local.cloudinit_user_data[each.key] : null
 
-  boot_from {
-    image_id = local.selected_image.id
-  }
+  config_drive = true
 
-  flavor {
-    flavor_id = local.flavor_map[each.value.instance_size].id
-  }
-
-  dynamic "ssh_key" {
-    for_each = [ovh_cloud_project_ssh_key.cluster.name]
-
-    content {
-      name = ssh_key.value
-    }
-  }
-
+  # Single NIC: the private network is the guest's first (and only)
+  # interface (ens3), matching templates.tf.
   network {
-    public = false
-    private {
-      ip = each.value.private_ip
-      network {
-        id        = local.private_network_id
-        subnet_id = local.private_subnet_id
-      }
-    }
+    uuid        = local.private_network_id
+    fixed_ip_v4 = each.value.private_ip
   }
 
   timeouts {
@@ -221,80 +212,49 @@ resource "ovh_cloud_project_instance" "private_cluster" {
 ###
 ### Topology Dynamic: Catch the ips
 ###
-resource "time_sleep" "wait_instance_networks" {
-  for_each = local.public_vms_map
-
-  create_duration = "30s"
-
-  triggers = {
-    instance_id = ovh_cloud_project_instance.vms[each.key].id
-  }
-}
-
-data "ovh_cloud_project_instance" "vms" {
-  # Keep keys static so OpenTofu can evaluate this data source during import
-  # and partial-state recovery. Instance IDs remain apply-time values.
-  for_each = local.public_vms_map
-
-  service_name = var.ovh_project_service_name
-  region       = var.cluster.region
-  instance_id  = ovh_cloud_project_instance.vms[each.key].id
-}
-
+### Public IPv4s come straight from Nova state (Ext-Net port, DHCP-assigned
+### at create), so no re-read data source or wait is needed -- unlike the
+### OVH API, which was slow to publish them.
+###
 locals {
-  # Public IPv4 from resource state. Existing instances stay known during plans
-  # that add new VMs, unlike the OVH data source which is deferred when the
-  # instance collection has pending changes.
+  # Public IPv4 per public-attached VM, matched by Ext-Net network UUID.
   vm_public_ipv4_addresses = {
-    for name, instance in ovh_cloud_project_instance.vms :
+    for name, instance in openstack_compute_instance_v2.vms :
     name => try(one([
-      for addr in instance.addresses : addr.ip
-      if addr.version == 4 && addr.ip != local.all_vms_map[name].private_ip
-    ]), null)
-  }
-
-  # Public IPv4 re-read after the network wait, used only for validation so new
-  # instances get a chance to publish their public IP before checks run.
-  vm_public_ipv4_addresses_after_wait = {
-    for name, instance in data.ovh_cloud_project_instance.vms :
-    name => try(one([
-      for addr in instance.addresses : addr.ip
-      if addr.version == 4 && addr.ip != local.all_vms_map[name].private_ip
+      for net in instance.network : net.fixed_ip_v4
+      if net.uuid == data.openstack_networking_network_v2.ext_net.id
     ]), null)
   }
 
   # Private IPv4: already known from the deterministic cidrhost assignment.
   vm_private_ipv4_addresses = { for name, vm in local.all_vms_map : name => vm.private_ip }
 
-  # Names of public-attached VMs whose public IPv4 the OVH API has not (yet) returned.
+  # Names of public-attached VMs whose public IPv4 Nova has not (yet) returned.
   # Used by the precondition below to fail with a clear message instead
   # of letting compact() silently drop nodes from the Ansible inventory.
   vms_missing_public_ip = [
-    for name, ip in local.vm_public_ipv4_addresses_after_wait :
+    for name, ip in local.vm_public_ipv4_addresses :
     name if local.all_vms_map[name].public_attach && ip == null
   ]
 }
 
-# Fail fast if any public-attached VM is missing a public IPv4 after the
-# wait_instance_networks delay. Without this, compact() in output.tf would
-# silently exclude the VM from the generated Ansible inventory and apply would
-# "succeed" with a broken hosts.ini.
+# Fail fast if any public-attached VM is missing a public IPv4. Without
+# this, compact() in output.tf would silently exclude the VM from the
+# generated Ansible inventory and apply would "succeed" with a broken hosts.ini.
 resource "terraform_data" "validate_public_ips" {
-  input = local.vm_public_ipv4_addresses_after_wait
+  input = local.vm_public_ipv4_addresses
 
   lifecycle {
     precondition {
       condition = length(local.vms_missing_public_ip) == 0
       error_message = format(
-        "OVH did not publish a public IPv4 for the following VMs within %s: [%s]. Re-run apply (the OVH API is sometimes slow) or increase time_sleep.wait_instance_networks.create_duration.",
-        "30s",
+        "Nova did not assign a public IPv4 for the following VMs: [%s]. Re-run apply or check the Ext-Net network and quotas in region.",
         join(", ", local.vms_missing_public_ip),
       )
     }
   }
 
   depends_on = [
-    time_sleep.wait_instance_networks,
-    data.ovh_cloud_project_instance.vms,
+    openstack_compute_instance_v2.vms,
   ]
 }

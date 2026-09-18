@@ -30,7 +30,7 @@ output "cluster_nodes" {
     ) : null
   }
 
-  depends_on = [ovh_cloud_project_instance.vms]
+  depends_on = [openstack_compute_instance_v2.vms]
 }
 
 output "kube_api_load_balancer" {
@@ -105,15 +105,6 @@ output "storage" {
         region       = bucket.region
         virtual_host = bucket.virtual_host
         versioning   = bucket.versioning.status
-      }
-    }
-
-    block_storage = {
-      for key, vol in ovh_cloud_project_volume.blocks : key => {
-        name            = vol.name
-        size            = vol.size
-        volume_type     = vol.volume_type
-        resource_status = vol.resource_status
       }
     }
 

@@ -1,0 +1,9 @@
+ovh_endpoint           = "ovh-eu"
+ovh_project_service_name = "xxxxxxxxxxxxxxxx"
+
+bastion = {
+  id                      = "bastion"
+  timezone                = "Europe/Paris"
+  region                  = "GRA11"
+  username                = "localadmin"
+}
