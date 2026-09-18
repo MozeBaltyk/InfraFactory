@@ -139,7 +139,7 @@ Every provider module MUST implement all of the following:
 | **Ansible inventory** | Public IP based for VM-only deployments; Kubernetes modes use stable private-node IPs with SSH transport configured entirely in `ansible.cfg` (relative `private_key_file`, `host_key_checking = false`, and a self-contained `ssh_common_args = -o ProxyCommand='ssh -W %h:%p -q ...'` that carries its own key/host-key options through the bastion), while `[VMS]` remains direct-public. |
 | **Security group** | The cluster SG (Kubernetes modes) allows TCP/22 only from the bastion's reserved IP, east-west TCP except 22, UDP, ICMP, and LB/backend TCP/6443. The bastion SG (own state) allows TCP/22 from operator CIDRs. Standalone VMs are excluded from the jump rules. |
 | **Deploy-time checks** | `checks.tf`: multi-master requires private CIDR, LB requires private CIDR, LB flavor exists, CIDR provides enough IPs |
-| **Full-graph replace** | No `just replace` recipe exists for OVH or the standalone bastion yet. When it lands, the first K3s/RKE2 controller stays rejected because automatic datastore rejoin is unsafe. |
+| **Full-graph replace** | `just ovh::replace NAME` (root `just replace` with `PROVIDER=OVH`) applies un-targeted with `-target` + `-replace` on `openstack_compute_instance_v2.vms["NAME"]`. The first K3s/RKE2 controller is refused by the recipe because automatic datastore rejoin is unsafe. |
 
 ---
 

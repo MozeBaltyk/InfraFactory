@@ -146,7 +146,7 @@ Available commands:
 | `just ping` | Ping VMs with ansible |
 | `just check` | Check k8s access |
 | `just play` | Run an Ansible playbook against the cluster |
-| `just replace NAME` | Replace a named VM (AZ/KVM only; no `replace` recipe exists yet for OVH or the standalone bastion) |
+| `just replace NAME` | Replace a named VM (AZ/KVM/OVH; no `replace` recipe exists yet for the standalone bastion) |
 
 
 
@@ -157,8 +157,8 @@ intentionally disruptive. Kubernetes modes require `bastion.public_ip`,
 an enabled load balancer, and a `lb_ip`/`dns` endpoint (guarded
 in-stack); nodes are private-only. Before migrating a pre-existing
 public cluster, back up etcd and workloads, schedule
-downtime, and save/review the authenticated full plan. There is no `just replace`
-recipe for OVH yet (AZ/KVM only); replacing the first K3s/RKE2 controller
+downtime, and save/review the authenticated full plan. `just replace`
+refuses the first K3s/RKE2 controller; replacing it
 safely requires a verified etcd snapshot and the
 distribution recovery procedure ([K3s](https://docs.k3s.io/datastore/backup-restore) or
 [RKE2](https://docs.rke2.io/datastore/backup_restore)); automatic datastore
@@ -391,7 +391,7 @@ See [AGENTS.md](AGENTS.md) for AI assistant context and full governance rules.
 
 - OVH Kubernetes is jump-only: private K3s/RKE2 node IPs via the standalone bastion, self-contained ProxyCommand in `ansible.cfg`
 - OVH jump-only mode is plan-validated only; live K3s/RKE2 first boot, replacement, and destroy proofs remain pending
-- OVH has no `just replace` recipe yet; when it lands, replacing the first K3s/RKE2 controller must stay blocked pending a verified etcd snapshot and restore procedure
+- OVH `just replace NAME` rebuilds one VM; replacing the first K3s/RKE2 controller stays blocked (recipe refuses it) pending a verified etcd snapshot and restore procedure
 - OVH standalone `infra.vms` are public-attached and private-attached in current code
 - OVH custom root disk sizing and extra disks are not supported yet
 - IPv6 support requires additional configuration

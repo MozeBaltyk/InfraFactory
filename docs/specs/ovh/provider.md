@@ -112,7 +112,10 @@ pre-split embedded model in places — on conflict, this file and
 
 ## 8. Replacement and recovery
 
-* No `just replace` recipe exists for OVH or the standalone bastion.
+* `just ovh::replace NAME` (root `just replace` with `PROVIDER=OVH`)
+  rebuilds one VM via an un-targeted apply on the single `vms` address.
+  The first K3s/RKE2 controller is refused by the recipe (live proof in
+  P5).
 * Replacing the first K3s/RKE2 controller stays blocked: recover only via
   a verified etcd snapshot + distribution restore procedure (automatic
   rejoin is not implemented).

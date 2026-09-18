@@ -24,12 +24,12 @@ single-resource merge (`vms` + `private_cluster`, state-mv note in
 
 ## Remaining backlog (non-split, OVH focus)
 
-- [ ] First-controller etcd backup/restore recovery (`just replace` stays blocked meanwhile)
+- [ ] First-controller etcd backup/restore recovery (`just replace` refuses it meanwhile)
 - [ ] Additional Ansible post-provisioning playbooks
 - [ ] OVH storage per-role attach by key (`nfs`/`object_storage`/`block_storage`)
-- [ ] OVH `just replace` recipes (full-graph VM replacement; first-controller stays blocked)
+- [x] OVH `just replace` recipes (single `vms` address; first-controller refused, live proof in P5)
 - [x] OVH: merge `vms` + `private_cluster` into one resource over `all_vms_map` (single `vms` resource; normal-mode states need no moves, jump-mode needs one `state mv` per node — see `moved.tf`)
-- [ ] OVH: split `clusters/variables.tf` (vars only, locals to `topology.tf`)
+- [x] OVH: split `clusters/variables.tf` (vars only, locals to `topology.tf`)
 - [ ] Talos support status: documented provider mode or experimental (module + libvirt wiring exist, no eval branch anymore)
 - [ ] Bastion shutdown = stop/shelve or delete?
 - [ ] VPN to replace the bastion later?
