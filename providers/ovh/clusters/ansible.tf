@@ -12,7 +12,7 @@ locals {
 }
 
 module "ansible" {
-  source = "../shared/modules/ansible-artifacts"
+  source = "../../shared/modules/ansible-artifacts"
 
   env_path            = local.env_path
   cluster_id          = var.cluster.id

@@ -31,6 +31,8 @@ done
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 provider_path="$root/providers/$module"
+# OVH cluster state lives in the clusters/ root module (bastion/ is separate).
+[[ $module == ovh ]] && provider_path="$root/providers/ovh/clusters"
 
 if ! state=$(TF_WORKSPACE="$environment" tofu -chdir="$provider_path" show -json 2>/dev/null); then
   printf 'No readable OpenTofu state for PROVIDER=%s ENV=%s. Deploy it first.\n' "$provider" "$environment" >&2

@@ -9,7 +9,7 @@ locals {
 # Render shared cloud-init user-data for all nodes
 #
 module "cloudinit" {
-  source = "../shared/modules/cloudinit-renderer"
+  source = "../../shared/modules/cloudinit-renderer"
 
   cloud_init_selected     = var.cluster.cloud_init_selected
   node_username           = var.cluster.username
@@ -59,7 +59,9 @@ module "cloudinit" {
         : null
       )
 
-      extra_disks = try(local.vm_disks[vm.name], [])
+      # ponytail: OVH v1 forbids extra_disks (see infra validation); reintroduce
+      # local.vm_disks lookup here when the feature lands.
+      extra_disks = []
 
       k3s_tls_sans = distinct(compact(concat(
         var.k3s.tls_sans,
@@ -102,7 +104,7 @@ locals {
   ovh_private_netplan = {
     for name, vm in local.all_vms_map :
     name => templatefile(
-      "${path.module}/../shared/cloud-init/${var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
+      "${path.module}/../../shared/cloud-init/${var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
       {
         # OVH:
         #

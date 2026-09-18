@@ -308,7 +308,7 @@ data "http" "my_ip" {
 }
 
 locals {
-  env_root = abspath("${path.module}/../../env")
+  env_root = abspath("${path.module}/../../../env")
   env_path = "${local.env_root}/${var.infra_provider}/${terraform.workspace}"
 
   os = var.os_catalog[var.os.selected]
@@ -447,31 +447,4 @@ locals {
     : var.network.kube_api.endpoint
   )
 
-  ## Disks Topology
-  vm_disks = {
-    for vm in concat(local.master_details, local.worker_details) :
-    vm.name => [
-      for i, disk in vm.extra_disks : {
-        index      = i
-        size_gb    = disk.size_gb
-        mount_path = disk.mount_path
-        filesystem = disk.filesystem
-        label      = disk.label
-        wwn = format(
-          "0x6%015x",
-          tonumber(try(regex("[0-9]+$", vm.name), "0")) * 100 + i
-        )
-      }
-    ]
-  }
-
-  vm_disks_flat = merge([
-    for vm_name, disks in local.vm_disks : {
-      for i, disk in disks :
-      "${vm_name}-${i}" => merge(disk, {
-        vm_name = vm_name
-        index   = i
-      })
-    }
-  ]...)
 }

@@ -88,7 +88,7 @@ resource "terraform_data" "validate_bastion" {
 
 module "bastion_cloudinit" {
   count  = local.lb_ssh_jump_enabled ? 1 : 0
-  source = "../shared/modules/cloudinit-renderer"
+  source = "../../shared/modules/cloudinit-renderer"
 
   cloud_init_selected     = "default"
   node_username           = var.cluster.username
@@ -121,7 +121,7 @@ locals {
   # adds its own default via the private gateway (50-cloud-init.yaml), which
   # the oneshot service below deletes — netplan cannot express that removal.
   bastion_private_netplan = local.lb_ssh_jump_enabled ? templatefile(
-    "${path.module}/../shared/cloud-init/default/network_config.cfg.tftpl",
+    "${path.module}/../../shared/cloud-init/default/network_config.cfg.tftpl",
     {
       public_iface         = "ens3"
       interface_id         = "ens4"

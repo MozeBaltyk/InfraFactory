@@ -13,22 +13,14 @@ data "ovh_cloud_project_flavors" "all" {
 }
 
 ###
-### SSH key — push the generated public key to OVH so it can be injected into VMs
+### Nova keypair: Nova cannot see OVH project SSH keys (Invalid key_name),
+### so register the generated public key natively for openstack_compute_instance_v2.
 ###
 
 resource "random_id" "ssh_key_suffix" {
   byte_length = 4
 }
 
-resource "ovh_cloud_project_ssh_key" "cluster" {
-  service_name = var.ovh_project_service_name
-  name         = "${terraform.workspace}-${random_id.ssh_key_suffix.hex}"
-  public_key   = trimspace(module.ssh_keys.public_key_openssh)
-}
-
-# Nova keypair for openstack_compute_instance_v2: the OVH SSH key above is
-# NOT visible to Nova (Invalid key_name), so register the same public key
-# natively. // ponytail: two keys, same material; drop the OVH one once green.
 resource "openstack_compute_keypair_v2" "cluster" {
   region     = var.cluster.region
   name       = "${terraform.workspace}-${random_id.ssh_key_suffix.hex}"
@@ -65,14 +57,7 @@ locals {
     )
   ]
 
-  preferred_images = [
-    for image in local.selected_images :
-    image
-    if !strcontains(lower(image.name), "uefi")
-  ]
-
   selected_image = try(
-    local.preferred_images[0],
     local.selected_images[0],
     null
   )

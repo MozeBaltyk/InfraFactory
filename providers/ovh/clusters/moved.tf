@@ -10,8 +10,3 @@ moved {
   from = random_id.ssh_key_suffix[0]
   to   = random_id.ssh_key_suffix
 }
-
-moved {
-  from = ovh_cloud_project_ssh_key.cluster[0]
-  to   = ovh_cloud_project_ssh_key.cluster
-}

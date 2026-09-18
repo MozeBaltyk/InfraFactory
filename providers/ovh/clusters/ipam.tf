@@ -11,7 +11,7 @@
 ###
 
 module "ipam" {
-  source = "../shared/modules/ipam"
+  source = "../../shared/modules/ipam"
 
   cidr             = local.private_cidr
   host_offset_base = local.private_ip_host_offset_base

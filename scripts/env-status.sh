@@ -28,6 +28,8 @@ cd -- "$root"
 tfvars="./env/$provider/$environment.tfvars"
 env_dir="./env/$provider/$environment"
 provider_path="providers/$module"
+# OVH cluster state lives in the clusters/ root module (bastion/ is separate).
+[[ $module == ovh ]] && provider_path="providers/ovh/clusters"
 cloud_init_selected=
 
 if [[ -f $tfvars ]]; then
