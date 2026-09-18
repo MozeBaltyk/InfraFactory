@@ -146,7 +146,7 @@ Available commands:
 | `just ping` | Ping VMs with ansible |
 | `just check` | Check k8s access |
 | `just play` | Run an Ansible playbook against the cluster |
-| `just replace NAME` | Replace a named VM; OVH applies the full dependency graph, while AZ/KVM remain target-scoped |
+| `just replace NAME` | Replace a named VM (AZ/KVM only; no `replace` recipe exists yet for OVH or the standalone bastion) |
 
 
 
@@ -154,9 +154,9 @@ Available commands:
 
 OVH dedicated-bastion migration is intentionally disruptive. Before changing
 `ssh_jump_enabled` on an existing cluster, back up etcd and workloads, schedule
-downtime, and save/review the authenticated full plan. Use `just replace bastion`
-for bastion recovery. `just replace` refuses the first K3s/RKE2 controller:
-replacing that bootstrap node safely requires a verified etcd snapshot and the
+downtime, and save/review the authenticated full plan. There is no `just replace`
+recipe for OVH yet (AZ/KVM only); replacing the first K3s/RKE2 controller
+safely requires a verified etcd snapshot and the
 distribution recovery procedure ([K3s](https://docs.k3s.io/datastore/backup-restore) or
 [RKE2](https://docs.rke2.io/datastore/backup_restore)); automatic datastore
 membership recovery is not implemented. Jump-mode SSH transport is configured in
@@ -237,13 +237,17 @@ Important lifecycle caveats:
 ```txt
 InfraFactory/
 ├── AGENTS.md                     # AI assistant context
-├── README.md                     # The only doc, I will produce in my life.
-├── TODO.md                       # Task tracking
+├── README.md                     # User workflow, status, roadmap, limits
+├── docs/plan/summary.md            # Task tracking
 ├── justfile                      # CLI orchestrator (run: just)
-├── gitops/                       # Optional Flux/tofu-controller management layer
+├── docs/                         # Architecture, decisions, plan (see 00-repo-contract.md)
+├── tests/                        # Contract and provider tests
+├── gitops/
 │   ├── apps/                     # Flux-managed platform apps and controllers
+│   ├── docs/
 │   ├── flux/                     # Flux system config and Terraform CR overlays
 │   ├── templates/                # Helmfile templates
+│   ├── scripts/
 │   ├── crds.yaml                 # CRDs required by the GitOps stack
 │   ├── flux.yaml                 # Flux and Flux operator deployment
 │   └── justfile                  # GitOps operation commands
@@ -272,8 +276,9 @@ InfraFactory/
 │   │   ├── justfile             # Provider-local Just recipes
 │   │   └── [provider files]
 │   ├── ovh/                      # OVH Cloud provider
-│   │   ├── justfile             # Provider-local Just recipes
-│   │   └── [provider files]
+│   │   ├── justfile             # Thin router (defaults to clusters/)
+│   │   ├── clusters/            # Cluster stack (one workspace per cluster)
+│   │   └── bastion/             # Standalone SSH bastion (serves many clusters)
 │   │
 │   └── shared/                   # Shared resources (all providers)
 │       ├── ansible/              # Shared Ansible playbooks (post-deployment steps)
@@ -383,7 +388,7 @@ See [AGENTS.md](AGENTS.md) for AI assistant context and full governance rules.
 
 - OVH uses public-IP-based operator access normally; `ssh_jump_enabled=true` uses a dedicated bastion and private Kubernetes node IPs: K3s/RKE2 nodes via a self-contained ProxyCommand in `ansible.cfg`
 - OVH dedicated-bastion mode is plan-validated only; live K3s/RKE2 first boot, replacement, and destroy proofs remain pending
-- OVH refuses `just replace` for the first K3s/RKE2 controller; use a verified etcd snapshot and the distribution restore procedure instead
+- OVH has no `just replace` recipe yet; when it lands, replacing the first K3s/RKE2 controller must stay blocked pending a verified etcd snapshot and restore procedure
 - OVH standalone `infra.vms` are public-attached and private-attached in current code
 - OVH custom root disk sizing and extra disks are not supported yet
 - IPv6 support requires additional configuration

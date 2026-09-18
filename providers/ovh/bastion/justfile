@@ -1,0 +1,56 @@
+set shell := ["bash", "-eu", "-o", "pipefail", "-c", "umask 077; exec bash -eu -o pipefail -c \"$1\"", "--"]
+
+# Bastion stack identity. Singular per project (one bastion serves many
+# clusters), so it intentionally does NOT reuse the cluster ENV workspace.
+BASTION_ENV_RAW := env_var_or_default("BASTION_ENV", "bastion")
+BASTION_ENV := if BASTION_ENV_RAW =~ '^[A-Za-z0-9._-]+$' { BASTION_ENV_RAW } else { error("BASTION_ENV must be a nonempty workspace identifier containing only A-Za-z0-9._-") }
+BASTION_TFVARS_PATH := "../../../env/OVH/" + BASTION_ENV + ".tfvars"
+
+# Same credential-snippet pattern as clusters/justfile: eval it in the
+# caller's shell since exports don't survive across recipes.
+[private]
+_source-openrc:
+    @if test -n "${OS_AUTH_URL:-}${OS_CLOUD:-}"; then exit 0; fi; \
+      for openrc in "${OPENRC:-}" {{ quote("../../../env/OVH/" + BASTION_ENV + ".openrc.local") }} {{ quote("../../../env/OVH/" + BASTION_ENV + ".openrc") }}; do \
+        if test -n "$openrc" && test -f "$openrc"; then printf 'set -a; source %q; set +a\n' "$openrc"; exit 0; fi; \
+      done
+
+[private]
+_workspace:
+    @tofu workspace select {{ quote(BASTION_ENV) }} || tofu workspace new {{ quote(BASTION_ENV) }}
+
+validate:
+    @tofu init -backend=false
+    @tofu validate
+
+plan:
+    @tofu init
+    @just _workspace
+    @eval "$(just _source-openrc)"; \
+      tofu plan -var-file={{ quote(BASTION_TFVARS_PATH) }}
+
+deploy:
+    @tofu init
+    @just _workspace
+    @eval "$(just _source-openrc)"; \
+      tofu apply -auto-approve -var-file={{ quote(BASTION_TFVARS_PATH) }}
+
+# VM only: ports (and their fixed IPs) are separate resources, so they are
+# kept and re-attached on redeploy with identical private IPs.
+destroy-vm STALE='':
+    @tofu init
+    @just _workspace
+    @eval "$(just _source-openrc)"; \
+      refresh_args=(); \
+      if test -n "{{ STALE }}"; then refresh_args=(-refresh=false); fi; \
+      tofu destroy -auto-approve "${refresh_args[@]}" -var-file={{ quote(BASTION_TFVARS_PATH) }} -target=openstack_compute_instance_v2.bastion
+
+# Everything: VM + ports + security groups. Detaching all clusters first
+# (empty `clusters` map + apply) keeps this from stranding ports.
+destroy-all STALE='':
+    @tofu init
+    @just _workspace
+    @eval "$(just _source-openrc)"; \
+      refresh_args=(); \
+      if test -n "{{ STALE }}"; then refresh_args=(-refresh=false); fi; \
+      tofu destroy -auto-approve "${refresh_args[@]}" -var-file={{ quote(BASTION_TFVARS_PATH) }}

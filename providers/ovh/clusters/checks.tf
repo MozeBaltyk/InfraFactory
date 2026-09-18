@@ -1,22 +1,13 @@
-check "ovh_multi_master_requires_private_network" {
+check "ovh_private_only_vms_require_gateway" {
   assert {
     condition = (
-      var.infra.masters.count <= 1 ||
-      try(trimspace(var.network.private.cidr), "") != ""
+      local.private_gateway_ip != null ||
+      length([
+        for name, vm in local.all_vms_map : name
+        if vm.private_attach && !vm.public_attach
+      ]) == 0
     )
-
-    error_message = "network.private.cidr must be set when infra.masters.count is greater than 1 so OVH multi-master can use the private-network path."
-  }
-}
-
-check "ovh_lb_requires_private_network" {
-  assert {
-    condition = (
-      !local.kubernetes_enabled ||
-      !local.lb_enabled ||
-      try(trimspace(var.network.private.cidr), "") != ""
-    )
-    error_message = "network.private.cidr must be set when network.kube_api.load_balancer.enabled is true so the load balancer can attach to the private subnet."
+    error_message = "Private-only OVH VMs (no public interface) require a subnet gateway IP for egress: with a managed private network, enable network.kube_api.load_balancer so the gateway is created."
   }
 }
 
@@ -38,41 +29,14 @@ check "ovh_lb_flavor_exists" {
   }
 }
 
-check "ovh_private_network_cidr_has_enough_addresses" {
+check "ovh_reserved_bastion_ip_clear_of_nodes" {
   assert {
     condition = (
       try(trimspace(var.network.private.cidr), "") == "" ||
-      can(
-        cidrhost(
-          var.network.private.cidr,
-          (tonumber(split("/", var.network.private.cidr)[1]) <= 28 ? 10 : 2) + var.infra.masters.count + var.infra.workers.count + var.infra.vms.count + (local.lb_ssh_jump_enabled ? 1 : 0) - 1
-        )
-      )
+      module.ipam.last_node_hostnum < module.ipam.bastion_hostnum
     )
 
-    error_message = "network.private.cidr must provide enough private IP addresses for all OVH VMs."
-  }
-}
-
-check "ovh_existing_private_network_has_single_match" {
-  assert {
-    condition = (
-      !local.private_network_existing ||
-      length(local.existing_private_network_matches) == 1
-    )
-
-    error_message = "network.private.mode = \"existing\" requires exactly one OVH private network matching network.private.vlan_id in cluster.region."
-  }
-}
-
-check "ovh_existing_private_subnet_has_single_match" {
-  assert {
-    condition = (
-      !local.private_network_existing ||
-      length(local.existing_private_subnet_matches) == 1
-    )
-
-    error_message = "network.private.mode = \"existing\" requires exactly one OVH private subnet matching network.private.cidr on the discovered private network."
+    error_message = "OVH node allocation (masters + workers + vms from the host offset base) reaches the reserved bastion IP (last usable host of network.private.cidr): widen the CIDR or reduce node counts."
   }
 }
 
@@ -82,64 +46,6 @@ check "ovh_vlan_id_range" {
       var.network.private.vlan_id >= 0 && var.network.private.vlan_id <= 4000
     )
     error_message = "network.private.vlan_id must be between 0 and 4000."
-  }
-}
-
-check "ovh_existing_private_network_vm_only" {
-  assert {
-    condition = (
-      var.network.private.mode != "existing" ||
-      (
-        !local.kubernetes_enabled &&
-        var.infra.masters.count == 0 &&
-        var.infra.workers.count == 0 &&
-        var.infra.vms.count > 0
-      )
-    )
-    error_message = "network.private.mode = \"existing\" is only supported for VM-only deployments: cloud_init_selected = \"default\", masters.count = 0, workers.count = 0, and vms.count > 0."
-  }
-}
-
-check "ovh_existing_private_network_ips_per_vm" {
-  assert {
-    condition = (
-      var.network.private.mode != "existing" ||
-      length(var.infra.vms.ip_addresses) == var.infra.vms.count
-    )
-    error_message = "network.private.mode = \"existing\" requires infra.vms.ip_addresses to contain exactly one static private IP per VM."
-  }
-}
-
-check "ovh_existing_private_network_ips_unique" {
-  assert {
-    condition = (
-      var.network.private.mode != "existing" ||
-      length(distinct(var.infra.vms.ip_addresses)) == length(var.infra.vms.ip_addresses)
-    )
-    error_message = "infra.vms.ip_addresses must be unique."
-  }
-}
-
-check "ovh_existing_private_network_ips_valid" {
-  assert {
-    condition = (
-      var.network.private.mode != "existing" ||
-      alltrue([
-        for ip in var.infra.vms.ip_addresses :
-        can(cidrnetmask("${ip}/32")) && !strcontains(ip, ":")
-      ])
-    )
-    error_message = "infra.vms.ip_addresses must contain valid IPv4 addresses."
-  }
-}
-
-check "ovh_existing_private_network_no_lb" {
-  assert {
-    condition = (
-      var.network.private.mode != "existing" ||
-      !try(var.network.kube_api.load_balancer.enabled, false)
-    )
-    error_message = "network.private.mode = \"existing\" cannot create or manage a kube-api load balancer."
   }
 }
 
@@ -251,40 +157,6 @@ check "storage_object_storage_encryption_valid" {
       try(b.encryption.sse_algorithm, "AES256") == "AES256"
     ])
     error_message = "storage.\"Object-storage\"[*].encryption.sse_algorithm only supports \"AES256\" today."
-  }
-}
-
-###
-### Block storage
-###
-
-check "storage_blocks_required_fields" {
-  assert {
-    condition = alltrue([
-      for key, b in local.storage_blocks_raw :
-      try(trimspace(b.name), "") != "" && try(b.size, null) != null
-    ])
-    error_message = "storage.\"Block-storage\"[*] requires name and size (GB) to be set."
-  }
-}
-
-check "storage_blocks_volume_type_valid" {
-  assert {
-    condition = alltrue([
-      for key, b in local.storage_blocks : contains(["fast", "work", "cold", "bulk", "ec_sas"], b.volume_type)
-    ])
-    error_message = "storage.\"Block-storage\"[*].volume_type must be one of: fast, work, cold, bulk, ec_sas."
-  }
-}
-
-check "infra_block_storage_attachments_exist" {
-  assert {
-    condition = alltrue(concat(
-      [for key in try(var.infra.masters.block_storage, []) : contains(keys(local.storage_blocks), key)],
-      [for key in try(var.infra.workers.block_storage, []) : contains(keys(local.storage_blocks), key)],
-      [for key in try(var.infra.vms.block_storage, []) : contains(keys(local.storage_blocks), key)],
-    ))
-    error_message = "infra.masters/workers/vms.block_storage may only reference keys defined in storage.\"Block-storage\": ${join(", ", keys(local.storage_blocks))}."
   }
 }
 

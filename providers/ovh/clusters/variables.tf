@@ -180,7 +180,6 @@ variable "infra" {
       })), [])
       nfs            = optional(list(string), [])
       object_storage = optional(list(string), [])
-      block_storage  = optional(list(string), [])
     })
 
     workers = object({
@@ -196,17 +195,14 @@ variable "infra" {
       })), [])
       nfs            = optional(list(string), [])
       object_storage = optional(list(string), [])
-      block_storage  = optional(list(string), [])
     })
 
     vms = optional(object({
       count             = number
       instance_size     = optional(string, "b2-7")
-      ip_addresses      = optional(list(string), [])
       user_data_enabled = optional(bool, true)
       nfs               = optional(list(string), [])
       object_storage    = optional(list(string), [])
-      block_storage     = optional(list(string), [])
     }), { count = 0 })
   })
 
@@ -248,17 +244,12 @@ variable "infra" {
 variable "storage" {
   description = <<-EOT
     OVH-managed storage, keyed by a logical name that infra.masters/workers/vms
-    reference via their `nfs`/`object_storage`/`block_storage` attachment lists:
+    reference via their `nfs`/`object_storage` attachment lists:
       NFS = optional map of Public Cloud File Storage shares
         key => { name, size (GB), type = "STANDARD_1AZ", network_id, subnet_id, description,
                  mount_path, options, read_only }
       Object-storage = optional map of S3-compatible buckets
         key => { name, region ("GRA"|"SBG"|"BHS"), versioning, tags, object_lock, encryption }
-      Block-storage = optional map of block storage volumes
-        key => { name, size (GB), description, volume_type ("fast"|"work"|"cold"|"bulk"|"ec_sas"),
-                 snapshot_id, image_id, bootable, delete_on_termination }
-    Each infra.* role lists block_storage keys; one volume is created per (VM, key) pair
-    and attached to that VM's instance.
   EOT
   type        = any
   default     = {}
@@ -274,7 +265,6 @@ variable "network" {
     private = object({
       cidr    = string
       vlan_id = optional(number, 0)
-      mode    = optional(string, "managed")
     })
     kube_api = optional(object({
       endpoint = optional(string, "public_ip")
@@ -301,11 +291,6 @@ variable "network" {
   }
 
   validation {
-    condition     = contains(["managed", "existing"], var.network.private.mode)
-    error_message = "network.private.mode must be either \"managed\" or \"existing\"."
-  }
-
-  validation {
     condition = alltrue([
       for cidr in try(var.network.kube_api.ingress_cidrs, []) :
       can(cidrnetmask(cidr)) && !strcontains(cidr, ":")
@@ -323,7 +308,7 @@ data "http" "my_ip" {
 }
 
 locals {
-  env_root = abspath("${path.module}/../../env")
+  env_root = abspath("${path.module}/../../../env")
   env_path = "${local.env_root}/${var.infra_provider}/${terraform.workspace}"
 
   os = var.os_catalog[var.os.selected]
@@ -338,39 +323,13 @@ locals {
   # entry (see the validate_operator_ingress_cidrs precondition in checks.tf).
   my_public_ip = local.kubernetes_enabled ? "${chomp(trimspace(data.http.my_ip[0].response_body))}/32" : null
 
-  ## Private handling
-  private_network_mode     = var.network.private.mode
-  private_network_managed  = local.private_network_mode == "managed"
-  private_network_existing = local.private_network_mode == "existing"
-
+  ## Private handling (managed only: the cluster always owns its network)
   private_cidr                = var.network.private.cidr
   private_ip_host_offset_base = (tonumber(split("/", local.private_cidr)[1]) <= 28 ? 10 : 2)
 
-  existing_private_network_matches = local.private_network_existing ? [
-    for network in data.ovh_cloud_project_network_privates.existing[0].networks : network
-    if network.vlan_id == var.network.private.vlan_id && length([
-      for region in network.regions : region
-      if region.region == var.cluster.region
-    ]) == 1
-  ] : []
-
-  existing_private_network_global_id = local.private_network_existing ? try(local.existing_private_network_matches[0].id, null) : null
-
-  existing_private_network_openstack_id = local.private_network_existing ? try(one([
-    for region in local.existing_private_network_matches[0].regions : region.openstack_id
-    if region.region == var.cluster.region
-  ]), null) : null
-
-  existing_private_subnet_matches = local.private_network_existing && local.existing_private_network_global_id != null ? [
-    for subnet in data.ovh_cloud_project_network_private_subnets.existing[0].subnets : subnet
-    if subnet.cidr == local.private_cidr
-  ] : []
-
-  existing_private_subnet_id = local.private_network_existing ? try(local.existing_private_subnet_matches[0].id, null) : null
-
-  private_network_id = local.private_network_managed ? ovh_cloud_project_network_private.cluster[0].regions_openstack_ids[var.cluster.region] : local.existing_private_network_openstack_id
-  private_subnet_id  = local.private_network_managed ? ovh_cloud_project_network_private_subnet_v2.cluster[0].id : local.existing_private_subnet_id
-  private_gateway_ip = local.private_network_managed ? ovh_cloud_project_network_private_subnet_v2.cluster[0].gateway_ip : try(local.existing_private_subnet_matches[0].gateway_ip, null)
+  private_network_id = ovh_cloud_project_network_private.cluster.regions_openstack_ids[var.cluster.region]
+  private_subnet_id  = ovh_cloud_project_network_private_subnet_v2.cluster.id
+  private_gateway_ip = ovh_cloud_project_network_private_subnet_v2.cluster.gateway_ip
 
   ## Load Balancer
   ssh_jump_requested = try(var.network.kube_api.load_balancer.ssh_jump_enabled, false)
@@ -402,12 +361,11 @@ locals {
       disk_size         = var.infra.masters.disk_size
       extra_disks       = try(var.infra.masters.extra_disks, [])
       user_data_enabled = var.infra.masters.user_data_enabled
-      private_ip        = (cidrhost(local.private_cidr, local.private_ip_host_offset_base + i))
+      private_ip        = module.ipam.master_ips[i]
       private_attach    = true
       public_attach     = !local.lb_ssh_jump_enabled
       nfs               = try(var.infra.masters.nfs, [])
       object_storage    = try(var.infra.masters.object_storage, [])
-      block_storage     = try(var.infra.masters.block_storage, [])
     }
   ]
 
@@ -423,12 +381,11 @@ locals {
       disk_size         = var.infra.workers.disk_size
       extra_disks       = try(var.infra.workers.extra_disks, [])
       user_data_enabled = var.infra.workers.user_data_enabled
-      private_ip        = (cidrhost(local.private_cidr, local.private_ip_host_offset_base + i + var.infra.masters.count))
+      private_ip        = module.ipam.worker_ips[i]
       private_attach    = true
       public_attach     = !local.lb_ssh_jump_enabled
       nfs               = try(var.infra.workers.nfs, [])
       object_storage    = try(var.infra.workers.object_storage, [])
-      block_storage     = try(var.infra.workers.block_storage, [])
     }
   ]
 
@@ -452,12 +409,11 @@ locals {
       role              = "vm"
       instance_size     = var.infra.vms.instance_size
       user_data_enabled = var.infra.vms.user_data_enabled
-      private_ip        = local.private_network_existing ? var.infra.vms.ip_addresses[i] : cidrhost(local.private_cidr, local.private_ip_host_offset_base + i + var.infra.masters.count + var.infra.workers.count)
+      private_ip        = module.ipam.vm_ips[i]
       private_attach    = true
       public_attach     = true
       nfs               = try(var.infra.vms.nfs, [])
       object_storage    = try(var.infra.vms.object_storage, [])
-      block_storage     = try(var.infra.vms.block_storage, [])
     }
   ]
 
@@ -491,31 +447,4 @@ locals {
     : var.network.kube_api.endpoint
   )
 
-  ## Disks Topology
-  vm_disks = {
-    for vm in concat(local.master_details, local.worker_details) :
-    vm.name => [
-      for i, disk in vm.extra_disks : {
-        index      = i
-        size_gb    = disk.size_gb
-        mount_path = disk.mount_path
-        filesystem = disk.filesystem
-        label      = disk.label
-        wwn = format(
-          "0x6%015x",
-          tonumber(try(regex("[0-9]+$", vm.name), "0")) * 100 + i
-        )
-      }
-    ]
-  }
-
-  vm_disks_flat = merge([
-    for vm_name, disks in local.vm_disks : {
-      for i, disk in disks :
-      "${vm_name}-${i}" => merge(disk, {
-        vm_name = vm_name
-        index   = i
-      })
-    }
-  ]...)
 }

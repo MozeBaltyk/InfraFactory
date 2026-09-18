@@ -28,11 +28,10 @@ infra = {
      # ]
 
      # Attach OVH-managed storage from `storage` below, by key. Every master
-     # gets the referenced NFS share(s) client-mounted, S3 credentials for
-     # referenced bucket(s) injected, and block volume(s) attached.
+     # gets the referenced NFS share(s) client-mounted and S3 credentials for
+     # referenced bucket(s) injected. (Block volumes are not implemented yet.)
      # nfs            = ["nfs_1"]
      # object_storage = ["object_storage_1"]
-     # block_storage  = ["block_storage_1"]
   }
 
   workers = {
@@ -54,6 +53,10 @@ infra = {
     # OVH ssh_key injection may still depend on image/cloud behavior.
     # user_data_enabled = true
   }
+
+  bastion = {
+    
+  }
 }
 
 # VM-only deployment example:
@@ -61,8 +64,6 @@ infra = {
 # infra.masters.count = 0
 # infra.workers.count = 0
 # infra.vms.count = 2
-# infra.vms.ip_addresses = ["10.0.30.50", "10.0.30.51"]
-# network.private.mode = "existing"
 # network.private.vlan_id = 30
 # network.private.cidr = "10.0.30.0/24"
 
@@ -81,9 +82,7 @@ os = {
 ### network.private.vlan_id is optional (default 0). Use a different VLAN ID
 ### per cluster to deploy multiple clusters in the same OVH region.
 ### Valid range: 0-4000.
-### network.private.mode = "managed" creates and owns the OVH private network
-### and subnet. mode = "existing" reuses the matching VLAN/CIDR and leaves
-### lifecycle ownership outside InfraFactory.
+### The cluster always creates and owns its OVH private network and subnet.
 ###
 ### Internet → Floating IP → Gateway → LB → masters:6443
 ### The gateway and floating IP are explicit OVH resources owned by OpenTofu.
@@ -224,19 +223,6 @@ os = {
 #       # encryption  = { sse_algorithm = "AES256" }
 #     }
 #   }
-#
-#   Block-storage = {
-#     block_storage_1 = {
-#       name                 = "data"        # basename; actual volume = "<vm-name>-data"
-#       size                 = 50            # GB
-#       description          = "Data volume"  # Optional
-#       volume_type          = "fast"         # Optional: fast | work | cold | bulk | ec_sas
-#       # snapshot_id          = "..."         # Optional
-#       # image_id             = "..."         # Optional
-#       # bootable             = false         # Optional
-#       # delete_on_termination = true         # Optional
-#     }
-#   }
 # }
 
 # if cloud_init_selected=k3s
@@ -278,7 +264,6 @@ os = {
 
 # if os.selected = "ubuntu24"
 # OVH extra disks are not supported.
-
 
 # ansible = {
 #   pull = {

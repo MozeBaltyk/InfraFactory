@@ -1,0 +1,68 @@
+set shell := ["bash", "-eu", "-o", "pipefail", "-c", "umask 077; exec bash -eu -o pipefail -c \"$1\"", "--"]
+
+ENV_RAW := env_var_or_default("ENV", "lab")
+ENV := if ENV_RAW =~ '^[A-Za-z0-9._-]+$' { ENV_RAW } else { error("ENV must be a nonempty workspace identifier containing only A-Za-z0-9._-") }
+ENV_TFVARS_PATH := "../../../env/OVH/" + ENV + ".tfvars"
+
+# Prints a shell snippet that loads OpenStack credentials, or nothing when
+# OS_* is already exported. Callers eval it in their own shell:
+#   eval "$(just _source-openrc)"
+# (One recipe cannot source for another: each just recipe runs in its own
+# shell process, so exports would evaporate on exit. The path-or-snippet has
+# to cross that boundary as text.)
+[private]
+_source-openrc:
+    @if test -n "${OS_AUTH_URL:-}${OS_CLOUD:-}"; then exit 0; fi; \
+      for openrc in "${OPENRC:-}" {{ quote("../../../env/OVH/" + ENV + ".openrc.local") }} {{ quote("../../../env/OVH/" + ENV + ".openrc") }}; do \
+        if test -n "$openrc" && test -f "$openrc"; then printf 'set -a; source %q; set +a\n' "$openrc"; exit 0; fi; \
+      done
+
+[private]
+_workspace:
+    @tofu workspace select {{ quote(ENV) }} || tofu workspace new {{ quote(ENV) }}
+
+validate:
+    @tofu init -backend=false
+    @tofu validate
+
+plan NAME='':
+    @tofu init
+    @just _workspace
+    @eval "$(just _source-openrc)"; \
+      name={{ quote(NAME) }}; \
+      target_args=(); \
+      if test -n "$name"; then \
+        case "$name" in \
+          *[!A-Za-z0-9._-]*|'') echo "Invalid VM name: $name" >&2; exit 1 ;; \
+        esac; \
+        target_args=(-target="openstack_compute_instance_v2.vms[\"$name\"]"); \
+      fi; \
+      tofu plan -var-file={{ quote(ENV_TFVARS_PATH) }} "${target_args[@]}"
+
+deploy NAME='':
+    @tofu init
+    @just _workspace
+    @eval "$(just _source-openrc)"; \
+      name={{ quote(NAME) }}; \
+      target_args=(); \
+      if test -n "$name"; then \
+        case "$name" in \
+          *[!A-Za-z0-9._-]*|'') echo "Invalid VM name: $name" >&2; exit 1 ;; \
+        esac; \
+        target_args=(-target="openstack_compute_instance_v2.vms[\"$name\"]"); \
+      fi; \
+      tofu apply -auto-approve -var-file={{ quote(ENV_TFVARS_PATH) }} "${target_args[@]}"
+
+# Destroy on the provider. Pass STALE=true to skip the refresh phase
+# (use when machines are broken/stale and refresh hangs on dead nodes).
+# No purge-ports pre-pass: with dhcp = false Neutron creates no DHCP agent
+# ports, so subnet deletion no longer hits 409. If it ever does (detached
+# port), delete it by hand: openstack port list --network <net-id>, then
+# openstack port delete <port-id>.
+destroy STALE='':
+    @tofu init
+    @just _workspace
+    @eval "$(just _source-openrc)"; \
+      refresh_args=(); \
+      if test -n "{{ STALE }}"; then refresh_args=(-refresh=false); fi; \
+      tofu destroy -auto-approve "${refresh_args[@]}" -var-file={{ quote(ENV_TFVARS_PATH) }}

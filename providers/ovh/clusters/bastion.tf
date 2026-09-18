@@ -88,7 +88,7 @@ resource "terraform_data" "validate_bastion" {
 
 module "bastion_cloudinit" {
   count  = local.lb_ssh_jump_enabled ? 1 : 0
-  source = "../shared/modules/cloudinit-renderer"
+  source = "../../shared/modules/cloudinit-renderer"
 
   cloud_init_selected     = "default"
   node_username           = var.cluster.username
@@ -115,9 +115,15 @@ module "bastion_cloudinit" {
 }
 
 locals {
+  # Same netplan as cluster nodes (see templates.tf): the bastion is always
+  # public + private, so the shared template renders ens3 = public via DHCP
+  # (public_iface) + ens4 = static, no default route. Nova network_data still
+  # adds its own default via the private gateway (50-cloud-init.yaml), which
+  # the oneshot service below deletes — netplan cannot express that removal.
   bastion_private_netplan = local.lb_ssh_jump_enabled ? templatefile(
-    "${path.module}/../shared/cloud-init/default/network_config.cfg.tftpl",
+    "${path.module}/../../shared/cloud-init/default/network_config.cfg.tftpl",
     {
+      public_iface         = "ens3"
       interface_id         = "ens4"
       interface_match_name = "ens4"
       interface_optional   = true
@@ -129,7 +135,7 @@ locals {
       network_gateway      = null
       dns_servers          = null
       domain               = local.subdomain
-      emit_empty_routes    = true
+      emit_empty_routes    = false
     }
   ) : null
 
@@ -145,6 +151,12 @@ locals {
     users = [merge(local.bastion_base_config.users[0], {
       lock_passwd = true
     })]
+    # NOTE (2026-09-17, proven on the guest via `cloud-init schema --system`):
+    # `network` is NOT a valid user-data key ("Additional properties are not
+    # allowed") — neither `config: disabled` nor a full v2 config has any
+    # effect there; cloud-init warns and falls back to datasource
+    # network_data. Network intent lives ONLY in the 99 file below; routes
+    # converge via the oneshot service. Do not re-add a `network` key here.
     write_files = concat(try(local.bastion_base_config.write_files, []), [
       {
         path        = "/etc/netplan/99-infrafactory-ovh-private.yaml"
@@ -152,20 +164,106 @@ locals {
         content     = local.bastion_private_netplan
       },
       {
+        path        = "/usr/local/sbin/infrafactory-ovh-private-netplan.sh"
+        permissions = "0755"
+
+        content = <<-EOT
+          #!/bin/bash
+          set -euo pipefail
+
+          IFACE="ens4"
+          NETPLAN_FILE="/etc/netplan/99-infrafactory-ovh-private.yaml"
+          PRIVATE_IP="${local.bastion_private_ip}"
+          PREFIX="${split("/", local.private_cidr)[1]}"
+          CIDR="$PRIVATE_IP/$PREFIX"
+
+          if [ -f "$NETPLAN_FILE" ]; then
+            chmod 0600 "$NETPLAN_FILE"
+          fi
+
+          if ! ip link show dev "$IFACE" >/dev/null 2>&1; then
+            echo "Private interface $IFACE not found" >&2
+            exit 1
+          fi
+
+          ip link set dev "$IFACE" up
+
+          netplan generate
+
+          addr_ok() {
+            ip -4 addr show dev "$IFACE" | grep -Fq " $CIDR"
+          }
+
+          routes_ok() {
+            ! ip -4 route show default dev "$IFACE" | grep -q .
+          }
+
+          if ! addr_ok || ! routes_ok; then
+            echo "Network state differs from netplan, running netplan apply once" >&2
+            netplan apply
+            sleep 2
+          fi
+
+          if ! addr_ok; then
+            echo "Private IP $CIDR still missing on $IFACE after netplan apply" >&2
+            exit 1
+          fi
+
+          # Without this scrub, return traffic for public inbound SSH leaves
+          # via ens4 (asymmetric routing) and the bastion is unreachable from
+          # the internet. A systemd service (not just runcmd) so a reboot —
+          # which re-applies netplan from files — cannot re-break SSH.
+          if ! routes_ok; then
+            echo "Removing stale default route via private interface $IFACE" >&2
+            ip -4 route show default dev "$IFACE" | while read -r route; do
+              [ -n "$route" ] || continue
+              ip -4 route del $route || true
+            done
+          fi
+        EOT
+      },
+      {
+        path        = "/etc/systemd/system/infrafactory-ovh-private-netplan.service"
+        permissions = "0644"
+
+        content = <<-EOT
+          [Unit]
+          Description=InfraFactory OVH private network verify
+          Wants=network-online.target
+          After=network-online.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/sbin/infrafactory-ovh-private-netplan.sh
+
+          [Install]
+          WantedBy=multi-user.target
+        EOT
+      },
+      {
+        # Same periodic re-verify as cluster nodes (see templates.tf):
+        # netplan re-applied without reboot (hotplug/DHCP) resurrects the
+        # stale default while the finished oneshot never re-runs.
+        path        = "/etc/systemd/system/infrafactory-ovh-private-netplan.timer"
+        permissions = "0644"
+
+        content = <<-EOT
+          [Unit]
+          Description=InfraFactory OVH private network verify (periodic)
+
+          [Timer]
+          OnBootSec=2min
+          OnUnitActiveSec=2min
+          Unit=infrafactory-ovh-private-netplan.service
+
+          [Install]
+          WantedBy=timers.target
+        EOT
+      },
+      {
         path        = "/etc/ssh/sshd_config.d/00-infrafactory-bastion.conf"
         permissions = "0644"
-        content     = <<-EOT
-          PasswordAuthentication no
-          KbdInteractiveAuthentication no
-          PubkeyAuthentication yes
-          PermitRootLogin no
-          AllowAgentForwarding no
-          X11Forwarding no
-          PermitTunnel no
-          GatewayPorts no
-          AllowTcpForwarding local
-          PermitOpen ${local.bastion_permit_open}
-        EOT
+        content     = "${local.sshd_hardening_base}PermitOpen ${local.bastion_permit_open}\n"
       },
       {
         path        = "/usr/local/sbin/infrafactory-verify-bastion-sshd"
@@ -223,6 +321,9 @@ locals {
     runcmd = concat([
       ["netplan", "generate"],
       ["netplan", "apply"],
+      ["systemctl", "daemon-reload"],
+      ["systemctl", "enable", "--now", "infrafactory-ovh-private-netplan.service"],
+      ["systemctl", "enable", "--now", "infrafactory-ovh-private-netplan.timer"],
       ["sysctl", "--system"],
       concat(
         ["/usr/local/sbin/infrafactory-verify-bastion-sshd", var.cluster.username, local.bastion_name, local.bastion_permit_open],
@@ -238,37 +339,29 @@ resource "terraform_data" "bastion_configuration" {
   input = sha256(local.bastion_cloudinit_user_data)
 }
 
-resource "ovh_cloud_project_instance" "bastion" {
+resource "openstack_compute_instance_v2" "bastion" {
   count = local.lb_ssh_jump_enabled ? 1 : 0
 
-  service_name   = var.ovh_project_service_name
-  region         = var.cluster.region
-  billing_period = "hourly"
+  region            = var.cluster.region
+  availability_zone = "nova"
 
-  name      = local.bastion_name
-  user_data = local.bastion_cloudinit_user_data
+  name        = local.bastion_name
+  image_id    = local.bastion_image.id
+  flavor_name = local.bastion_flavor.name
+  key_pair    = openstack_compute_keypair_v2.cluster.name
+  user_data   = local.bastion_cloudinit_user_data
 
-  boot_from {
-    image_id = local.bastion_image.id
-  }
+  config_drive = true
 
-  flavor {
-    flavor_id = local.bastion_flavor.id
-  }
-
-  ssh_key {
-    name = ovh_cloud_project_ssh_key.cluster.name
+  # NIC order defines guest interface order: Ext-Net first keeps
+  # ens3(public)/ens4(private); the bastion netplan targets ens4.
+  network {
+    uuid = data.openstack_networking_network_v2.ext_net.id
   }
 
   network {
-    public = true
-    private {
-      ip = local.bastion_private_ip
-      network {
-        id        = local.private_network_id
-        subnet_id = local.private_subnet_id
-      }
-    }
+    uuid        = local.private_network_id
+    fixed_ip_v4 = local.bastion_private_ip
   }
 
   timeouts {
@@ -282,33 +375,14 @@ resource "ovh_cloud_project_instance" "bastion" {
 
   depends_on = [
     terraform_data.validate_bastion,
-    terraform_data.validate_existing_private_network,
     ovh_cloud_project_network_private_subnet_v2.cluster,
   ]
 }
 
-resource "time_sleep" "wait_bastion_networks" {
-  count           = local.lb_ssh_jump_enabled ? 1 : 0
-  create_duration = "30s"
-
-  triggers = {
-    instance_id = ovh_cloud_project_instance.bastion[0].id
-  }
-}
-
-data "ovh_cloud_project_instance" "bastion" {
-  count        = local.lb_ssh_jump_enabled ? 1 : 0
-  service_name = var.ovh_project_service_name
-  region       = var.cluster.region
-  instance_id  = ovh_cloud_project_instance.bastion[0].id
-
-  depends_on = [time_sleep.wait_bastion_networks]
-}
-
 locals {
   bastion_public_ipv4_address = local.lb_ssh_jump_enabled ? try(one([
-    for addr in data.ovh_cloud_project_instance.bastion[0].addresses : addr.ip
-    if addr.version == 4 && addr.ip != local.bastion_private_ip
+    for net in openstack_compute_instance_v2.bastion[0].network : net.fixed_ip_v4
+    if net.uuid == data.openstack_networking_network_v2.ext_net.id
   ]), null) : null
 }
 
@@ -319,11 +393,11 @@ resource "terraform_data" "validate_bastion_public_ip" {
   lifecycle {
     precondition {
       condition     = local.bastion_public_ipv4_address != null
-      error_message = "OVH did not publish a public IPv4 for the bastion within 30s. Re-run apply after the OVH API converges."
+      error_message = "Nova did not assign a public IPv4 for the bastion. Re-run apply or check the Ext-Net network and quotas in region."
     }
   }
 
-  depends_on = [data.ovh_cloud_project_instance.bastion]
+  depends_on = [openstack_compute_instance_v2.bastion]
 }
 
 resource "openstack_networking_secgroup_v2" "bastion" {
@@ -357,7 +431,7 @@ resource "openstack_networking_secgroup_rule_v2" "bastion_egress" {
 
 data "openstack_networking_port_v2" "bastion_public" {
   count     = local.lb_ssh_jump_enabled ? 1 : 0
-  device_id = ovh_cloud_project_instance.bastion[0].id
+  device_id = openstack_compute_instance_v2.bastion[0].id
   fixed_ip  = local.bastion_public_ipv4_address
   region    = var.cluster.region
 
@@ -366,7 +440,7 @@ data "openstack_networking_port_v2" "bastion_public" {
 
 data "openstack_networking_port_v2" "bastion_private" {
   count      = local.lb_ssh_jump_enabled ? 1 : 0
-  device_id  = ovh_cloud_project_instance.bastion[0].id
+  device_id  = openstack_compute_instance_v2.bastion[0].id
   network_id = local.private_network_id
   fixed_ip   = local.bastion_private_ip
   region     = var.cluster.region
@@ -392,12 +466,19 @@ resource "terraform_data" "bastion_cloudinit_ready" {
   count = local.lb_ssh_jump_enabled ? 1 : 0
 
   triggers_replace = [
-    ovh_cloud_project_instance.bastion[0].id,
+    openstack_compute_instance_v2.bastion[0].id,
     local.bastion_public_ipv4_address,
   ]
 
   provisioner "local-exec" {
     command = <<-EOT
+      # 60 attempts x ~10s ~= 10 minutes. First boot is slow (Nova
+      # scheduling + firmware + cloud-init + package upgrades ≈ 5+ min to
+      # SSH-ready; 2026-09-17 the 5-minute budget expired ~1 min before the
+      # scrubbed guest answered). Past 10 min unreachable really means broken
+      # (security groups, cloud-init netplan, or OVH network issue). The inner
+      # `timeout 900 cloud-init status --wait` still allows a reachable
+      # bastion up to 15 minutes to finish cloud-init within one attempt.
       for attempt in $(seq 1 60); do
         if ssh -i "$KEY_PATH" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
             -o IdentitiesOnly=yes -o ConnectTimeout=5 "$BASTION_HOST" \
@@ -406,6 +487,7 @@ resource "terraform_data" "bastion_cloudinit_ready" {
         fi
         sleep 5
       done
+      echo "Bastion $BASTION_HOST still unreachable after ~10 minutes, aborting." >&2
       exit 1
     EOT
 

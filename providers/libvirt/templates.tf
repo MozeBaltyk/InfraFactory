@@ -60,6 +60,10 @@ resource "libvirt_cloudinit_disk" "commoninit" {
   network_config = templatefile(
     "${path.module}/../shared/cloud-init/${each.value.role == "vm" ? "default" : var.cluster.cloud_init_selected}/network_config.cfg.tftpl",
     {
+      # Single NIC on Libvirt: no public_iface (null keeps the optional
+      # second-NIC block out of the rendered netplan).
+      public_iface = null
+
       # Primary NIC on Libvirt cloud images
       interface_id         = "primary"
       interface_match_name = "ens3"

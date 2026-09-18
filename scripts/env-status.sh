@@ -28,6 +28,8 @@ cd -- "$root"
 tfvars="./env/$provider/$environment.tfvars"
 env_dir="./env/$provider/$environment"
 provider_path="providers/$module"
+# OVH cluster state lives in the clusters/ root module (bastion/ is separate).
+[[ $module == ovh ]] && provider_path="providers/ovh/clusters"
 cloud_init_selected=
 
 if [[ -f $tfvars ]]; then
@@ -86,7 +88,7 @@ print_openstack_auth() {
   if [[ -n ${OS_AUTH_URL:-}${OS_CLOUD:-} ]]; then
     source_label='not sourced (existing process OS_* selected)'
   else
-    for candidate in "${OPENRC:-}" "./env/OVH/$environment.openrc.local" "./env/OVH/$environment.openrc" './env/OVH/openrc.sh'; do
+    for candidate in "${OPENRC:-}" "./env/OVH/$environment.openrc.local" "./env/OVH/$environment.openrc"; do
       if [[ -n $candidate && -f $candidate ]]; then
         openrc=$candidate
         break
@@ -173,7 +175,7 @@ print_operator_ip() {
     printf '  %-32s %s[unknown]%s (no internet or ipinfo.io blocked)\n' 'Current public IP (egress)' "$yellow" "$reset"
   fi
   if [[ -f $tfvars ]]; then
-    cidrs=$(grep -E '^\s*ingress_cidrs' "$tfvars" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/(3[0-2]|[12]?[0-9])' | paste -sd ', ' -)
+    cidrs=$(grep -E '^\s*ingress_cidrs' "$tfvars" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/(3[0-2]|[12]?[0-9])' | paste -sd ', ' -) || true
   fi
   if [[ -n $cidrs ]]; then
     printf '  %-32s %s\n' 'network.kube_api.ingress_cidrs' "$cidrs"
@@ -187,7 +189,29 @@ print_operator_ip() {
   fi
 }
 
-[[ $provider == OVH ]] && { print_openstack_auth; print_operator_ip; }
+print_ovh_token_url() {
+  local project=
+  if [[ -f $tfvars ]]; then
+    project=$(
+      grep -E '^\s*ovh_project_service_name' "$tfvars" \
+        | grep -oE '"[^"]+"' \
+        | tr -d '"'
+    )
+  fi
+
+  printf '\n%s%s%s\n' "$blue" 'OVH API token (quick URL)' "$reset"
+
+  if [[ -n $project ]]; then
+    printf '  %s\n' \
+      "https://auth.eu.ovhcloud.com/api/createToken?GET=/cloud/project/${project}/*&POST=/cloud/project/${project}/*&PUT=/cloud/project/${project}/*&DELETE=/cloud/project/${project}/*&GET=/v2/publicCloud/project/${project}/*&POST=/v2/publicCloud/project/${project}/*&PUT=/v2/publicCloud/project/${project}/*&DELETE=/v2/publicCloud/project/${project}/*"
+  else
+    printf '  %s%s%s %s\n' \
+      "$yellow" "missing" "$reset" \
+      'ovh_project_service_name in tfvars'
+  fi
+}
+
+[[ $provider == OVH ]] && { print_openstack_auth; print_operator_ip; print_ovh_token_url; }
 
 printf '\n%s%s%s\n' "$blue" 'Useful commands' "$reset"
 printf '  %-16s PROVIDER=%s ENV=%s just %s\n' 'Validate' "$provider" "$environment" 'validate'

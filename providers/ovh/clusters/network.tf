@@ -2,9 +2,14 @@
 ### Private Network and Subnet
 ###
 
-resource "ovh_cloud_project_network_private" "cluster" {
-  count = local.private_network_managed ? 1 : 0
+# OVH public network, used as the first NIC on public-attached instances
+# (DHCP-assigned public IPv4) and to identify the public fixed IP in state.
+data "openstack_networking_network_v2" "ext_net" {
+  name   = "Ext-Net"
+  region = var.cluster.region
+}
 
+resource "ovh_cloud_project_network_private" "cluster" {
   service_name = var.ovh_project_service_name
   name         = format("%s-private", var.cluster.id)
   vlan_id      = var.network.private.vlan_id
@@ -12,55 +17,20 @@ resource "ovh_cloud_project_network_private" "cluster" {
 }
 
 resource "ovh_cloud_project_network_private_subnet_v2" "cluster" {
-  count = local.private_network_managed ? 1 : 0
-
   service_name = var.ovh_project_service_name
-  network_id   = ovh_cloud_project_network_private.cluster[0].regions_openstack_ids[var.cluster.region]
+  network_id   = ovh_cloud_project_network_private.cluster.regions_openstack_ids[var.cluster.region]
   region       = var.cluster.region
   name         = format("%s-subnet", var.cluster.id)
   cidr         = local.private_cidr
   # Gateway is mandatory for lb with public floating IP (but not for private-only network).
   enable_gateway_ip               = local.lb_enabled
   use_default_public_dns_resolver = false
-  # Private VM ports and guest netplan use deterministic static private IPs.
-  dhcp = true
-}
-
-data "ovh_cloud_project_network_privates" "existing" {
-  count = local.private_network_existing ? 1 : 0
-
-  service_name = var.ovh_project_service_name
-}
-
-data "ovh_cloud_project_network_private_subnets" "existing" {
-  count = local.private_network_existing && local.existing_private_network_global_id != null ? 1 : 0
-
-  service_name = var.ovh_project_service_name
-  network_id   = local.existing_private_network_global_id
-}
-
-resource "terraform_data" "validate_existing_private_network" {
-  count = local.private_network_existing ? 1 : 0
-
-  input = {
-    vlan_id       = var.network.private.vlan_id
-    cidr          = local.private_cidr
-    region        = var.cluster.region
-    network_count = length(local.existing_private_network_matches)
-    subnet_count  = length(local.existing_private_subnet_matches)
-  }
-
-  lifecycle {
-    precondition {
-      condition     = length(local.existing_private_network_matches) == 1
-      error_message = "network.private.mode = \"existing\" requires exactly one OVH private network matching network.private.vlan_id in cluster.region."
-    }
-
-    precondition {
-      condition     = length(local.existing_private_subnet_matches) == 1
-      error_message = "network.private.mode = \"existing\" requires exactly one OVH private subnet matching network.private.cidr on the discovered private network."
-    }
-  }
+  # DHCP stays OFF: guests use static netplan (use_dhcp = false everywhere)
+  # and first-boot user_data arrives via Nova config-drive, so the Neutron
+  # DHCP namespace's 169.254.169.254 metadata proxy is no longer needed.
+  # No DHCP agent ports also means no orphan ports blocking subnet
+  # deletion (409) on destroy.
+  dhcp = false
 }
 
 ###
@@ -176,8 +146,8 @@ resource "openstack_networking_secgroup_rule_v2" "cluster_egress" {
 data "openstack_networking_port_v2" "cluster_public" {
   for_each = local.kubernetes_enabled && !local.lb_ssh_jump_enabled ? local.cluster_vms_map : {}
 
-  device_id = ovh_cloud_project_instance.vms[each.key].id
-  fixed_ip  = local.vm_public_ipv4_addresses_after_wait[each.key]
+  device_id = openstack_compute_instance_v2.vms[each.key].id
+  fixed_ip  = local.vm_public_ipv4_addresses[each.key]
   region    = var.cluster.region
 
   depends_on = [terraform_data.validate_public_ips]
@@ -186,7 +156,7 @@ data "openstack_networking_port_v2" "cluster_public" {
 data "openstack_networking_port_v2" "cluster_private" {
   for_each = local.kubernetes_enabled ? local.cluster_vms_map : {}
 
-  device_id  = local.lb_ssh_jump_enabled ? ovh_cloud_project_instance.private_cluster[each.key].id : ovh_cloud_project_instance.vms[each.key].id
+  device_id  = local.lb_ssh_jump_enabled ? openstack_compute_instance_v2.private_cluster[each.key].id : openstack_compute_instance_v2.vms[each.key].id
   network_id = local.private_network_id
   fixed_ip   = each.value.private_ip
   region     = var.cluster.region
@@ -218,8 +188,8 @@ resource "terraform_data" "gateway_vm_generation" {
   count = local.lb_enabled ? 1 : 0
 
   input = merge(
-    { for name, vm in ovh_cloud_project_instance.vms : name => vm.id },
-    local.lb_ssh_jump_enabled ? { (local.bastion_name) = ovh_cloud_project_instance.bastion[0].id } : {},
+    { for name, vm in openstack_compute_instance_v2.vms : name => vm.id },
+    local.lb_ssh_jump_enabled ? { (local.bastion_name) = openstack_compute_instance_v2.bastion[0].id } : {},
   )
 }
 
@@ -242,8 +212,8 @@ resource "ovh_cloud_gateway" "kube_api" {
   }
 
   depends_on = [
-    ovh_cloud_project_instance.vms,
-    ovh_cloud_project_instance.bastion,
+    openstack_compute_instance_v2.vms,
+    openstack_compute_instance_v2.bastion,
   ]
 }
 
@@ -321,9 +291,9 @@ resource "ovh_cloud_project_loadbalancer" "kube_api" {
 
   depends_on = [
     ovh_cloud_project_network_private_subnet_v2.cluster,
-    ovh_cloud_project_instance.vms,
-    ovh_cloud_project_instance.private_cluster,
-    ovh_cloud_project_instance.bastion,
+    openstack_compute_instance_v2.vms,
+    openstack_compute_instance_v2.private_cluster,
+    openstack_compute_instance_v2.bastion,
     openstack_networking_port_secgroup_associate_v2.cluster_private,
     openstack_networking_port_secgroup_associate_v2.bastion_private,
   ]
