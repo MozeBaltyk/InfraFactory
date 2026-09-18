@@ -102,9 +102,9 @@ resource "openstack_compute_keypair_v2" "bastion" {
 ### ens3 (public); attached clusters follow in sorted key order
 ### (ens4, ens5, ...), matching templates.tf.
 ###
-### Phase 1 uses plain network blocks: attaching another cluster replaces the
-### VM (new public IP). Phase 2 switches to ports + interface_attach
-### (hot-attach, VM stays).
+### Private NICs are hot-attached ports (below), never inline network blocks:
+### adding another cluster creates only a port + attach, the VM (and its
+### public IP) stays.
 ###
 
 resource "openstack_compute_instance_v2" "bastion" {
@@ -121,15 +121,6 @@ resource "openstack_compute_instance_v2" "bastion" {
 
   network {
     uuid = data.openstack_networking_network_v2.ext_net.id
-  }
-
-  dynamic "network" {
-    for_each = local.cluster_names_sorted
-
-    content {
-      uuid        = local.cluster_private_network_ids[network.value]
-      fixed_ip_v4 = module.ipam[network.value].bastion_ip
-    }
   }
 
   timeouts {
@@ -170,7 +161,48 @@ resource "terraform_data" "validate_bastion_public_ip" {
 }
 
 ###
-### Port security-group association (public + every attached private port).
+### Per-cluster private ports (fixed reserved IP from the shared IPAM
+### convention) + hot-attach to the running VM. Adding a cluster creates only
+### these two resources; the VM above is untouched (its arguments never
+### reference var.clusters, and user_data drift is ignored + Ansible-owned).
+### for_each over the sorted cluster names keeps NIC order deterministic
+### (Ext-Net first, then clusters in order — ens3 public, ens4+ private).
+###
+
+resource "openstack_networking_port_v2" "bastion_private" {
+  for_each = toset(local.cluster_names_sorted)
+
+  region     = var.bastion.region
+  name       = "${var.bastion.id}-${each.key}"
+  network_id = local.cluster_private_network_ids[each.key]
+
+  # Single subnet per cluster network (enforced by
+  # terraform_data.validate_cluster_networks), so Neutron resolves the
+  # subnet from the address alone — no OpenStack subnet lookup needed.
+  fixed_ip {
+    ip_address = module.ipam[each.key].bastion_ip
+  }
+
+  # Same SG semantics as before (SSH in from ingress CIDRs, egress open),
+  # now declared on the managed port instead of a post-hoc associate.
+  security_group_ids = [openstack_networking_secgroup_v2.bastion.id]
+
+  depends_on = [terraform_data.validate_cluster_networks]
+}
+
+resource "openstack_compute_interface_attach_v2" "bastion_private" {
+  for_each = toset(local.cluster_names_sorted)
+
+  region      = var.bastion.region
+  instance_id = openstack_compute_instance_v2.bastion.id
+  port_id     = openstack_networking_port_v2.bastion_private[each.key].id
+}
+
+###
+### Public port security-group association. Unlike the private NICs, the
+### Ext-Net port is implicitly created by Nova via the VM's network block,
+### so it cannot be a managed port resource without an import — the
+### data-source lookup + associate stays for this one port only.
 ###
 
 data "openstack_networking_port_v2" "bastion_public" {
@@ -181,26 +213,8 @@ data "openstack_networking_port_v2" "bastion_public" {
   depends_on = [terraform_data.validate_bastion_public_ip]
 }
 
-data "openstack_networking_port_v2" "bastion_private" {
-  for_each = toset(local.cluster_names_sorted)
-
-  device_id  = openstack_compute_instance_v2.bastion.id
-  network_id = local.cluster_private_network_ids[each.key]
-  fixed_ip   = module.ipam[each.key].bastion_ip
-  region     = var.bastion.region
-}
-
 resource "openstack_networking_port_secgroup_associate_v2" "bastion_public" {
   port_id            = data.openstack_networking_port_v2.bastion_public.id
-  security_group_ids = [openstack_networking_secgroup_v2.bastion.id]
-  enforce            = true
-  region             = var.bastion.region
-}
-
-resource "openstack_networking_port_secgroup_associate_v2" "bastion_private" {
-  for_each = toset(local.cluster_names_sorted)
-
-  port_id            = data.openstack_networking_port_v2.bastion_private[each.key].id
   security_group_ids = [openstack_networking_secgroup_v2.bastion.id]
   enforce            = true
   region             = var.bastion.region
@@ -243,6 +257,6 @@ resource "terraform_data" "bastion_cloudinit_ready" {
 
   depends_on = [
     openstack_networking_port_secgroup_associate_v2.bastion_public,
-    openstack_networking_port_secgroup_associate_v2.bastion_private,
+    openstack_compute_interface_attach_v2.bastion_private,
   ]
 }

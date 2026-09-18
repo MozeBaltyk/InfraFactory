@@ -306,6 +306,6 @@ locals {
         ["/usr/local/sbin/infrafactory-verify-bastion-sshd", var.bastion.username, var.bastion.id, local.permit_open],
         local.sshd_test_addresses,
       )] : [],
-      try(local.base_config.runcmd, []))
+    try(local.base_config.runcmd, []))
   }))}"
 }
