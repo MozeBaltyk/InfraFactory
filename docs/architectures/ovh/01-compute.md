@@ -1,8 +1,8 @@
 # OVH compute — VMs, images, flavors, keys
 
 How the cluster stack (`providers/ovh/clusters/`) provisions nodes. Networking
-(private net, security groups, LB) lives in `03-network.md`; graphic detail
-in `clusters/main.tf` + `clusters/variables.tf`.
+(private net, security groups, LB) lives in `03-network.md`; derived node maps
+live in `clusters/topology.tf`, instance creation in `clusters/main.tf`.
 
 ## Image selection (no `image_id` var, deliberately)
 
@@ -29,21 +29,23 @@ One terraform-generated keypair per cluster (`module.ssh_keys` → Nova-native
 
 ## Instances
 
-Two Nova resources over deterministic topology maps (`clusters/variables.tf`):
+One Nova resource (`openstack_compute_instance_v2.vms`) `for_each` over the
+deterministic `all_vms_map` built in `clusters/topology.tf` (masters +
+workers + `infra.vms`). Per-node `public_attach`/`private_attach` flags drive
+dynamic NIC blocks, so jump-mode masters/workers are private-only (single NIC,
+`ens3`) while normal-mode nodes and standalone `infra.vms` stay dual-NIC
+(Ext-Net first = `ens3` public, private second = `ens4`); NIC order is
+load-bearing.
 
-- `openstack_compute_instance_v2.vms` — public-attached nodes (normal mode:
-  all nodes; jump mode: only standalone `infra.vms`). NIC order is
-  load-bearing: Ext-Net first (`ens3` public), private second (`ens4`).
-- `openstack_compute_instance_v2.private_cluster` — private-only nodes in
-  jump mode (single NIC, `ens3` = private).
+`config_drive = true` (user-data arrives on virtual CD-ROM, no DHCP needed),
+fixed private IP from the shared IPAM module, `create = 20m` timeout,
+`ignore_changes = [user_data]` (day-2 drift is Ansible-owned).
 
-Both: `config_drive = true` (user-data arrives on virtual CD-ROM, no DHCP
-needed), fixed private IP from the shared IPAM module, `create = 20m`
-timeout, `ignore_changes = [user_data]` (day-2 drift is Ansible-owned).
-
-`depends_on` carries two non-obvious edges: the NFS share ACL (nodes mount on
-first boot — without it, boot races the ACL and dies on access-denied) and
-the private subnet (private IPs are meaningless before it exists).
+`depends_on` carries three non-obvious edges: the egress gateway (private-only
+nodes boot only after it is READY — see network ordering), the NFS share ACL
+(nodes mount on first boot — without it, boot races the ACL and dies on
+access-denied), and the private subnet (private IPs are meaningless before it
+exists).
 
 ## Naming
 
