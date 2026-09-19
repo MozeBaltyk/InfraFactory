@@ -8,5 +8,6 @@ bastion stack instantiates it per served cluster.
 Added the cluster-side guard: node allocation (`last_node_hostnum`) must stay
 below the reserved bastion address (`bastion_hostnum`).
 
-Gate G0 (offline): `tofu validate` green, existing workspaces no-op.
-Commit `eb10003`. No behavior change.
+Gate G0 (offline): validation green; the shared formula is byte-identical and
+no behavior change is intended. Commit `eb10003`. No retained authenticated
+plan proves existing workspaces no-op; that live evidence is not claimed.

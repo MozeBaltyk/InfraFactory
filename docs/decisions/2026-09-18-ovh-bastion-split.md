@@ -1,8 +1,8 @@
 # 2026-09-18 — OVH bastion split (standalone bastion + cluster stacks)
 
 Distilled from `docs/refactoring/01-bastion-split-analysis.md` (removed after
-dispatch). Status: Phases 0–2 implemented on branch `ovh-refactor`; Phases
-3–6 tracked in `docs/plan/`.
+dispatch). Status: Phases 0–4 implemented offline on branch `ovh-refactor`;
+P5 live acceptance and P6 closeout remain tracked in `docs/plan/`.
 
 ## Context
 

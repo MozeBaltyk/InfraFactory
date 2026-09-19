@@ -1,10 +1,17 @@
-# P5 — Live validation — blocked on explicit approval
+# P5 — Live validation — partial observations; gates pending approval
 
 Real OVH ops, in order, each a go/no-go. No paid cloud ops without explicit
 user approval.
 
+Non-gating evidence already observed: private-node first-boot egress failure
+(`35c580b`), jump SSH failing closed before key convergence (`91d3e57`),
+unpredictable hot-attached NIC names (`224888f`), and the first-boot DNS race
+(`9396746`). These findings informed fixes but do not complete any scenario or
+gate below.
+
 1. Bastion-first flow on scratch: bastion `apply` (admin key, no clusters) →
-   SSH reachable; cluster keys + network via targeted apply; bastion attach
+   SSH reachable; cluster keys + network via `ENV=<env> just ovh::bootstrap`;
+   bastion attach
    apply → SSH via cluster key, public IP unchanged.
 2. Full cluster apply (single-master k3s, jump mode): private-only nodes,
    Ansible via bastion green, single defaults, kubeconfig fetched.

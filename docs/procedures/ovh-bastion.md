@@ -169,5 +169,5 @@ Toggling jump on an existing cluster replaces masters/workers: back up
 etcd/workloads, schedule downtime, save/review the full authenticated
 plan first. `just replace` refuses the first K3s/RKE2 controller — recover
 it only through a verified etcd snapshot and the distribution restore
-procedure. See `../plan/phase-03-decoupling.md` (state surgery) and the
+procedure. See `../plan/phase-03-decoupling.md` (migration constraints) and the
 `ssh_jump_enabled` warning above.

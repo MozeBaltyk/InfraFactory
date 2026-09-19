@@ -1,4 +1,4 @@
-# P4 — Day-2 convergence + workflow recipes — partial
+# P4 — Day-2 convergence + workflow recipes — offline implementation done
 
 New clusters (pubkey, `PermitOpen` entries, NICs) must converge via Ansible,
 never via replacement.
@@ -15,15 +15,13 @@ with `sshd -T` effective-policy verify + `systemctl reload ssh` +
 re-verify (pattern: the former `infrafactory-verify-bastion-sshd`).
 Wired via `providers/shared/ansible/converge_bastion.yml`, a `converge`
 output on the bastion stack, and `just ovh::bastion::converge KEY`.
-Gate G4 green (playbook `--syntax-check`, recipe parses, `validate` both
-root modules). Live proof deferred to P5.
-
-Pending: nothing offline. Documented bootstrap order (corrected live
+Documented bootstrap order (corrected by a partial live observation on
 2026-09-18: converge must precede the cluster's Ansible phase):
-bastion `apply` (empty) → cluster keys + network via targeted apply →
+bastion `apply` (empty) → `ENV=<env> just ovh::bootstrap` →
 bastion `apply` with the entry → bastion `converge` (admin key; the
 attach is state-only, the guest still has birth-time keys) → cluster
 full `apply`.
 
 Gate G4 (offline): recipe syntax, role `--syntax-check`, `validate` both
-root modules. No cloud contact.
+root modules are green. Offline work is closed; end-to-end live acceptance is
+deferred to P5 and is not implied by the observed fail-closed SSH ordering.

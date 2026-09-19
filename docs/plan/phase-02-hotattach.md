@@ -1,4 +1,4 @@
-# P2 — Hot-attach multi-NIC — done on branch
+# P2 — Hot-attach multi-NIC — offline implementation done
 
 Per-cluster `openstack_networking_port_v2` (fixed reserved `bastion_ip`) +
 `openstack_compute_interface_attach_v2` replaced the inline `network {}`
