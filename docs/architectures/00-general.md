@@ -226,6 +226,30 @@ nodes = {
 
 Provider-specific resources MUST NOT be required by downstream cluster modules when the normalized model can represent the required information.
 
+## Node topology (shared contract)
+
+Every provider derives the same node set from `infra.masters.count`,
+`infra.workers.count`, and `infra.vms.count` (masters → workers → standalone
+VMs): one object per node carrying `name`, `role`, sizing, and its address
+allocation. Per-provider deltas:
+
+- **Naming** — `cluster.node_name_format`: `serial` (one shared sequence
+  `-node01…`; stable only while the master count is fixed) or `role`
+  (per-role `-m01`/`-w01`; safer for scaling). OVH and libvirt implement it;
+  Azure is always role-based via `os_catalog.hostname_prefix` (a documented
+  limitation).
+- **Addressing** — deterministic vs provider-managed. OVH computes fixed
+  private IPs from the shared `providers/shared/modules/ipam` (masters, then
+  workers, then VMs from the offset base; bastion reserved at the last usable
+  host). Libvirt assigns per-role static/DHCP from explicit lists; Azure
+  delegates to its DHCP (no static option).
+- **Public exposure** — nodes are private-only (jump via a provider bastion,
+  e.g. OVH Kubernetes) or dual-NIC (public + private) depending on topology.
+
+Where the derived maps live is a provider-internal detail (OVH:
+`providers/ovh/clusters/topology.tf`; libvirt/Azure: inline) — not part of the
+contract.
+
 ---
 
 # 6. Endpoint Model
