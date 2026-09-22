@@ -79,6 +79,11 @@ resource "terraform_data" "validate_bastion" {
       condition     = local.bastion_flavor != null
       error_message = "Bastion found no compatible available hourly Linux flavor with quota in region '${var.bastion.region}'."
     }
+
+    precondition {
+      condition     = (length(var.admin_public_keys) > 0) == (var.probe_ssh_private_key_path != null)
+      error_message = "Provide admin_public_keys and probe_ssh_private_key_path together, or neither (to auto-generate a keypair in env/OVH/<workspace>/)."
+    }
   }
 }
 
@@ -94,7 +99,7 @@ resource "random_id" "ssh_key_suffix" {
 resource "openstack_compute_keypair_v2" "bastion" {
   region     = var.bastion.region
   name       = "${var.bastion.id}-${random_id.ssh_key_suffix.hex}"
-  public_key = trimspace(var.admin_public_keys[0])
+  public_key = trimspace(local.admin_public_keys[0])
 }
 
 ###
@@ -251,7 +256,7 @@ resource "terraform_data" "bastion_cloudinit_ready" {
 
     environment = {
       BASTION_HOST = "${var.bastion.username}@${local.bastion_public_ipv4_address}"
-      KEY_PATH     = var.probe_ssh_private_key_path
+      KEY_PATH     = local.probe_ssh_private_key_path
     }
   }
 

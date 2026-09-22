@@ -76,18 +76,15 @@ variable "bastion" {
 # Bootstrap access (bastion-first)
 ###################################
 variable "admin_public_keys" {
-  description = "Operator public SSH keys seeding the bastion authorized_keys at birth (clusters do not exist yet, so cluster keys cannot). Cluster pubkeys are appended afterwards by Ansible convergence."
+  description = "Optional operator public SSH keys seeding the bastion authorized_keys at birth (clusters do not exist yet, so cluster keys cannot). Omit (with probe_ssh_private_key_path) to auto-generate a keypair into env/OVH/<workspace>/.key.{pub,private} via the shared ssh-keys module. Cluster pubkeys are appended afterwards by Ansible convergence."
   type        = list(string)
-
-  validation {
-    condition     = length(var.admin_public_keys) > 0
-    error_message = "admin_public_keys must contain at least one operator public key, otherwise the newborn bastion is unreachable."
-  }
+  default     = []
 }
 
 variable "probe_ssh_private_key_path" {
-  description = "Local path of the private key matching one of admin_public_keys (or any later-authorized key), used by the readiness probe."
+  description = "Optional local path of the private key matching one of admin_public_keys, used by the readiness probe. Omit to use the auto-generated env/OVH/<workspace>/.key.private."
   type        = string
+  default     = null
 }
 
 variable "ingress_cidrs" {

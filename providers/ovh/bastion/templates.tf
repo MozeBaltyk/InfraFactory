@@ -59,7 +59,7 @@ module "cloudinit" {
   node_username           = var.bastion.username
   timezone                = var.bastion.timezone
   extra_packages          = []
-  public_key              = var.admin_public_keys[0]
+  public_key              = local.admin_public_keys[0]
   cluster_token           = ""
   ansible                 = {}
   package_upgrade_enabled = var.bastion.package_upgrade_enabled
@@ -120,7 +120,7 @@ locals {
     ssh_pwauth = false
     users = [merge(local.base_config.users[0], {
       lock_passwd         = true
-      ssh_authorized_keys = concat(var.admin_public_keys, local.cluster_public_keys)
+      ssh_authorized_keys = concat(local.admin_public_keys, local.cluster_public_keys)
     })]
     # NOTE (2026-09-17, proven on the guest via `cloud-init schema --system`):
     # `network` is NOT a valid user-data key ("Additional properties are not

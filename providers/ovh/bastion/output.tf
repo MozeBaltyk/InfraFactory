@@ -44,7 +44,7 @@ output "converge" {
     }
     permit_open    = local.permit_open
     test_addresses = local.sshd_test_addresses
-    admin_keys     = var.admin_public_keys
+    admin_keys     = local.admin_public_keys
     cluster_keys   = local.cluster_public_keys
   }
 }

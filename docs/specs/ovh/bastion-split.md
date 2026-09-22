@@ -87,7 +87,7 @@ bastion → cluster. Private keys never leave the operator laptop.
 
 | Event | Owner | Mechanism |
 |---|---|---|
-| Birth (empty `clusters = {}`, admin key only) | OpenTofu, bastion stack | `apply` (readiness probe uses `probe_ssh_private_key_path`); no `PermitOpen` restriction yet |
+| Birth (empty `clusters = {}`) | OpenTofu, bastion stack | `apply` (admin key is either the provided `admin_public_keys` or an auto-generated keypair at `env/OVH/<BASTION_ENV>/.key.{pub,private}` from the shared `ssh-keys` module; the readiness probe uses the matching `probe_ssh_private_key_path` or the generated `.key.private`); no `PermitOpen` restriction yet |
 | Attach cluster (port + NIC) | OpenTofu, bastion stack | `apply`; VM and public IP untouched |
 | Point cluster at bastion | Operator edit + OpenTofu, cluster stack | set `bastion.public_ip`, `apply` |
 | Day-2 keys / netplan / `PermitOpen` | Ansible (`bastion_converge` role via `just ovh::bastion::converge KEY`) | merge keys, apply netplan, verify + reload + re-verify sshd |

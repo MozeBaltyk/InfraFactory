@@ -59,6 +59,13 @@ anymore.
 1. Birth empty (`clusters = {}` in the bastion tfvars), `apply`, check SSH
    with the admin key. No `PermitOpen` restriction exists yet — an empty
    allowlist would lock out forwarding.
+
+   Bootstrap keying: either set `admin_public_keys` **and**
+   `probe_ssh_private_key_path` together (operator brings the key), or set
+   neither — the bastion then generates its own keypair into
+   `env/OVH/<BASTION_ENV>/.key.{pub,private}` (shared `ssh-keys` module) and
+   uses it as the admin + readiness-probe key. Mixed states (one set, the
+   other not) are rejected at apply.
 2. Deploy the cluster's network + keys (`ENV=<env> just ovh::bootstrap`),
    then register the cluster in the bastion tfvars
    (`env/OVH/tfvars.bastion.example` is the template):
@@ -138,7 +145,9 @@ One bastion workspace, one workspace per cluster. End to end:
       clusters are untouched. Several entries may be registered before
       this single apply.
    3. Converge the bastion with the admin key
-      (`just ovh::bastion::converge KEY`) — the attach only changes
+      (`just ovh::bastion::converge KEY`, where `KEY` is the provided probe
+      key or `env/OVH/<BASTION_ENV>/.key.private` when auto-generated) — the
+      attach only changes
       Terraform state, while the running guest still has birth-time keys.
       The cluster's Ansible phase CANNOT run before this step (proven
       live: jump SSH fails closed until the cluster key is merged).
