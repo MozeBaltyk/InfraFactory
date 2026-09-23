@@ -89,6 +89,8 @@ write_files:
       #!/bin/bash
       set -e
 
+      export HOME=/root
+
       LOG_FILE="/var/log/ansible-pull.log"
       exec > >(tee -a "$LOG_FILE") 2>&1
 
@@ -100,7 +102,7 @@ write_files:
       fi
 
       %{ if ansible_pull_token != null && ansible_pull_token != "" ~}
-      REPO_URL="https://${ansible_pull_token}@${ansible_pull_repo}"
+      REPO_URL="https://oauth2:${ansible_pull_token}@${ansible_pull_repo}"
       %{ else ~}
       REPO_URL="https://${ansible_pull_repo}"
       %{ endif ~}
