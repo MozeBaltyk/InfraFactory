@@ -58,6 +58,7 @@ variable "bastion" {
     timezone                = optional(string, "Europe/Paris")
     region                  = string
     username                = string
+    flavor_name             = optional(string, null)
     package_upgrade_enabled = optional(bool, true)
   })
 

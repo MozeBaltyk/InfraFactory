@@ -38,7 +38,8 @@ locals {
     try(flavor.plan_codes.hourly, "") != "" &&
     flavor.disk >= coalesce(try(local.bastion_image.min_disk, null), 0) &&
     flavor.ram >= coalesce(try(local.bastion_image.min_ram, null), 0) &&
-    (try(local.bastion_image.flavor_type, null) == null || flavor.type == local.bastion_image.flavor_type)
+    (try(local.bastion_image.flavor_type, null) == null || flavor.type == local.bastion_image.flavor_type) &&
+    (var.bastion.flavor_name == null || flavor.name == var.bastion.flavor_name)
   ]
 
   bastion_flavor_rank = sort([
