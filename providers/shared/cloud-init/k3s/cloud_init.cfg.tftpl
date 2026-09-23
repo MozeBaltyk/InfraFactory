@@ -219,7 +219,7 @@ write_files:
 
       if ! command -v $HOME/.local/bin/ansible-pull >/dev/null 2>&1; then
         curl -Ls https://astral.sh/uv/install.sh | sh
-        $HOME/.local/bin/uv tool install ansible-core==2.20.0 
+        $HOME/.local/bin/uv tool install ansible==14.4.0 
       fi
 
       %{ if ansible_pull_token != null && ansible_pull_token != "" ~}
@@ -228,7 +228,7 @@ write_files:
       REPO_URL="https://${ansible_pull_repo}"
       %{ endif ~}
 
-      $HOME/.local/bin/uv tool run --from ansible-core ansible-pull \
+      $HOME/.local/bin/uv tool run --from ansible ansible-pull \
           -U "$REPO_URL" \
           -C "${ansible_pull_branch}" \
           -i localhost, \
