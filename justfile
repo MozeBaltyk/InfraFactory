@@ -30,6 +30,11 @@ env:
 report:
     @bash scripts/report.sh {{ quote(PROVIDER) }} {{ quote(ENV) }}
 
+# Rsync env/OVH/<cluster>/ artifacts to the bastion's /mnt/guests-info/
+[group('Context')]
+sync-info:
+    @bash scripts/sync-guests-info.sh
+
 # ── Opentofu ───────────────────────────
 
 # Validate Opentofu scripts
