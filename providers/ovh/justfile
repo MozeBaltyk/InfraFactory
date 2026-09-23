@@ -12,8 +12,11 @@ validate:
 plan NAME='':
     @just clusters::plan {{ quote(NAME) }}
 
+# After the cluster apply, mirror every env/OVH/<cluster>/ to the bastion's
+# /mnt/guests-info (best-effort: a failed mirror must not fail the deploy).
 deploy NAME='':
     @just clusters::deploy {{ quote(NAME) }}
+    @bash ../../scripts/sync-guests-info.sh || true
 
 # Deploy only the cluster private network + SSH keys (bastion attach prerequisite).
 bootstrap:
