@@ -117,7 +117,7 @@ ENV=<env> just ovh::deploy
 # 2. sync the bastion's counts for that cluster, then:
 BASTION_ENV=<bastion> just ovh::bastion-deploy
 # 3. converge so PermitOpen covers the new node IPs
-just ovh::bastion::converge <admin-key>
+just ovh::bastion::converge /abs/path/to/admin-key   # absolute path required
 # 4. re-run the cluster deploy so its Ansible phase reaches the new nodes
 ENV=<env> just ovh::deploy
 ```
@@ -146,7 +146,9 @@ One bastion workspace, one workspace per cluster. End to end:
       this single apply.
    3. Converge the bastion with the admin key
       (`just ovh::bastion::converge KEY`, where `KEY` is the provided probe
-      key or `env/OVH/<BASTION_ENV>/.key.private` when auto-generated) — the
+      key or the auto-generated `<repo>/env/OVH/<BASTION_ENV>/.key.private`
+      — an **absolute** path; the recipe resolves `KEY` relative to
+      `providers/ovh/bastion/`, so a repo-root-relative path fails) — the
       attach only changes
       Terraform state, while the running guest still has birth-time keys.
       The cluster's Ansible phase CANNOT run before this step (proven

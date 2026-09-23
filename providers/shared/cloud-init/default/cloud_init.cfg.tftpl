@@ -46,9 +46,7 @@ packages:
   - nfs-common
 %{ endif ~}
 
-%{ if (ansible_pull_repo != null && ansible_pull_repo != "") || length(extra_disks) > 0 || length(object_storage_credentials) > 0 ~}
 write_files:
-%{ endif ~}
   # Bound apt fetches: a stalled mirror must fail fast (2026-09-18: an
   # unattended apt-get update wedged two first boots for 85+ min with no
   # timeout, parking cloud-init forever). Applies to every apt run.

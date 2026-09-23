@@ -201,14 +201,23 @@ print_ovh_token_url() {
 
   printf '\n%s%s%s\n' "$blue" 'OVH API token (quick URL)' "$reset"
 
-  if [[ -n $project ]]; then
-    printf '  %s\n' \
-      "https://auth.eu.ovhcloud.com/api/createToken?GET=/cloud/project/${project}/*&POST=/cloud/project/${project}/*&PUT=/cloud/project/${project}/*&DELETE=/cloud/project/${project}/*&GET=/v2/publicCloud/project/${project}/*&POST=/v2/publicCloud/project/${project}/*&PUT=/v2/publicCloud/project/${project}/*&DELETE=/v2/publicCloud/project/${project}/*"
-  else
+  if [[ -z $project ]]; then
     printf '  %s%s%s %s\n' \
       "$yellow" "missing" "$reset" \
       'ovh_project_service_name in tfvars'
+    return
   fi
+
+  # The token URL grants v1 (/cloud/project/…) access rules only: compute,
+  # network, storage, images. The v2 API (gateway / floating IP / load
+  # balancer) is NOT authorizable from this URL — it checks IAM actions.
+  printf '  %s\n' \
+    "https://auth.eu.ovhcloud.com/api/createToken?GET=/cloud/project/${project}/*&POST=/cloud/project/${project}/*&PUT=/cloud/project/${project}/*&DELETE=/cloud/project/${project}/*"
+
+  printf '  %s\nv2 LB-stack rights are IAM actions (grant in the OVH IAM console\nfor the identity that owns the consumer key):%s\n' "$yellow" "$reset"
+  printf '    publicCloudProject:apiovh:gateway/*\n'
+  printf '    publicCloudProject:apiovh:loadbalancer/*\n'
+  printf '    publicCloudProject:apiovh:publicIp/*\n'
 }
 
 [[ $provider == OVH ]] && { print_openstack_auth; print_operator_ip; print_ovh_token_url; }

@@ -122,6 +122,24 @@ variable "clusters" {
   default = {}
 }
 
+###################################
+# Ansible Pull (optional)
+###################################
+variable "ansible" {
+  description = "Optional ansible-pull configuration for the bastion (self-healing user/playbook runs)."
+  type = object({
+    pull = optional(object({
+      repo     = string
+      branch   = string
+      playbook = string
+      token    = optional(string)
+      timer    = optional(string)
+    }))
+  })
+  default   = {}
+  sensitive = true
+}
+
 locals {
   cluster_names_sorted = sort(keys(var.clusters))
 

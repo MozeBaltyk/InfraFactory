@@ -53,7 +53,7 @@ locals {
 
 # Write the cluster token to a local file
 resource "local_file" "cluster_token" {
-  count = var.write_local_artifacts ? 1 : 0
+  count = (var.write_local_artifacts && var.write_cluster_token) ? 1 : 0
 
   filename        = "${var.env_path}/.token"
   content         = local.cluster_token

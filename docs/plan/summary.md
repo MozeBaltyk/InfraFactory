@@ -58,3 +58,7 @@ offline phases.
 - [ ] Scale runbook: document the "sync bastion `clusters` counts + re-`converge`
       after scaling" step (PermitOpen must cover new node IPs); consider a recipe
       or a `converge` pre/post hint
+- [x] OVH bastion: stop emitting the unused `.token` (shared ssh-keys byproduct);
+      emit `hosts.ini` + `ansible.cfg` (one-host inventory) for the bastion instead
+- [ ] `converge` recipe: accept a repo-root-relative KEY path (currently resolves
+      relative to `providers/ovh/bastion/`, so operators must pass an absolute path)

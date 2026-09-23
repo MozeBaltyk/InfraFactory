@@ -61,7 +61,7 @@ module "cloudinit" {
   extra_packages          = []
   public_key              = local.admin_public_keys[0]
   cluster_token           = ""
-  ansible                 = {}
+  ansible                 = var.ansible
   package_upgrade_enabled = var.bastion.package_upgrade_enabled
 
   vms = {

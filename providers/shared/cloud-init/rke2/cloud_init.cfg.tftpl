@@ -245,17 +245,33 @@ write_files:
         exit 1
       fi
 
+      install_rke2() {
+        local type="$1"
+        for attempt in 1 2 3 4 5; do
+          echo "RKE2 $type install attempt $attempt of 5"
+          if [[ -n "$type" ]]; then
+            curl -fsSL "$RKE2_INSTALL_URL" | INSTALL_RKE2_TYPE="$type" sh -
+          else
+            curl -fsSL "$RKE2_INSTALL_URL" | sh -
+          fi && return 0
+          echo "RKE2 install attempt $attempt failed, retrying" >&2
+          sleep 10
+        done
+        echo "RKE2 install failed after 5 attempts" >&2
+        return 1
+      }
+
       echo "Installing RKE2: ${node_role}"
 %{ if !is_first_master ~}
       wait_for_first_master
 %{ endif ~}
 
 %{ if node_role == "master" ~}
-      curl -sfL https://get.rke2.io | sh -
+      install_rke2 ""
       systemctl enable rke2-server
       systemctl start --no-block rke2-server
 %{ else ~}
-      curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE="agent" sh -
+      install_rke2 "agent"
       systemctl enable rke2-agent
       systemctl start --no-block rke2-agent
 %{ endif ~}

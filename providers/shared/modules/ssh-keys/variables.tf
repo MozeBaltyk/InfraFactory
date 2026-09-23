@@ -9,6 +9,12 @@ variable "write_local_artifacts" {
   default     = true
 }
 
+variable "write_cluster_token" {
+  description = "Write the cluster token (.token) to env_path. Disable for stacks with no cluster token (e.g. the standalone bastion)."
+  type        = bool
+  default     = true
+}
+
 variable "gitops_mode" {
   description = "Expose secrets as outputs for GitOps (writeOutputsToSecret) instead of local files"
   type        = bool

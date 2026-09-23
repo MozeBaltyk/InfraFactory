@@ -238,17 +238,21 @@ resource "terraform_data" "bastion_cloudinit_ready" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      # 60 attempts x ~10s ~= 10 minutes. First boot is slow (Nova
+      # 10 attempts x ~60s ~= 10 minutes. First boot is slow (Nova
       # scheduling + firmware + cloud-init + package upgrades ≈ 5+ min to
       # SSH-ready). Past 10 min unreachable really means broken
       # (security groups, cloud-init netplan, or OVH network issue).
-      for attempt in $(seq 1 60); do
+      for attempt in $(seq 1 10); do
+        # cloud-init "done" exits 0; "degraded done" (recoverable warnings,
+        # e.g. schema validation) exits 2. Both mean the bastion finished
+        # first boot and is SSH-ready. Only a fatal error (3) or a still-running
+        # timeout (124) is a failure.
         if ssh -i "$KEY_PATH" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
             -o IdentitiesOnly=yes -o ConnectTimeout=5 "$BASTION_HOST" \
-          timeout 900 cloud-init status --wait; then
+          'timeout 900 cloud-init status --wait; rc=$?; [ "$rc" -eq 0 ] || [ "$rc" -eq 2 ]'; then
           exit 0
         fi
-        sleep 5
+        sleep 60
       done
       echo "Bastion $BASTION_HOST still unreachable after ~10 minutes, aborting." >&2
       exit 1
