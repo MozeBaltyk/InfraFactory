@@ -39,7 +39,7 @@ Every provider module MUST implement all of the following:
 - `k3s` block: `version`, `token`, `tls_sans`, `etcd_enabled`, `traefik_enabled`,
   `servicelb_enabled`, `local_storage_enabled`, `metrics_server_enabled`, `flannel_enabled`
 - `rke2` block: `version`, `token`, `tls_sans`, `etcd_enabled`,
-  `ingress_nginx_enabled`, `metrics_server_enabled`
+  `traefik_enabled`, `ingress_nginx_enabled`, `metrics_server_enabled`
 - Cluster token auto-generation (writes `.token` file)
 - `ansible.pull` block: `repo`, `branch`, `playbook`, `token`, `timer`
 

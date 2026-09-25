@@ -3,6 +3,28 @@
 ###
 
 locals {
+  # Ingress controllers to deploy. NULL ingress_type means "RKE2 default"
+  # (Traefik since v1.36), but we render the list explicitly from the toggles
+  # so behaviour is stable across RKE2 minors. "traefik"/"ingress-nginx" are
+  # kept as single-value aliases; "cilium"/"none" resolve to an empty list
+  # (cilium ships its own ingress; "none" renders `ingress-controller: none`).
+  rke2_ingress_controllers = (
+    var.rke2.ingress_type == "traefik"       ? ["traefik"] :
+    var.rke2.ingress_type == "ingress-nginx" ? ["ingress-nginx"] :
+    var.rke2.ingress_type == "cilium"        ? [] :
+    var.rke2.ingress_type == "none"          ? [] :
+    compact([
+      var.rke2.traefik_enabled       ? "traefik"       : null,
+      var.rke2.ingress_nginx_enabled ? "ingress-nginx" : null,
+    ])
+  )
+
+  # Retro-compat: RKE2 < v1.36 removes ingress-nginx via `disable`, not via
+  # `ingress-controller`, so keep emitting it whenever nginx isn't deployed.
+  rke2_disable_ingress_nginx = !contains(local.rke2_ingress_controllers, "ingress-nginx")
+}
+
+locals {
   rendered = {
     for vm_name, vm in var.vms :
     vm_name => templatefile(
@@ -69,7 +91,8 @@ locals {
         rke2_data_dir                       = var.rke2.data_dir
         rke2_tls_sans                       = vm.rke2_tls_sans
         rke2_etcd_enabled                   = var.rke2.etcd_enabled
-        rke2_ingress_nginx_enabled          = var.rke2.ingress_nginx_enabled
+        rke2_ingress_controllers            = local.rke2_ingress_controllers
+        rke2_disable_ingress_nginx          = local.rke2_disable_ingress_nginx
         rke2_metrics_server_enabled         = var.rke2.metrics_server_enabled
         rke2_cni                            = var.rke2.cni
         rke2_ingress_type                   = var.rke2.ingress_type

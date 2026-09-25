@@ -105,12 +105,19 @@ write_files:
 %{ if rke2_cni != null && rke2_cni != "" ~}
       cni: "${rke2_cni}"
 %{ endif ~}
-%{ if rke2_ingress_type != null && rke2_ingress_type != "" && rke2_ingress_type != "cilium" ~}
-      ingress-controller: "${rke2_ingress_type}"
+%{ if rke2_ingress_type != "cilium" ~}
+%{ if length(rke2_ingress_controllers) > 0 ~}
+      ingress-controller:
+%{ for c in rke2_ingress_controllers ~}
+        - ${c}
+%{ endfor ~}
+%{ else ~}
+      ingress-controller: none
 %{ endif ~}
-%{ if !rke2_ingress_nginx_enabled || !rke2_metrics_server_enabled || rke2_ingress_type == "cilium" ~}
+%{ endif ~}
+%{ if rke2_disable_ingress_nginx || !rke2_metrics_server_enabled ~}
       disable:
-%{ if !rke2_ingress_nginx_enabled || rke2_ingress_type == "cilium" ~}
+%{ if rke2_disable_ingress_nginx ~}
         - rke2-ingress-nginx
 %{ endif ~}
 %{ if !rke2_metrics_server_enabled ~}

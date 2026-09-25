@@ -117,7 +117,8 @@ nsg_rules = {
 #  token                  = "shared-token"    # Optional
 #  tls_sans               = ["dns1", "ip1"]   # Optional
 #  etcd_enabled           = true              # Optional
-#  ingress_nginx_enabled  = true              # Optional
+#  traefik_enabled        = true              # Optional (default: true)
+#  ingress_nginx_enabled  = false             # Optional (default: false)
 #  metrics_server_enabled = true              # Optional
 #  cni                    = "cilium"          # Optional: "calico", "canal", "cilium", "none" (null = RKE2 default)
 #  ingress_type           = "traefik"         # Optional: "ingress-nginx", "traefik", "cilium", "none" (null = RKE2 default)
