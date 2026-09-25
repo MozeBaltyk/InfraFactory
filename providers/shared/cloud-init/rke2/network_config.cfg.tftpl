@@ -45,5 +45,5 @@ network:
 %{ if dns_servers != null && dns_servers != "" ~}
       nameservers:
         addresses: [${dns_servers}]
-        search: [${domain}]
+        search: []  # no cluster search domain: nodes address each other by full FQDN (SIMPL/k8s)
 %{ endif ~}
