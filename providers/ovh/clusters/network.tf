@@ -95,6 +95,28 @@ resource "openstack_networking_secgroup_rule_v2" "cluster_lb_backend" {
   region            = var.cluster.region
 }
 
+# Workload ingress (80/443) backend reachability: the LB's http/https
+# listeners target the ingress-controller host ports on the masters, so
+# those ports must also be reachable from the LB's amphora subnet —
+# cluster_lb_backend above opens only 6443. TLS terminates at the ingress
+# controller, never at Octavia. Ports follow the same overridable inputs
+# the LB members use.
+resource "openstack_networking_secgroup_rule_v2" "cluster_lb_ingress_backend" {
+  for_each = local.lb_enabled ? {
+    http  = var.network.kube_api.load_balancer.ingress_http_port
+    https = var.network.kube_api.load_balancer.ingress_https_port
+  } : {}
+
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = each.value
+  port_range_max    = each.value
+  remote_ip_prefix  = local.private_cidr
+  security_group_id = openstack_networking_secgroup_v2.cluster[0].id
+  region            = var.cluster.region
+}
+
 resource "openstack_networking_secgroup_rule_v2" "cluster_egress" {
   count             = local.k8s_nodes ? 1 : 0
   direction         = "egress"
