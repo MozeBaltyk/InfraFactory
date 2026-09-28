@@ -103,8 +103,7 @@ clusters = {
   <env> = {
     cidr    = "10.0.30.0/24"              # must match the cluster tfvars
     vlan_id = 30                          # must match (per-region network discovery)
-    masters = 1                           # must match (sizes PermitOpen)
-    workers = 1                           # must match
+    nodes = 2                             # must match (sizes PermitOpen)
     # public_key_file omitted → defaults to env/OVH/<env>/.key.pub
   }
 }
@@ -157,8 +156,9 @@ ENV=<env> just ovh::destroy
 
 Detach from the bastion **before** destroying the bastion itself (empty the
 `clusters` entry + `bastion-deploy`), otherwise ports strand — see
-[`ovh-bastion.md`](ovh-bastion.md). On a transient `409`/`500` during destroy,
-just retry (see [`../troubleshooting/ovh-destroy.md`](../troubleshooting/ovh-destroy.md)).
+[`ovh-bastion.md`](ovh-bastion.md). Retry transient `409`/`500` failures only
+after classifying them; persistent Octavia-owned ports require OVH support
+(see [`../troubleshooting/ovh-destroy.md`](../troubleshooting/ovh-destroy.md)).
 
 ## Artifacts
 

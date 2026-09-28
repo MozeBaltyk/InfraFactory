@@ -38,8 +38,7 @@ clusters = {
   # simpl-int-nonprodlike-01 = {
   #   cidr    = "10.0.20.0/24"
   #   vlan_id = 20
-  #   masters = 1 # must match the cluster tfvars (PermitOpen recompute)
-  #   workers = 1 # must match the cluster tfvars
+  #   nodes = 2 # must match the cluster total node count (sizes PermitOpen)
   #   # public_key_file is optional: defaults to env/OVH/<key>/.key.pub
   #   # (the key above the map KEY — equals the cluster workspace name).
   # }

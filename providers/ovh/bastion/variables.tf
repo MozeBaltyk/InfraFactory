@@ -110,8 +110,9 @@ variable "clusters" {
   type = map(object({
     cidr    = string
     vlan_id = optional(number, 0)
-    masters = optional(number, 1)
-    workers = optional(number, 0)
+    # Total served node count: PermitOpen allowlists exactly this many node
+    # addresses from the shared IPAM base (.10 for a /24), never per-role.
+    nodes   = optional(number, 1)
 
     # Optional override. Defaults to the cluster's generated public key at
     # env/<PROVIDER>/<cluster>/.key.pub (the shared ssh-keys artifact

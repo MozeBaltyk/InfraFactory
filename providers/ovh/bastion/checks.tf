@@ -25,7 +25,7 @@ check "bastion_cluster_vlan_id_range" {
   }
 }
 
-# Only masters + workers are sized here: standalone `infra.vms` are not
+# Only the served node count is sized here: standalone `infra.vms` are not
 # declared in the bastion `clusters` map (they are public-attached and
 # jumped directly), so the cluster stack's own `ovh_reserved_bastion_ip_clear_of_nodes`
 # is authoritative for the vms portion of the CIDR allocation.
@@ -35,6 +35,6 @@ check "bastion_cluster_counts_match_ipam" {
       for name in local.cluster_names_sorted :
       module.ipam[name].last_node_hostnum < module.ipam[name].bastion_hostnum
     ])
-    error_message = "A served cluster's node allocation (masters + workers from the host offset base) reaches the reserved bastion IP: widen its CIDR or reduce counts."
+    error_message = "A served cluster's node allocation (nodes from the host offset base) reaches the reserved bastion IP: widen its CIDR or reduce the node count."
   }
 }

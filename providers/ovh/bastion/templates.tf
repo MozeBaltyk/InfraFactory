@@ -7,9 +7,11 @@ module "ipam" {
   source   = "../../shared/modules/ipam"
   for_each = var.clusters
 
-  cidr          = each.value.cidr
-  masters_count = each.value.masters
-  workers_count = each.value.workers
+  cidr = each.value.cidr
+  # Reuse the shared IPAM allocator: `nodes` total addresses from the shared
+  # base (.10 for a /24); the bastion needs no per-role split.
+  masters_count = each.value.nodes
+  workers_count = 0
 }
 
 locals {
@@ -28,10 +30,7 @@ locals {
   # omitted entirely (an empty allowlist would lock out even forwarding).
   permit_open = join(" ", flatten([
     for name in local.cluster_names_sorted : [
-      for ip in concat(
-        module.ipam[name].master_ips,
-        module.ipam[name].worker_ips,
-      ) : "${ip}:22"
+      for ip in module.ipam[name].master_ips : "${ip}:22"
     ]
   ]))
 

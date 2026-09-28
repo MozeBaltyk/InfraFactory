@@ -78,7 +78,7 @@ bastion → cluster. Private keys never leave the operator laptop.
   SG in jump mode: TCP/22 only from the bastion's reserved IP
   (`remote_ip_prefix`, never a cross-state group reference), east-west
   rules, LB backend TCP/6443 from the private CIDR. The LB exposes
-  TCP/6443 only — never SSH.
+  TCP/6443 plus workload ingress TCP/80 and TCP/443 — never SSH.
 * Guests use static netplan (`dhcp = false` subnets, config-drive
   user_data); a boot + periodic oneshot scrubs stale private default
   routes that would break inbound SSH asymmetrically.

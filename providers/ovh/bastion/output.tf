@@ -19,10 +19,8 @@ output "private_ips" {
 output "cluster_node_ips" {
   description = "Served node addresses per cluster (the SSH-jump allowlist)"
   value = {
-    for name in local.cluster_names_sorted : name => concat(
-      module.ipam[name].master_ips,
-      module.ipam[name].worker_ips,
-    )
+    for name in local.cluster_names_sorted :
+    name => module.ipam[name].master_ips
   }
 }
 
