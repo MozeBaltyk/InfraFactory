@@ -26,6 +26,10 @@ bootstrap:
 replace NAME:
     @just clusters::replace {{ quote(NAME) }}
 
+# Fail fast when the gateway's centralized SNAT port is DOWN (no egress).
+check-gateway:
+    @just clusters::check-gateway
+
 # Destroy on the provider. Pass STALE=true to skip the refresh phase.
 destroy STALE='':
     @just clusters::destroy {{ quote(STALE) }}

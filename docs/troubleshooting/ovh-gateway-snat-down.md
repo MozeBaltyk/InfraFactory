@@ -48,6 +48,11 @@ openstack port list --network <net-id> -c "Fixed IP Addresses" -c "Device Owner"
 The port with `device_owner network:router_centralized_snat` shows **DOWN**.
 A healthy cluster's equivalent port shows **ACTIVE** — compare side by side.
 
+Quick check (no node SSH) — `scripts/ovh-check-gateway-egress.sh` / the
+`ENV=<env> just ovh::check-gateway` recipe exits non-zero when this port is
+`DOWN`. Note `openstack port list` hides `device_owner` on OVH unless you pass
+`--device-owner` (or `--long`), which is what that script relies on.
+
 ## Fix
 
 1. Recreate the gateway (there is no `just` recipe for gateway replacement):

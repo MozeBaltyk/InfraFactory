@@ -24,4 +24,16 @@ rule: retry before investigating. Instance creation has the sibling lesson:
 it waits for the gateway *resource*, not gateway *readiness* — first boots
 during gateway churn die on apt/fetch.
 
+## 4. Octavia ports remain after load balancer deletion
+
+Load balancer delete returns `500`, a later read returns `404`, and subnet
+delete returns `409` while visible ports are owned by Octavia (`compute:nova`
+VRRP or `octavia-lb-*`). The OVH control-plane record was removed before
+Octavia finished cleanup; retries cannot reconcile those service-owned ports.
+
+Do not delete the ports or remove the subnet/network from state. Record the
+load balancer, network, subnet and port IDs plus the `X-OVH-Query-Id` values,
+then ask OVH support to remove the orphaned Octavia resources. Retry destroy
+only after the ports disappear.
+
 Synthesized from `.local/network_ovh-backup.md` (removed after dispatch).
