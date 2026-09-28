@@ -6,7 +6,7 @@ where they disagreed with the repo as it is, this file follows the repo.
 
 ## Toolchain
 
-OpenTofu `>= 1.6.2, < 2.0.0`, Just `>= 1.0.0`. Provider credentials come from
+OpenTofu `>= 1.10.0, < 2.0.0`, Just `>= 1.0.0`. Provider credentials come from
 the environment (`OS_*`/openrc for OVH/OpenStack, Azure CLI, libvirt socket) —
 never committed.
 

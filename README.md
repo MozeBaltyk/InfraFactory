@@ -38,8 +38,8 @@ OpenTofu (provision VMs)
 
 ## Prerequisites
 
-- **OpenTofu** (>= 1.6.2)
-  - Install with `arkade get tofu` pinned to version 1.6.2
+- **OpenTofu** (>= 1.10.0, < 2.0.0)
+  - Install with `arkade get tofu`
   - For Debian/Ubuntu:
       `curl --proto '=https' --tlsv1.2 -fsSL https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh`
       `chmod +x install-opentofu.sh && ./install-opentofu.sh --install-method deb`
