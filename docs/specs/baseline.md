@@ -9,7 +9,8 @@ prove it live in the `providers/README` matrix.
 ## 1. SSH and secrets
 
 * Generate an RSA 4096-bit SSH key pair per deployment into
-  `env/<PROVIDER>/<workspace>/` (never committed).
+  `env/<PROVIDER>/<workspace>/` (OVH:
+  `env/OVH/<PROJECT>/{clusters|bastion}/<workspace>/`; never committed).
 * Talos mode generates neither SSH keys nor k3s/rke2 tokens.
 
 ## 2. Compute topology
@@ -62,9 +63,9 @@ prove it live in the `providers/README` matrix.
 
 ## 6. State security
 
-Local OpenTofu state holds private keys, tokens, and provider data.
-Production/team deployments REQUIRE a user-selected encrypted remote
-backend with locking; the repository prescribes none.
+OpenTofu state can hold private keys, tokens, and provider data. Production or
+team deployments should use an encrypted remote backend with locking;
+provider-specific contracts may prescribe a default.
 
 ## 7. Acceptance
 

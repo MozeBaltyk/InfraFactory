@@ -23,7 +23,9 @@ gateway/LB `depends_on` (bastion replacement churned gateway + LB), Ansible
    private key that opens everything).
 3. **Only public keys flow cluster → bastion.** The bastion forwards bytes
    (`AllowTcpForwarding local`, `ip_forward=0`); the laptop holds the private
-   key end-to-end. No shared state, no remote-state backend.
+   key end-to-end. The stacks have independent state and no cross-stack
+   `terraform_remote_state`; both may use the same project-scoped S3 service
+   under separate keys.
 4. **Bastion-first bootstrap.** Born standalone (public NIC + operator admin
    key only, `clusters = {}`); clusters attach iteratively. Hence a
    permanent `admin_public_keys` seed is mandatory, and the empty-cluster

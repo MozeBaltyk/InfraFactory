@@ -11,6 +11,7 @@ Target state: [`../specs/ovh/provider.md`](../specs/ovh/provider.md).
 Why jump-only: [`../decisions/2026-09-18-ovh-jump-only.md`](../decisions/2026-09-18-ovh-jump-only.md).
 Why the bastion is a separate stack:
 [`../decisions/2026-09-18-ovh-bastion-split.md`](../decisions/2026-09-18-ovh-bastion-split.md).
+Backend setup and migration: [`ovh-backend.md`](ovh-backend.md).
 
 ## The two stacks
 
@@ -19,15 +20,16 @@ Why the bastion is a separate stack:
 | Bastion | `providers/ovh/bastion/` | `PROJECT` + `BASTION_ENV` (default `bastion`) | `env/OVH/<PROJECT>/bastion/<BASTION_ENV>.tfvars` |
 | Cluster | `providers/ovh/clusters/` | `PROJECT` + `ENV` (one per cluster) | `env/OVH/<PROJECT>/clusters/<ENV>.tfvars` |
 
-Independent states, no `terraform_remote_state`, no shared backend. Only a
-public-IP string flows bastion → cluster (`bastion.public_ip`); only public
+Independent states and no `terraform_remote_state`; S3 keys/prefixes remain
+separate even when both stacks use one project bucket. Only a public-IP string
+flows bastion → cluster (`bastion.public_ip`); only public
 keys flow cluster → bastion (the `clusters` map key == cluster workspace name).
 
 ## Prerequisites
 
 1. **OVH API token with the load-balancer stack rights.** It must cover compute
    and network *and* gateway / floating IP / load balancer. A token scoped to
-   compute+network only fails at `just ovh::deploy` with
+   compute+network only fails at cluster deploy with
    `403 Client::Forbidden "This call has not been granted"` on
    `ovh_cloud_gateway` / `ovh_cloud_floating_ip`. Export
    `OVH_APPLICATION_KEY`/`OVH_APPLICATION_SECRET`/`OVH_CONSUMER_KEY`. Copy
@@ -43,14 +45,15 @@ keys flow cluster → bastion (the `clusters` map key == cluster workspace name)
 ## End-to-end
 
 For a greenfield cluster whose entry is already present in the bastion tfvars,
-the OVH-only orchestration recipe runs bootstrap → bastion deploy/attach →
-bastion converge → normal cluster deploy:
+the root deployment runs bootstrap → bastion deploy/attach → bastion converge
+→ cluster deploy → artifact sync:
 
 ```bash
-PROJECT=<project> ENV=<env> BASTION_ENV=<bastion> just ovh::provision
+PROJECT=<project> PROVIDER=OVH ENV=<env> BASTION_ENV=<bastion> just deploy
 ```
 
-This recipe performs paid applies. It uses the generated bastion private key at
+This performs paid applies. `just ovh::provision` remains a compatibility alias.
+The workflow uses the generated bastion private key at
 `env/OVH/<PROJECT>/bastion/<BASTION_ENV>/.key.private` and fails if that key is
 not created by the bastion deploy. Use the manual steps below when bringing an
 operator-provided bastion key or when the bastion tfvars entry is not yet ready.
@@ -110,7 +113,7 @@ PROJECT=<project> ENV=<env> just ovh::bootstrap
 
 Creates the private network/subnet, reserves every Kubernetes node's
 deterministic address with a managed Neutron port, and creates the SSH keypair
-(`env/OVH/<PROJECT>/clusters/<env>/.key.{pub,private}` + `.token`). The network must exist before
+(`env/OVH/<PROJECT>/clusters/<env>/.key.{pub,private}`). The network must exist before
 the bastion can discover and attach to it; reserving node ports here also
 prevents the later gateway SNAT port from claiming a node address.
 
@@ -149,10 +152,10 @@ This step is **required between attach and deploy**: the attach only changes
 Terraform state; the running bastion still has birth-time keys, and the
 cluster's Ansible jump fails closed until the cluster pubkey is merged.
 
-### 5. Deploy
+### 5. Deploy the cluster stack only
 
 ```bash
-PROJECT=<project> ENV=<env> just ovh::deploy
+PROJECT=<project> ENV=<env> just ovh::cluster-deploy
 ```
 
 Boots private-only masters/workers (cloud-init k3s/rke2), creates the gateway +
@@ -182,11 +185,13 @@ after classifying them; persistent Octavia-owned ports require OVH support
 
 ## Artifacts
 
-- Cluster `env/OVH/<PROJECT>/clusters/<env>/`: `.key.{pub,private}`, `.token`, `hosts.ini`,
-  `ansible.cfg` (self-contained jump ProxyCommand), `kubeconfig`.
-- Bastion `env/OVH/<PROJECT>/bastion/<BASTION_ENV>/`: `.key.{pub,private}`, `.token`. The
-  bastion's `.token` is an unused byproduct of the shared key module (a bastion
-  has no cluster token); tracked for removal.
+- Cluster `env/OVH/<PROJECT>/clusters/<env>/`: `.key.{pub,private}`, `hosts.ini`,
+  `ansible.cfg` (self-contained jump ProxyCommand), and `kubeconfig`.
+- Bastion `env/OVH/<PROJECT>/bastion/<BASTION_ENV>/`: `.key.{pub,private}`,
+  `hosts.ini`, and `ansible.cfg`.
+- Best-effort `/mnt/guests-info/<env>/` sync carries the full cluster artifact
+  directory (keys, `hosts.ini`, `ansible.cfg`, `kubeconfig`/`talosconfig`,
+  token). Project credentials and tfvars are never synced.
 
 ## Gotchas
 

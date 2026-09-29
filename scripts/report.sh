@@ -17,8 +17,8 @@ case "$provider" in
   *) printf 'Unsupported PROVIDER=%s. Use KVM, AZ, or OVH.\n' "$provider" >&2; exit 2 ;;
 esac
 
-if [[ ! $environment =~ ^[A-Za-z0-9._-]+$ ]]; then
-  printf 'ENV must be a nonempty identifier containing only A-Za-z0-9._-\n' >&2
+if [[ ! $environment =~ ^[A-Za-z0-9._-]+$ || $environment == . || $environment == .. ]]; then
+  printf 'ENV must be a nonempty path-safe identifier containing only A-Za-z0-9._-\n' >&2
   exit 2
 fi
 
@@ -34,9 +34,19 @@ provider_path="$root/providers/$module"
 # OVH cluster state lives in the clusters/ root module (bastion/ is separate).
 if [[ $module == ovh ]]; then
   project=${PROJECT:-}
-  [[ $project =~ ^[A-Za-z0-9._-]+$ ]] || { printf 'PROJECT is required for OVH and must contain only A-Za-z0-9._-\n' >&2; exit 2; }
+  [[ $project =~ ^[A-Za-z0-9._-]+$ && $project != . && $project != .. ]] || { printf 'PROJECT is required for OVH and must be a path-safe identifier containing only A-Za-z0-9._-\n' >&2; exit 2; }
+  backend=${BACKEND:-s3}
+  [[ $backend =~ ^(s3|local)$ ]] || { printf 'BACKEND must be s3 or local.\n' >&2; exit 2; }
   provider_path="$root/providers/ovh/clusters"
   artifact_path="env/OVH/$project/clusters/$environment"
+  if [[ -f "$root/env/OVH/$project/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1090 -- project-local ignored credential file
+    source "$root/env/OVH/$project/.env"
+    set +a
+  fi
+  export TF_DATA_DIR="$root/.local/tofu-data/ovh/$project/clusters"
+  "$root/scripts/ovh-backend.sh" check clusters "$project" "$backend"
 else
   artifact_path="env/$module/$environment"
 fi
@@ -173,6 +183,21 @@ vrack_subnets_rows=$(jq -r '
 
 print_table 'Private subnets' '%-24s %-20s %-12s %s' "$vrack_subnets_rows" \
   'NAME' 'CIDR' 'REGION' 'GATEWAY IP'
+
+managed_ports_rows=$(jq -r '
+  .[]
+  | select(.mode == "managed" and .type == "openstack_networking_port_v2")
+  | [
+      (.values.name // .name),
+      ((.values.all_fixed_ips // []) | join(",")),
+      ((.values.all_security_group_ids // .values.security_group_ids // []) | length | tostring),
+      (if ((.values.device_id // "") != "") then "attached" else "unattached" end)
+    ]
+  | @tsv
+' <<<"$resources")
+
+print_table 'Reserved node ports' '%-32s %-18s %-8s %s' "$managed_ports_rows" \
+  'NAME' 'FIXED IP' 'SGs' 'STATE'
 
 ###
 ### Gateways identified
@@ -426,3 +451,18 @@ ssh_rows=$(jq -r --arg key_path "$artifact_path/.key.private" '
 
 print_table 'SSH connections' '%-32s %-18s %s' "$ssh_rows" \
   'NAME' 'IP' 'KEY'
+
+### OVH cluster access (jump-only nodes reachable via the bastion)
+if [[ $module == ovh ]]; then
+  kubeconfig_cmd=$(jq -r '.values.outputs.kubeconfig_command.value // empty' <<<"$state")
+  jump_cmd=$(jq -r '.values.outputs.cluster_nodes.value.ssh_first_master // empty' <<<"$state")
+  if [[ -n $kubeconfig_cmd || -n $jump_cmd ]]; then
+    printf '\nCluster access\n'
+    if [[ -n $jump_cmd ]]; then
+      printf '  Jump (first master):\n    %s\n' "$jump_cmd"
+    fi
+    if [[ -n $kubeconfig_cmd ]]; then
+      printf '  Kubeconfig:\n%s\n' "$(sed 's/^/    /' <<<"$kubeconfig_cmd")"
+    fi
+  fi
+fi

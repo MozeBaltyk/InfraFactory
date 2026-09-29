@@ -1,4 +1,6 @@
 .terraform
+providers/ovh/*/backend.generated.tf
+providers/ovh/*/.backend.generated.*
 .terraform.lock.hcl
 *.tfvars
 !env/OVH/*/clusters/*.tfvars

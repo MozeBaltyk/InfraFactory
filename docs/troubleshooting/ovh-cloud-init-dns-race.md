@@ -43,7 +43,7 @@ Tracked in `../../plan/summary.md`; context in
 
 ## Scale reminder (related, distinct)
 
-After adding/removing nodes, sync the bastion `clusters[].{masters,workers}`
+After adding/removing nodes, sync the bastion `clusters[].nodes` total
 and re-run `just ovh::bastion::converge` — otherwise `PermitOpen` does not
 cover the new node IPs and cluster Ansible cannot reach them
 (`Connection closed by UNKNOWN port 65535`).

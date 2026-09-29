@@ -11,8 +11,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT=${PROJECT:-}
 BASTION_ENV=${BASTION_ENV:-bastion}
 
-[[ $PROJECT =~ ^[A-Za-z0-9._-]+$ ]] || { echo "PROJECT is required and must contain only A-Za-z0-9._-" >&2; exit 2; }
-[[ $BASTION_ENV =~ ^[A-Za-z0-9._-]+$ ]] || { echo "BASTION_ENV must contain only A-Za-z0-9._-" >&2; exit 2; }
+[[ $PROJECT =~ ^[A-Za-z0-9._-]+$ && $PROJECT != . && $PROJECT != .. ]] || { echo "PROJECT is required and must be a path-safe identifier containing only A-Za-z0-9._-" >&2; exit 2; }
+[[ $BASTION_ENV =~ ^[A-Za-z0-9._-]+$ && $BASTION_ENV != . && $BASTION_ENV != .. ]] || { echo "BASTION_ENV must be a path-safe identifier containing only A-Za-z0-9._-" >&2; exit 2; }
 
 PROJECT_ROOT="$ROOT/env/OVH/$PROJECT"
 CLUSTERS_ROOT="$PROJECT_ROOT/clusters"

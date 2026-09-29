@@ -17,13 +17,13 @@ fi
 environment=$1
 project=${PROJECT:-}
 
-if [[ ! $environment =~ ^[A-Za-z0-9._-]+$ ]]; then
-  printf 'ENV must be a nonempty identifier containing only A-Za-z0-9._-\n' >&2
+if [[ ! $environment =~ ^[A-Za-z0-9._-]+$ || $environment == . || $environment == .. ]]; then
+  printf 'ENV must be a nonempty path-safe identifier containing only A-Za-z0-9._-\n' >&2
   exit 2
 fi
 
-if [[ ! $project =~ ^[A-Za-z0-9._-]+$ ]]; then
-  printf 'PROJECT is required and must contain only A-Za-z0-9._-\n' >&2
+if [[ ! $project =~ ^[A-Za-z0-9._-]+$ || $project == . || $project == .. ]]; then
+  printf 'PROJECT is required and must be a path-safe identifier containing only A-Za-z0-9._-\n' >&2
   exit 2
 fi
 

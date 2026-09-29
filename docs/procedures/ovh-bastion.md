@@ -24,9 +24,10 @@ PROJECT=example-project BASTION_ENV=bastion just ovh::bastion-plan
 PROJECT=example-project ENV=cluster-a just ovh::plan
 ```
 
-There is deliberately no `terraform_remote_state` and no shared backend:
-only a public-IP string flows bastion → cluster, only public keys flow
-cluster → bastion.
+There is deliberately no `terraform_remote_state`; state keys and prefixes are
+independent even when both stacks use one project S3 bucket. See
+[`ovh-backend.md`](ovh-backend.md). Only a public-IP string flows bastion →
+cluster, only public keys flow cluster → bastion.
 
 ## How a cluster is pointed at its bastion
 
@@ -49,10 +50,10 @@ The rest is convention, not wiring:
 
 Warning: Kubernetes on OVH is jump-only (see
 `../decisions/2026-09-18-ovh-jump-only.md`). The old
-`network.kube_api.load_balancer.ssh_jump_enabled` flag no longer exists
-and is **silently ignored**, and a Kubernetes workspace without
-`bastion.public_ip` fails fast — there is no public topology for k3s/rke2
-anymore.
+`network.kube_api.load_balancer.ssh_jump_enabled` flag no longer exists; if
+left in tfvars it is ignored and does not enable jump mode. A Kubernetes
+workspace without `bastion.public_ip` fails fast — there is no public topology
+for k3s/rke2 anymore.
 
 ## Birth a bastion, attach clusters
 
@@ -98,33 +99,32 @@ same `public_ip`. Constraints, all by design:
 * Same username on every sharing cluster (single bastion user).
 * `cidr`/`vlan_id` must match each cluster's network (how the bastion
   discovers the private network to attach).
-* `masters`/`workers` counts kept in sync with each cluster's tfvars
-  (they size the `PermitOpen` allowlist; node growth past the reserved IP
+* `nodes` equals `infra.masters.count + infra.workers.count` from the cluster
+  tfvars (it sizes the `PermitOpen` allowlist; node growth past the reserved IP
   is guarded on both sides).
 * Detach by emptying the entry and applying *before* destroying the
   bastion, otherwise ports strand (`destroy-all`).
 
 ## Scaling a served cluster
 
-When a cluster's `masters`/`workers` counts change (the cluster tfvars), you
-must **also** update the matching `clusters[]` entry in the bastion tfvars and
-re-run converge — in this order:
+When a cluster's `masters`/`workers` counts change, update the matching
+`clusters[].nodes` total in the bastion tfvars. For scale-up, widen and
+converge the bastion allowlist before creating nodes:
 
 ```bash
-# 1. scale the cluster (new nodes boot + join)
-PROJECT=<project> ENV=<env> just ovh::deploy
-# 2. sync the bastion's counts for that cluster, then:
+# 1. after updating clusters[].nodes, apply the bastion state
 PROJECT=<project> BASTION_ENV=<bastion> just ovh::bastion-deploy
-# 3. converge so PermitOpen covers the new node IPs
+# 2. converge so PermitOpen covers the new node IPs
 PROJECT=<project> BASTION_ENV=<bastion> just ovh::bastion::converge /abs/path/to/admin-key
-# 4. re-run the cluster deploy so its Ansible phase reaches the new nodes
-PROJECT=<project> ENV=<env> just ovh::deploy
+# 3. scale the cluster
+PROJECT=<project> ENV=<env> just ovh::cluster-deploy
 ```
 
-Skipping step 2–3 leaves the new nodes' SSH outside `PermitOpen`, so cluster
-Ansible fails with `Connection closed by UNKNOWN port 65535`. Note: in `serial`
-naming, master-count changes renumber workers — treat `serial` as stable only
-while the master count is fixed (see README).
+For scale-down, reverse the safety order: remove the cluster nodes first, then
+reduce `clusters[].nodes`, apply the bastion, and converge. Skipping convergence
+leaves the bastion `PermitOpen` policy stale. Note: in `serial` naming,
+master-count changes renumber workers — treat `serial` as stable only while the
+master count is fixed (see README).
 
 ## N-cluster runbook (same jumphost, different ENVs)
 
@@ -155,15 +155,17 @@ One bastion workspace, one workspace per cluster. End to end:
       live: jump SSH fails closed until the cluster key is merged).
    4. Set `bastion = { public_ip = "<same-ip>" }` in
       `env/OVH/<PROJECT>/clusters/<env>.tfvars` and
-      `PROJECT=<project> ENV=<env> just ovh::deploy`.
+       `PROJECT=<project> ENV=<env> just ovh::cluster-deploy`.
    5. Re-converge after the cluster exists (idempotent) and verify jump
       SSH to a private node.
 3. Recheck after every attach: `tofu output` private IPs, `PermitOpen`
    covers all clusters' nodes, previously attached clusters still jump
    cleanly.
 
-Conventions (not enforced in code — verified by inspection, no
-cross-stack check exists):
+The `just env` diagnostic compares map keys, CIDRs, VLAN IDs, node
+counts, regions, public-key artifacts, and the configured/deployed bastion IP.
+Lifecycle recipes still cannot enforce an atomic cross-stack transaction, so
+review these conventions before apply:
 
 * Key the `clusters` entry exactly like the cluster's `ENV`/workspace
   name. The key is bastion-local (port names, netplan filenames), but it
@@ -182,4 +184,4 @@ etcd/workloads, schedule downtime, save/review the full authenticated
 plan first. `just replace` refuses the first K3s/RKE2 controller — recover
 it only through a verified etcd snapshot and the distribution restore
 procedure. See `../plan/phase-03-decoupling.md` (migration constraints) and the
-`ssh_jump_enabled` warning above.
+removed `ssh_jump_enabled` behavior above.

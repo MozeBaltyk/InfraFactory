@@ -1,35 +1,53 @@
 # Thin router: the OVH cluster stack lives in clusters/ (independent root
-# module) and the standalone bastion in bastion/. Default target is the
-# cluster stack, preserving the `ovh::plan|deploy|destroy|validate` interface.
+# module) and the standalone bastion in bastion/. An untargeted deploy runs
+# the complete safe workflow; plan/destroy/validate remain cluster operations.
 # (PROJECT/ENV/NAME/STALE flow through as environment/args to the sub-module.)
 
 mod clusters "clusters/justfile"
 mod bastion "bastion/justfile"
 
+# Fail-closed preflight: refuse cross-cluster VLAN/CIDR/state-identity violations
+# (the OVH private-network identity is (project, region, vlan_id) — duplicates are fatal).
+preflight:
+    @python3 ../../scripts/ovh-config-status.py --preflight "$(cd ../.. && pwd)" "$PROJECT"
+
 validate:
     @just clusters::validate
+
+backend-init:
+    @just clusters::backend-init
+
+backend-status:
+    @just clusters::backend-status
+
+backend-migrate FROM TO:
+    @just clusters::backend-migrate {{ quote(FROM) }} {{ quote(TO) }}
 
 plan NAME='':
     @just clusters::plan {{ quote(NAME) }}
 
-# After the cluster apply, mirror every project cluster artifact directory to the bastion's
-# /mnt/guests-info (best-effort: a failed mirror must not fail the deploy).
+# Run the complete workflow unless NAME explicitly targets one cluster VM.
 deploy NAME='':
+    @if test -n {{ quote(NAME) }}; then just cluster-deploy {{ quote(NAME) }}; else just provision; fi
+
+# Advanced cluster-only apply plus best-effort bastion artifact sync.
+cluster-deploy NAME='':
     @just clusters::deploy {{ quote(NAME) }}
     @bash ../../scripts/sync-guests-info.sh || true
 
-# Greenfield cluster: bootstrap network/key, attach and converge the declared
-# bastion entry, then run the normal cluster deploy. This performs paid applies.
+# Complete paid workflow: bootstrap, bastion deploy/converge, cluster-only deploy.
 provision:
+    @just preflight
     @just clusters::bootstrap
     @just bastion::deploy
     @key="$(cd ../.. && pwd)/env/OVH/${PROJECT}/bastion/${BASTION_ENV:-bastion}/.key.private"; \
       test -f "$key" || { echo "Generated bastion key missing after deploy: $key" >&2; exit 1; }; \
       just bastion::converge "$key"
-    @just deploy
+    @just cluster-deploy
 
 # Deploy only the cluster private network + SSH keys (bastion attach prerequisite).
 bootstrap:
+    @just preflight
     @just clusters::bootstrap
 
 # Force rebuild one cluster VM (first controller refused, see clusters recipe).
@@ -40,6 +58,10 @@ replace NAME:
 check-gateway:
     @just clusters::check-gateway
 
+# Recreate a broken cluster gateway through the configured backend.
+replace-gateway:
+    @just clusters::replace-gateway
+
 # Destroy on the provider. Pass STALE=true to skip the refresh phase.
 destroy STALE='':
     @just clusters::destroy {{ quote(STALE) }}
@@ -47,6 +69,15 @@ destroy STALE='':
 # Standalone bastion stack (explicit: never the default target).
 bastion-validate:
     @just bastion::validate
+
+bastion-backend-init:
+    @just bastion::backend-init
+
+bastion-backend-status:
+    @just bastion::backend-status
+
+bastion-backend-migrate FROM TO:
+    @just bastion::backend-migrate {{ quote(FROM) }} {{ quote(TO) }}
 
 bastion-plan:
     @just bastion::plan

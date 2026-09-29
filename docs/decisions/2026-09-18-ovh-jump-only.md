@@ -4,9 +4,10 @@
 
 After the bastion split (P3) the cluster stack still carried both modes:
 public Kubernetes nodes when `var.bastion` was null, private-only nodes
-when set. The removed `ssh_jump_enabled` flag is silently ignored by
-OpenTofu, so a stale tfvars plans public nodes while the operator
-believes jump mode is on (proven on `simpl-int-nonprodlike-01`).
+when set. At that time, the removed `ssh_jump_enabled` flag was ignored by
+OpenTofu, so stale tfvars planned public nodes while the operator believed jump
+mode was on (proven on `simpl-int-nonprodlike-01`). The resulting decision below
+removed that public topology.
 
 ## Decision
 

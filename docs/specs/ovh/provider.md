@@ -11,8 +11,9 @@ pre-split embedded model in places — on conflict, this file and
 * OVH endpoint and API keys come from `OVH_*`; the project service name comes
   from `TF_VAR_ovh_project_service_name`. The ignored
   `env/OVH/<PROJECT>/.env` is shared by both stacks in that project and sourced
-  by their lifecycle recipes; credentials are never committed or stored in
-  tfvars. The optional shared ansible-pull secret is
+  by their lifecycle recipes; assignments there override same-named ambient
+  variables, while ambient credentials work when the file is absent.
+  Credentials are never committed or stored in tfvars. The optional shared ansible-pull secret is
   `TF_VAR_ansible_pull_token`. Safe source templates live only under
   `env/OVH/example/`; `PROJECT` is always explicit.
 * Kubernetes modes additionally require standard OpenStack auth (`OS_*`
@@ -90,9 +91,10 @@ pre-split embedded model in places — on conflict, this file and
 
 ## 5. Bastion mode (post-split deltas)
 
-* No `ssh_jump_enabled` flag exists; the removed attribute is silently
-  ignored by OpenTofu, so stale tfvars mean public nodes. Jump mode is
-  exactly `var.bastion = { public_ip }` (see `bastion-split.md` §4).
+* No `ssh_jump_enabled` flag exists; the removed attribute is ignored and does
+  not select a topology. Kubernetes without `var.bastion = { public_ip }`
+  fails validation; public Kubernetes nodes are not available (see
+  `bastion-split.md` §4).
 * No `bastion` output on the cluster stack. SSH transport is a
   self-contained `ProxyCommand` in `ansible.cfg`; host-key checking stays
   disabled (trusts operator network + SG/ingress controls).

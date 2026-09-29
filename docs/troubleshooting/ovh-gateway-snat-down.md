@@ -55,18 +55,19 @@ The port with `device_owner network:router_centralized_snat` shows **DOWN**.
 A healthy cluster's equivalent port shows **ACTIVE** — compare side by side.
 
 Quick check (no node SSH) — `scripts/ovh-check-gateway-egress.sh` / the
-`ENV=<env> just ovh::check-gateway` recipe exits non-zero when this port is
+`PROJECT=<project> ENV=<env> just ovh::check-gateway` recipe exits non-zero when this port is
 `DOWN`. Note `openstack port list` hides `device_owner` on OVH unless you pass
 `--device-owner` (or `--long`), which is what that script relies on.
 
 ## Fix
 
-1. Recreate the gateway (there is no `just` recipe for gateway replacement):
+1. Review current configuration, then recreate the gateway through the
+   backend-aware recipe. This is a paid apply and can include other pending
+   cluster changes, so plan first:
 
    ```bash
-   cd providers/ovh/clusters && tofu init && tofu workspace select <env>
-   tofu taint 'ovh_cloud_gateway.kube_api[0]'
-   ENV=<env> just ovh::deploy   # recreates gateway; LB force-replaces (references gateway id)
+   PROJECT=<project> ENV=<env> just ovh::plan
+   PROJECT=<project> ENV=<env> just ovh::replace-gateway
    ```
 
    Re-check the SNAT port is now `ACTIVE`, then confirm egress from a node
@@ -87,7 +88,7 @@ Quick check (no node SSH) — `scripts/ovh-check-gateway-egress.sh` / the
    reconcile → kubeconfig fetch):
 
    ```bash
-   ENV=<env> just ovh::deploy
+   PROJECT=<project> ENV=<env> just ovh::cluster-deploy
    ```
 
 4. If the NFS mount also failed during first boot (nfs-common not installed),
