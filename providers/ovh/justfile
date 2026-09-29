@@ -1,7 +1,7 @@
 # Thin router: the OVH cluster stack lives in clusters/ (independent root
 # module) and the standalone bastion in bastion/. Default target is the
 # cluster stack, preserving the `ovh::plan|deploy|destroy|validate` interface.
-# (ENV/NAME/STALE flow through as environment/args to the sub-module.)
+# (PROJECT/ENV/NAME/STALE flow through as environment/args to the sub-module.)
 
 mod clusters "clusters/justfile"
 mod bastion "bastion/justfile"
@@ -12,11 +12,21 @@ validate:
 plan NAME='':
     @just clusters::plan {{ quote(NAME) }}
 
-# After the cluster apply, mirror every env/OVH/<cluster>/ to the bastion's
+# After the cluster apply, mirror every project cluster artifact directory to the bastion's
 # /mnt/guests-info (best-effort: a failed mirror must not fail the deploy).
 deploy NAME='':
     @just clusters::deploy {{ quote(NAME) }}
     @bash ../../scripts/sync-guests-info.sh || true
+
+# Greenfield cluster: bootstrap network/key, attach and converge the declared
+# bastion entry, then run the normal cluster deploy. This performs paid applies.
+provision:
+    @just clusters::bootstrap
+    @just bastion::deploy
+    @key="$(cd ../.. && pwd)/env/OVH/${PROJECT}/bastion/${BASTION_ENV:-bastion}/.key.private"; \
+      test -f "$key" || { echo "Generated bastion key missing after deploy: $key" >&2; exit 1; }; \
+      just bastion::converge "$key"
+    @just deploy
 
 # Deploy only the cluster private network + SSH keys (bastion attach prerequisite).
 bootstrap:

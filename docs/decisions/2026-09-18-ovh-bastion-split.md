@@ -18,7 +18,7 @@ gateway/LB `depends_on` (bastion replacement churned gateway + LB), Ansible
    independent root module with its own tfvars; serves many clusters by
    attaching to many private networks.
 2. **Per-cluster SSH keys, terraform-generated** into
-   `env/OVH/<cluster>/.key.{private,pub}`. Rejected: one bastion-generated
+   `env/OVH/<project>/clusters/<cluster>/.key.{private,pub}`. Rejected: one bastion-generated
    keypair for all clusters (single skeleton key, bastion holding the one
    private key that opens everything).
 3. **Only public keys flow cluster → bastion.** The bastion forwards bytes

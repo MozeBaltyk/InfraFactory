@@ -7,7 +7,7 @@ support label with evidence from TO5/TO6.
 
 ## Scope
 
-- Update `env/OVH/tfvars.example`, `README.md`, `providers/README`, OVH specs,
+- Update `env/OVH/<project>/clusters/tfvars.example`, `README.md`, `providers/README`, OVH specs,
   architecture, procedures, troubleshooting, and dated decisions without
   duplicating normative content.
 - Record exact supported Talos/OVH version, image ownership, firmware, network

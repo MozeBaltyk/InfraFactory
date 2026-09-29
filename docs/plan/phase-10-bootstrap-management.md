@@ -20,7 +20,7 @@ exposing nodes or coupling Talos to K3s/RKE2 SSH transport.
   node's `endpoint`, management address as `management_endpoint`, and the
   existing LB/DNS API address as `kube_api_endpoint`.
 - Skip SSH-key/token artifacts and Ansible in Talos mode; write only applicable
-  sensitive artifacts under `env/OVH/<workspace>/`.
+  sensitive artifacts under `env/OVH/<project>/clusters/<workspace>/`.
 - Keep bastion and cluster states independent. Any new bastion input is
   hand-wired by value; no remote-state dependency or state migration.
 

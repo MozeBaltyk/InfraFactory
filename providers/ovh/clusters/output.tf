@@ -16,8 +16,9 @@ output "cluster_nodes" {
 
     ssh_first_master = local.first_master_name != null ? try(
       local.k8s_nodes ? format(
-        "ssh -i env/%s/%s/.key.private -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ProxyCommand='ssh -W %%h:%%p -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i %s/.key.private %s@%s' %s@%s",
+        "ssh -i env/%s/%s/clusters/%s/.key.private -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ProxyCommand='ssh -W %%h:%%p -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i %s/.key.private %s@%s' %s@%s",
         var.infra_provider,
+        var.project,
         terraform.workspace,
         local.env_path,
         var.cluster.username,
@@ -25,8 +26,9 @@ output "cluster_nodes" {
         var.cluster.username,
         local.master_details[0].private_ip,
         ) : format(
-        "ssh -o StrictHostKeyChecking=no -i env/%s/%s/.key.private %s@%s",
+        "ssh -o StrictHostKeyChecking=no -i env/%s/%s/clusters/%s/.key.private %s@%s",
         var.infra_provider,
+        var.project,
         terraform.workspace,
         var.cluster.username,
         local.vm_public_ipv4_addresses[local.first_master_name],
@@ -90,9 +92,9 @@ output "storage" {
 
 output "kubeconfig_command" {
   value = local.k8s_master_user_data_enabled ? (<<-EOT
-kubecm add -cf env/${var.infra_provider}/${terraform.workspace}/kubeconfig --context-name ${var.cluster.cloud_init_selected}-${var.infra_provider}-${terraform.workspace} --create
+kubecm add -cf env/${var.infra_provider}/${var.project}/clusters/${terraform.workspace}/kubeconfig --context-name ${var.cluster.cloud_init_selected}-${var.infra_provider}-${terraform.workspace} --create
 # Or :
-export KUBECONFIG=env/${var.infra_provider}/${terraform.workspace}/kubeconfig
+export KUBECONFIG=env/${var.infra_provider}/${var.project}/clusters/${terraform.workspace}/kubeconfig
 # Then :
 kubectl get nodes
 EOT

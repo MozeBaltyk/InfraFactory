@@ -10,8 +10,8 @@ data "http" "my_ip" {
 }
 
 locals {
-  env_root = abspath("${path.module}/../../../env")
-  env_path = "${local.env_root}/${var.infra_provider}/${terraform.workspace}"
+  env_root = abspath("${path.module}/../../../env/${var.infra_provider}/${var.project}")
+  env_path = "${local.env_root}/clusters/${terraform.workspace}"
 
   os = var.os_catalog[var.os.selected]
 

@@ -11,10 +11,21 @@ variable "infra_provider" {
   }
 }
 
+variable "project" {
+  description = "Project directory selector under env/OVH"
+  type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9._-]+$", var.project))
+    error_message = "project must contain only A-Za-z0-9._-."
+  }
+}
+
 variable "ovh_endpoint" {
   description = "OVH API endpoint"
   type        = string
-  default     = "ovh-eu"
+  nullable    = true
+  default     = null
 }
 
 variable "ovh_application_key" {
@@ -44,6 +55,8 @@ variable "ovh_consumer_key" {
 variable "ovh_project_service_name" {
   description = "OVHcloud Public Cloud project service name"
   type        = string
+  nullable    = true
+  default     = null
 }
 
 ###################################
@@ -77,13 +90,13 @@ variable "bastion" {
 # Bootstrap access (bastion-first)
 ###################################
 variable "admin_public_keys" {
-  description = "Optional operator public SSH keys seeding the bastion authorized_keys at birth (clusters do not exist yet, so cluster keys cannot). Omit (with probe_ssh_private_key_path) to auto-generate a keypair into env/OVH/<workspace>/.key.{pub,private} via the shared ssh-keys module. Cluster pubkeys are appended afterwards by Ansible convergence."
+  description = "Optional operator public SSH keys seeding the bastion authorized_keys at birth (clusters do not exist yet, so cluster keys cannot). Omit (with probe_ssh_private_key_path) to auto-generate a keypair into env/OVH/<project>/bastion/<workspace>/.key.{pub,private} via the shared ssh-keys module. Cluster pubkeys are appended afterwards by Ansible convergence."
   type        = list(string)
   default     = []
 }
 
 variable "probe_ssh_private_key_path" {
-  description = "Optional local path of the private key matching one of admin_public_keys, used by the readiness probe. Omit to use the auto-generated env/OVH/<workspace>/.key.private."
+  description = "Optional local path of the private key matching one of admin_public_keys, used by the readiness probe. Omit to use the auto-generated env/OVH/<project>/bastion/<workspace>/.key.private."
   type        = string
   default     = null
 }
@@ -112,10 +125,10 @@ variable "clusters" {
     vlan_id = optional(number, 0)
     # Total served node count: PermitOpen allowlists exactly this many node
     # addresses from the shared IPAM base (.10 for a /24), never per-role.
-    nodes   = optional(number, 1)
+    nodes = optional(number, 1)
 
     # Optional override. Defaults to the cluster's generated public key at
-    # env/<PROVIDER>/<cluster>/.key.pub (the shared ssh-keys artifact
+    # env/OVH/<project>/clusters/<cluster>/.key.pub (the shared ssh-keys artifact
     # convention); the map KEY must equal the cluster workspace/ENV name.
     # The cluster stack generates the key, so its keys + network targeted
     # apply runs BEFORE this stack reads it.
@@ -140,6 +153,14 @@ variable "ansible" {
   })
   default   = {}
   sensitive = true
+}
+
+variable "ansible_pull_token" {
+  description = "Optional private-repository token supplied through TF_VAR_ansible_pull_token; used only when ansible.pull is configured."
+  type        = string
+  default     = null
+  nullable    = true
+  sensitive   = true
 }
 
 locals {

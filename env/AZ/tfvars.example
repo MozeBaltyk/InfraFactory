@@ -140,7 +140,7 @@ nsg_rules = {
 #    repo     = "https://github.com/MozeBaltyk/InfraFactory.git"
 #    branch   = "main"
 #    playbook = "providers/shared/ansible/local.yml"
-#    token    = "ghp_xxxxxxxxxxxx" # Optional
 #    timer    = "1h"               # Optional
 #  }
 #}
+# For a private repository, export TF_VAR_ansible_pull_token; do not commit a token here.

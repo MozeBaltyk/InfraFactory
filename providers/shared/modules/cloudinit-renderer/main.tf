@@ -9,12 +9,12 @@ locals {
   # kept as single-value aliases; "cilium"/"none" resolve to an empty list
   # (cilium ships its own ingress; "none" renders `ingress-controller: none`).
   rke2_ingress_controllers = (
-    var.rke2.ingress_type == "traefik"       ? ["traefik"] :
+    var.rke2.ingress_type == "traefik" ? ["traefik"] :
     var.rke2.ingress_type == "ingress-nginx" ? ["ingress-nginx"] :
-    var.rke2.ingress_type == "cilium"        ? [] :
-    var.rke2.ingress_type == "none"          ? [] :
+    var.rke2.ingress_type == "cilium" ? [] :
+    var.rke2.ingress_type == "none" ? [] :
     compact([
-      var.rke2.traefik_enabled       ? "traefik"       : null,
+      var.rke2.traefik_enabled ? "traefik" : null,
       var.rke2.ingress_nginx_enabled ? "ingress-nginx" : null,
     ])
   )
@@ -109,7 +109,7 @@ locals {
         ansible_pull_repo     = replace(try(var.ansible.pull.repo, ""), "https://", "")
         ansible_pull_branch   = try(var.ansible.pull.branch, "main")
         ansible_pull_playbook = try(var.ansible.pull.playbook, "local.yml")
-        ansible_pull_token    = try(var.ansible.pull.token, null)
+        ansible_pull_token    = var.ansible.pull != null && var.ansible_pull_token != null ? var.ansible_pull_token : try(var.ansible.pull.token, null)
         ansible_pull_timer    = try(var.ansible.pull.timer, null)
       }
     )

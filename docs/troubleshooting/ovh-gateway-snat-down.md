@@ -24,6 +24,12 @@ The gateway is created before the VMs and only returns once it is `READY`, but
 `READY`/`ACTIVE` do not guarantee the SNAT namespace is functional. Seen
 2026-09-23 on `simpl-dest-dev-01` (recovered by gateway recreation).
 
+Current greenfield deployments reserve every Kubernetes node IP with a managed
+Neutron port before gateway creation. Older/partial deployments can instead
+fail during VM creation when the centralized SNAT port has already claimed a
+deterministic node address; migrate through a reviewed plan and VM replacement,
+not by deleting service-owned ports or editing state.
+
 ## Diagnosis
 
 From a node, the telltale split is: the private gateway answers but nothing

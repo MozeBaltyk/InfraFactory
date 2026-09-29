@@ -144,3 +144,11 @@ variable "ansible" {
   })
   default = {}
 }
+
+variable "ansible_pull_token" {
+  description = "Optional private-repository token supplied through TF_VAR_ansible_pull_token; used only when ansible.pull is configured."
+  type        = string
+  default     = null
+  nullable    = true
+  sensitive   = true
+}

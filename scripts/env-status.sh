@@ -25,11 +25,19 @@ fi
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd -- "$root"
 
-tfvars="./env/$provider/$environment.tfvars"
-env_dir="./env/$provider/$environment"
 provider_path="providers/$module"
 # OVH cluster state lives in the clusters/ root module (bastion/ is separate).
-[[ $module == ovh ]] && provider_path="providers/ovh/clusters"
+if [[ $module == ovh ]]; then
+  project=${PROJECT:-}
+  [[ $project =~ ^[A-Za-z0-9._-]+$ ]] || { printf 'PROJECT is required for OVH and must contain only A-Za-z0-9._-\n' >&2; exit 2; }
+  project_root="./env/OVH/$project"
+  tfvars="$project_root/clusters/$environment.tfvars"
+  env_dir="$project_root/clusters/$environment"
+  provider_path="providers/ovh/clusters"
+else
+  tfvars="./env/$provider/$environment.tfvars"
+  env_dir="./env/$provider/$environment"
+fi
 cloud_init_selected=
 
 if [[ -f $tfvars ]]; then
@@ -85,21 +93,19 @@ print_openstack_auth() {
   local app_id_state=missing app_secret_state=missing region_state=missing
   local ready=false route=
 
-  if [[ -n ${OS_AUTH_URL:-}${OS_CLOUD:-} ]]; then
-    source_label='not sourced (existing process OS_* selected)'
-  else
-    for candidate in "${OPENRC:-}" "./env/OVH/$environment.openrc.local" "./env/OVH/$environment.openrc"; do
-      if [[ -n $candidate && -f $candidate ]]; then
-        openrc=$candidate
-        break
-      fi
-    done
-    if [[ -n $openrc ]]; then
-      source_label=$openrc
-      load_openrc "$openrc"
-    else
-      source_label='not found'
+  for candidate in "${OPENRC:-}" "$project_root/openrc.sh"; do
+    if [[ -n $candidate && -f $candidate ]]; then
+      openrc=$candidate
+      break
     fi
+  done
+  if [[ -n $openrc ]]; then
+    source_label=$openrc
+    load_openrc "$openrc"
+  elif [[ -n ${OS_AUTH_URL:-}${OS_CLOUD:-} ]]; then
+    source_label='existing process OS_*'
+  else
+    source_label='not found'
   fi
 
   [[ -n ${OS_AUTH_URL:-} ]] && auth_url_state=set
@@ -189,49 +195,24 @@ print_operator_ip() {
   fi
 }
 
-print_ovh_token_url() {
-  local project=
-  if [[ -f $tfvars ]]; then
-    project=$(
-      grep -E '^\s*ovh_project_service_name' "$tfvars" \
-        | grep -oE '"[^"]+"' \
-        | tr -d '"'
-    )
-  fi
-
-  printf '\n%s%s%s\n' "$blue" 'OVH API token (quick URL)' "$reset"
-
-  if [[ -z $project ]]; then
-    printf '  %s%s%s %s\n' \
-      "$yellow" "missing" "$reset" \
-      'ovh_project_service_name in tfvars'
-    return
-  fi
-
-  # The token URL grants v1 (/cloud/project/…) access rules only: compute,
-  # network, storage, images. The v2 API (gateway / floating IP / load
-  # balancer) is NOT authorizable from this URL — it checks IAM actions.
-  printf '  %s\n' \
-    "https://auth.eu.ovhcloud.com/api/createToken?GET=/cloud/project/${project}/*&POST=/cloud/project/${project}/*&PUT=/cloud/project/${project}/*&DELETE=/cloud/project/${project}/*"
-
-  printf '  %s\nv2 LB-stack rights are IAM actions (grant in the OVH IAM console\nfor the identity that owns the consumer key):%s\n' "$yellow" "$reset"
-  printf '    publicCloudProject:apiovh:gateway/*\n'
-  printf '    publicCloudProject:apiovh:loadbalancer/*\n'
-  printf '    publicCloudProject:apiovh:publicIp/*\n'
-}
-
-[[ $provider == OVH ]] && { print_openstack_auth; print_operator_ip; print_ovh_token_url; }
+[[ $provider == OVH ]] && { print_openstack_auth; print_operator_ip; }
 
 printf '\n%s%s%s\n' "$blue" 'Useful commands' "$reset"
-printf '  %-16s PROVIDER=%s ENV=%s just %s\n' 'Validate' "$provider" "$environment" 'validate'
-printf '  %-16s PROVIDER=%s ENV=%s just %s\n' 'Plan' "$provider" "$environment" 'plan'
-printf '  %-16s PROVIDER=%s ENV=%s just %s\n' 'Plan VM' "$provider" "$environment" 'plan NAME'
-printf '  %-16s PROVIDER=%s ENV=%s just %s\n' 'Deploy' "$provider" "$environment" 'deploy'
-printf '  %-16s PROVIDER=%s ENV=%s just %s\n' 'Deploy VM' "$provider" "$environment" 'deploy NAME'
-printf '  %-16s PROVIDER=%s ENV=%s just %s\n' 'Replace VM' "$provider" "$environment" 'replace NAME'
-printf '  %-16s PROVIDER=%s ENV=%s just %s\n' 'Destroy' "$provider" "$environment" 'destroy'
+selector="PROVIDER=$provider ENV=$environment"
+[[ $provider == OVH ]] && selector="PROJECT=$project $selector"
+printf '  %-16s %s just %s\n' 'Validate' "$selector" 'validate'
+printf '  %-16s %s just %s\n' 'Plan' "$selector" 'plan'
+printf '  %-16s %s just %s\n' 'Plan VM' "$selector" 'plan NAME'
+printf '  %-16s %s just %s\n' 'Deploy' "$selector" 'deploy'
+printf '  %-16s %s just %s\n' 'Deploy VM' "$selector" 'deploy NAME'
+printf '  %-16s %s just %s\n' 'Replace VM' "$selector" 'replace NAME'
+printf '  %-16s %s just %s\n' 'Destroy' "$selector" 'destroy'
 
 if [[ ! -f $tfvars ]]; then
   printf '\n%s%s%s\n' "$yellow" 'Hint' "$reset"
-  printf '  Create %s from ./env/%s/tfvars.example before plan/deploy.\n' "$tfvars" "$provider"
+  if [[ $provider == OVH ]]; then
+    printf '  Create %s from ./env/OVH/example/clusters/tfvars.example before plan/deploy.\n' "$tfvars"
+  else
+    printf '  Create %s from ./env/%s/tfvars.example before plan/deploy.\n' "$tfvars" "$provider"
+  fi
 fi

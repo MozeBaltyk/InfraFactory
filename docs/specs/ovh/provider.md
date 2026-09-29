@@ -8,9 +8,13 @@ pre-split embedded model in places — on conflict, this file and
 
 ## 1. Credentials and region
 
-* `ovh_endpoint`, `ovh_application_key`, `ovh_application_secret`,
-  `ovh_consumer_key`, `ovh_project_service_name` — secrets from the
-  environment, never committed.
+* OVH endpoint and API keys come from `OVH_*`; the project service name comes
+  from `TF_VAR_ovh_project_service_name`. The ignored
+  `env/OVH/<PROJECT>/.env` is shared by both stacks in that project and sourced
+  by their lifecycle recipes; credentials are never committed or stored in
+  tfvars. The optional shared ansible-pull secret is
+  `TF_VAR_ansible_pull_token`. Safe source templates live only under
+  `env/OVH/example/`; `PROJECT` is always explicit.
 * Kubernetes modes additionally require standard OpenStack auth (`OS_*`
   or `clouds.yaml`/`OS_CLOUD`) for security groups.
 * One region per deployment via `cluster.region` (e.g. `GRA9`); one
@@ -27,6 +31,9 @@ pre-split embedded model in places — on conflict, this file and
   (masters, then workers, then `vms` from the offset base; bastion
   reserved at the last usable host). Node allocation must never reach the
   reserved IP (guarded both stacks).
+* Kubernetes master/worker addresses are reserved by Terraform-managed
+  Neutron ports before gateway creation; Nova attaches those exact ports.
+  Plain/default VMs retain Nova-managed fixed-IP allocation.
 * Subnets run with `dhcp = false`; guests use static netplan delivered
   via Nova config-drive. `enable_gateway_ip` follows `lb_enabled` only.
 
@@ -58,7 +65,8 @@ pre-split embedded model in places — on conflict, this file and
   `small|medium|large|xl`, `gateway_model` `s|m|l|xl|2xl`, default `s`): Octavia-based LB, TCP/6443 listener with health monitor, backend
   pool of all master private IPs, native `ovh_cloud_gateway` +
   `ovh_cloud_floating_ip` lifecycle (LB deleted before gateway/FIP,
-  gateway before subnet).
+  gateway before subnet). The gateway explicitly waits for all Kubernetes
+  node ports, preventing its centralized SNAT port from claiming a node IP.
 * Endpoint resolution: LB floating IP (`lb_ip`) or DNS name (`dns` +
   `dns.name`). `lb_ip` requires an enabled LB; Kubernetes requires an
   enabled LB, `var.bastion` set, and a `lb_ip`/`dns` endpoint (guarded;

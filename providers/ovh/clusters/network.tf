@@ -125,31 +125,49 @@ resource "openstack_networking_secgroup_rule_v2" "cluster_egress" {
   region            = var.cluster.region
 }
 
-data "openstack_networking_port_v2" "cluster_private" {
-  for_each = local.kubernetes_enabled ? local.cluster_vms_map : {}
+### Reserve every Kubernetes node's deterministic address before creating the
+### gateway. Otherwise its centralized SNAT port can consume an unreserved
+### node address on a new subnet.
+resource "openstack_networking_port_v2" "cluster_private" {
+  for_each = local.k8s_nodes ? local.cluster_vms_map : {}
 
-  device_id  = openstack_compute_instance_v2.vms[each.key].id
+  name       = "${each.value.name}-private"
   network_id = local.private_network_id
-  fixed_ip   = each.value.private_ip
   region     = var.cluster.region
-}
 
-resource "openstack_networking_port_secgroup_associate_v2" "cluster_private" {
-  for_each = local.kubernetes_enabled ? local.cluster_vms_map : {}
-
-  port_id            = data.openstack_networking_port_v2.cluster_private[each.key].id
   security_group_ids = [openstack_networking_secgroup_v2.cluster[0].id]
-  enforce            = true
-  region             = var.cluster.region
+
+  fixed_ip {
+    subnet_id  = local.private_subnet_id
+    ip_address = each.value.private_ip
+  }
+
+  lifecycle {
+    precondition {
+      condition = (
+        each.value.private_ip != module.ipam.bastion_ip &&
+        (local.private_gateway_ip == null || each.value.private_ip != local.private_gateway_ip)
+      )
+      error_message = "Kubernetes node address allocation overlaps the reserved gateway or bastion address. Widen network.private.cidr or reduce node counts."
+    }
+  }
+
+  depends_on = [
+    openstack_networking_secgroup_rule_v2.cluster_ssh_from_bastion,
+    openstack_networking_secgroup_rule_v2.cluster_east_west,
+    openstack_networking_secgroup_rule_v2.cluster_lb_backend,
+    openstack_networking_secgroup_rule_v2.cluster_lb_ingress_backend,
+    openstack_networking_secgroup_rule_v2.cluster_egress,
+  ]
 }
 
 ###
 ### Gateway and floating IP for the Kubernetes API load balancer
 ###
-### The gateway is created BEFORE the VMs (the VMs depend on it — see main.tf):
-### private-only nodes need working egress at first boot for apt/rke2, and the
-### gateway resource only returns once it is READY. It is subnet-scoped NAT —
-### it has no dependency on the VM set, so no replace trigger is needed.
+### Node ports are reserved before the gateway, then the gateway is created
+### before the VMs (the VMs depend on it — see main.tf). This prevents the
+### centralized SNAT port from claiming a deterministic node IP while still
+### providing working first-boot egress for apt/rke2.
 ###
 
 resource "ovh_cloud_gateway" "kube_api" {
@@ -165,6 +183,8 @@ resource "ovh_cloud_gateway" "kube_api" {
   }
 
   subnet_ids = [local.private_subnet_id]
+
+  depends_on = [openstack_networking_port_v2.cluster_private]
 }
 
 resource "ovh_cloud_floating_ip" "kube_api" {
@@ -301,6 +321,5 @@ resource "ovh_cloud_project_loadbalancer" "kube_api" {
   depends_on = [
     ovh_cloud_project_network_private_subnet_v2.cluster,
     openstack_compute_instance_v2.vms,
-    openstack_networking_port_secgroup_associate_v2.cluster_private,
   ]
 }

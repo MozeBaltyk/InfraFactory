@@ -1,19 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Sync every env/OVH/<cluster>/ artifact directory to the standalone bastion,
+# Sync every project cluster artifact directory to the standalone bastion,
 # under /mnt/guests-info/<cluster>/, so the jump host carries each cluster's
 # connection artifacts (hosts.ini, ansible.cfg, kubeconfig, keys, token).
 #
-# Deliberately does NOT sync env/OVH/*.tfvars / *.openrc (cloud-provider
-# credentials live outside the per-cluster directory).
+# Deliberately does not sync project credentials or tfvars.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_OVH="$ROOT/env/OVH"
+PROJECT=${PROJECT:-}
+BASTION_ENV=${BASTION_ENV:-bastion}
 
-BASTION_KEY="$ENV_OVH/bastion/.key.private"
-BASTION_HOSTS="$ENV_OVH/bastion/hosts.ini"
-BASTION_CFG="$ENV_OVH/bastion/ansible.cfg"
+[[ $PROJECT =~ ^[A-Za-z0-9._-]+$ ]] || { echo "PROJECT is required and must contain only A-Za-z0-9._-" >&2; exit 2; }
+[[ $BASTION_ENV =~ ^[A-Za-z0-9._-]+$ ]] || { echo "BASTION_ENV must contain only A-Za-z0-9._-" >&2; exit 2; }
+
+PROJECT_ROOT="$ROOT/env/OVH/$PROJECT"
+CLUSTERS_ROOT="$PROJECT_ROOT/clusters"
+BASTION_ROOT="$PROJECT_ROOT/bastion/$BASTION_ENV"
+
+BASTION_KEY="$BASTION_ROOT/.key.private"
+BASTION_HOSTS="$BASTION_ROOT/hosts.ini"
+BASTION_CFG="$BASTION_ROOT/ansible.cfg"
 
 [ -f "$BASTION_KEY" ] || { echo "bastion private key missing: $BASTION_KEY" >&2; exit 1; }
 [ -f "$BASTION_HOSTS" ] || { echo "bastion hosts.ini missing: $BASTION_HOSTS" >&2; exit 1; }
@@ -33,7 +40,7 @@ echo "bastion: ${BASTION_USER}@${BASTION_IP}"
 ssh "${SSH_OPTS[@]}" "${BASTION_USER}@${BASTION_IP}" "sudo mkdir -p /mnt/guests-info && sudo chown -R '$BASTION_USER' /mnt/guests-info"
 
 shopt -s nullglob
-for dir in "$ENV_OVH"/*/; do
+for dir in "$CLUSTERS_ROOT"/*/; do
   name="$(basename "$dir")"
   echo "sync $name -> $BASTION_IP:/mnt/guests-info/$name/"
   rsync -a --no-owner --no-group --delete \

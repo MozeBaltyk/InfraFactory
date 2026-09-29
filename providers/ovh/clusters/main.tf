@@ -110,10 +110,9 @@ resource "terraform_data" "validate_flavors" {
 ### `private_cluster` pair with no state change on existing deployments
 ### (see moved.tf; jump-mode masters/workers move into this address).
 ###
-### Dependencies (see depends_on below): the VMs wait for the egress gateway
-### (created before them and READY before returning), the image/flavor
-### validation, the subnet, and the NFS ACL. Private-only nodes need egress at
-### first boot for apt/rke2.
+### Dependencies (see depends_on below): Kubernetes node ports reserve their
+### deterministic addresses first, then the VMs wait for the egress gateway
+### (READY before returning), image/flavor validation, subnet, and NFS ACL.
 ###
 
 resource "openstack_compute_instance_v2" "vms" {
@@ -141,7 +140,17 @@ resource "openstack_compute_instance_v2" "vms" {
   }
 
   dynamic "network" {
-    for_each = each.value.private_attach ? [each.value] : []
+    for_each = each.value.private_attach && local.k8s_nodes && contains(keys(local.cluster_vms_map), each.key) ? [each.value] : []
+
+    content {
+      port = openstack_networking_port_v2.cluster_private[each.key].id
+    }
+  }
+
+  # Preserve Nova-managed fixed-IP allocation for plain/default deployments
+  # and standalone infra.vms; only Kubernetes masters/workers use reserved ports.
+  dynamic "network" {
+    for_each = each.value.private_attach && !(local.k8s_nodes && contains(keys(local.cluster_vms_map), each.key)) ? [each.value] : []
 
     content {
       uuid        = local.private_network_id

@@ -10,6 +10,9 @@ PROVIDER_RAW := env_var_or_default("PROVIDER", "KVM")
 PROVIDER := if PROVIDER_RAW =~ '^(AZ|KVM|OVH)$' { PROVIDER_RAW } else { error("PROVIDER must be AZ, KVM, or OVH") }
 ENV_RAW := env_var_or_default("ENV", "lab")
 ENV := if ENV_RAW =~ '^[A-Za-z0-9._-]+$' { ENV_RAW } else { error("ENV must be a nonempty identifier containing only A-Za-z0-9._-") }
+PROJECT_RAW := env_var_or_default("PROJECT", "")
+PROJECT := if PROVIDER != "OVH" { PROJECT_RAW } else { if PROJECT_RAW =~ '^[A-Za-z0-9._-]+$' { PROJECT_RAW } else { error("PROJECT is required for OVH and must contain only A-Za-z0-9._-") } }
+ENV_PATH := if PROVIDER == "OVH" { "./env/OVH/" + PROJECT + "/clusters/" + ENV } else { "./env/" + PROVIDER + "/" + ENV }
 
 _help:
     @just --list --unsorted
@@ -30,7 +33,7 @@ env:
 report:
     @bash scripts/report.sh {{ quote(PROVIDER) }} {{ quote(ENV) }}
 
-# Rsync env/OVH/<cluster>/ artifacts to the bastion's /mnt/guests-info/
+# Rsync OVH project cluster artifacts to the bastion's /mnt/guests-info/
 [group('Context')]
 sync-info:
     @bash scripts/sync-guests-info.sh
@@ -67,12 +70,12 @@ destroy STALE='':
 # Check Kubernetes cluster if reachable
 [group('Post-Checks')]
 check:
-    @KUBECONFIG={{ quote("./env/" + PROVIDER + "/" + ENV + "/kubeconfig") }} kubectl get nodes -o wide
+    @KUBECONFIG={{ quote(ENV_PATH + "/kubeconfig") }} kubectl get nodes -o wide
 
 # Check ansible connectivity
 [group('Post-Checks')]
 ping:
-    @ANSIBLE_CONFIG={{ quote("./env/" + PROVIDER + "/" + ENV + "/ansible.cfg") }} ansible K8S_CLUSTER -i {{ quote("./env/" + PROVIDER + "/" + ENV + "/hosts.ini") }} -m ping
+    @ANSIBLE_CONFIG={{ quote(ENV_PATH + "/ansible.cfg") }} ansible K8S_CLUSTER -i {{ quote(ENV_PATH + "/hosts.ini") }} -m ping
 
 # ── Provisioning ───────────────────────────
 
@@ -81,7 +84,7 @@ ping:
 [positional-arguments]
 [script("bash")]
 play playbook *ARGS:
-    export ANSIBLE_CONFIG={{ quote("./env/" + PROVIDER + "/" + ENV + "/ansible.cfg") }}
+    export ANSIBLE_CONFIG={{ quote(ENV_PATH + "/ansible.cfg") }}
     playbook=$1
     shift
-    exec ansible-playbook -i {{ quote("./env/" + PROVIDER + "/" + ENV + "/hosts.ini") }} "$playbook" "$@"
+    exec ansible-playbook -i {{ quote(ENV_PATH + "/hosts.ini") }} "$playbook" "$@"

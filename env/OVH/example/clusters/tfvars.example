@@ -1,9 +1,6 @@
-ovh_endpoint           = "ovh-eu"
-ovh_project_service_name = "xxxxxxxxxxxxxxxx"
-
-# Export OVH_APPLICATION_KEY, OVH_APPLICATION_SECRET, and OVH_CONSUMER_KEY.
-# OpenStack-backed networking in Kubernetes modes also requires OS_* variables
-# or clouds.yaml/OS_CLOUD.
+# Copy env/OVH/example/.env.example to env/OVH/<PROJECT>/.env and fill in the OVH credentials.
+# Copy env/OVH/example/openrc.sh.example to env/OVH/<PROJECT>/openrc.sh and fill
+# in the OpenStack credentials, or use clouds.yaml/OS_CLOUD.
 
 cluster = {
   id                      = "factory"
@@ -86,6 +83,8 @@ os = {
 ### per cluster to deploy multiple clusters in the same OVH region.
 ### Valid range: 0-4000.
 ### The cluster always creates and owns its OVH private network and subnet.
+### Kubernetes node IPs are reserved as managed Neutron ports during
+### `just ovh::bootstrap`, before gateway creation, then attached to Nova.
 ###
 ### Internet → Floating IP → Gateway → LB → masters:6443
 ### The gateway and floating IP are explicit OVH resources owned by OpenTofu.
@@ -275,7 +274,7 @@ os = {
 #     repo     = "https://github.com/MozeBaltyk/InfraFactory.git"
 #     branch   = "main"
 #     playbook = "providers/shared/ansible/local.yml"
-#     token    = "ghp_xxxxxxxxxxxx"
 #     timer    = "1h"
 #   }
 # }
+# For a private repository, export TF_VAR_ansible_pull_token; do not commit a token here.

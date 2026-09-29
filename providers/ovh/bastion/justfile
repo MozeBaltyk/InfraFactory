@@ -4,14 +4,18 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c", "umask 077; exec bash -eu -
 # clusters), so it intentionally does NOT reuse the cluster ENV workspace.
 BASTION_ENV_RAW := env_var_or_default("BASTION_ENV", "bastion")
 BASTION_ENV := if BASTION_ENV_RAW =~ '^[A-Za-z0-9._-]+$' { BASTION_ENV_RAW } else { error("BASTION_ENV must be a nonempty workspace identifier containing only A-Za-z0-9._-") }
-BASTION_TFVARS_PATH := "../../../env/OVH/" + BASTION_ENV + ".tfvars"
+PROJECT_RAW := env_var_or_default("PROJECT", "")
+PROJECT := if PROJECT_RAW =~ '^[A-Za-z0-9._-]+$' { PROJECT_RAW } else { error("PROJECT is required and must contain only A-Za-z0-9._-") }
+PROJECT_PATH := "../../../env/OVH/" + PROJECT
+BASTION_TFVARS_PATH := PROJECT_PATH + "/bastion/" + BASTION_ENV + ".tfvars"
 
 # Same credential-snippet pattern as clusters/justfile: eval it in the
 # caller's shell since exports don't survive across recipes.
 [private]
 _source-openrc:
-    @if test -n "${OS_AUTH_URL:-}${OS_CLOUD:-}"; then exit 0; fi; \
-      for openrc in "${OPENRC:-}" {{ quote("../../../env/OVH/" + BASTION_ENV + ".openrc.local") }} {{ quote("../../../env/OVH/" + BASTION_ENV + ".openrc") }}; do \
+    @if test -f {{ quote(PROJECT_PATH + "/.env") }}; then printf 'set -a; source %q; set +a\n' {{ quote(PROJECT_PATH + "/.env") }}; fi; \
+      printf 'export TF_VAR_project=%q\n' {{ quote(PROJECT) }}; \
+      for openrc in "${OPENRC:-}" {{ quote(PROJECT_PATH + "/openrc.sh") }}; do \
         if test -n "$openrc" && test -f "$openrc"; then printf 'set -a; source %q; set +a\n' "$openrc"; exit 0; fi; \
       done
 
@@ -20,8 +24,8 @@ _workspace:
     @tofu workspace select {{ quote(BASTION_ENV) }} || tofu workspace new {{ quote(BASTION_ENV) }}
 
 validate:
-    @tofu init -backend=false
-    @tofu validate
+    @TF_VAR_project={{ quote(PROJECT) }} tofu init -backend=false
+    @TF_VAR_project={{ quote(PROJECT) }} tofu validate
 
 plan:
     @tofu init

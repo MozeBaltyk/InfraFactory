@@ -21,7 +21,7 @@ locals {
     for name, c in var.clusters :
     trimspace(file(coalesce(
       c.public_key_file,
-      "${path.module}/../../../env/${var.infra_provider}/${name}/.key.pub",
+      "${path.module}/../../../env/${var.infra_provider}/${var.project}/clusters/${name}/.key.pub",
     )))
   ]
 
@@ -61,6 +61,7 @@ module "cloudinit" {
   public_key              = local.admin_public_keys[0]
   cluster_token           = ""
   ansible                 = var.ansible
+  ansible_pull_token      = var.ansible_pull_token
   package_upgrade_enabled = var.bastion.package_upgrade_enabled
 
   vms = {

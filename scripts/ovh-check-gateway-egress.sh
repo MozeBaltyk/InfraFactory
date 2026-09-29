@@ -15,9 +15,15 @@ if (($# != 1)); then
 fi
 
 environment=$1
+project=${PROJECT:-}
 
 if [[ ! $environment =~ ^[A-Za-z0-9._-]+$ ]]; then
   printf 'ENV must be a nonempty identifier containing only A-Za-z0-9._-\n' >&2
+  exit 2
+fi
+
+if [[ ! $project =~ ^[A-Za-z0-9._-]+$ ]]; then
+  printf 'PROJECT is required and must contain only A-Za-z0-9._-\n' >&2
   exit 2
 fi
 
@@ -25,13 +31,10 @@ command -v openstack >/dev/null 2>&1 || { printf 'Required command not found: op
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 
-# Load OpenStack credentials unless already exported. Same precedence as the
-# just `_source-openrc` recipes: <ENV>.openrc.local, then <ENV>.openrc.
-if [[ -z ${OS_AUTH_URL:-} && -z ${OS_CLOUD:-} ]]; then
-  for f in "$root/env/OVH/$environment.openrc.local" "$root/env/OVH/$environment.openrc"; do
-    if [[ -f $f ]]; then set -a; source "$f"; set +a; break; fi
-  done
-fi
+# Same precedence as the just recipes: OPENRC override, then project OpenRC.
+for f in "${OPENRC:-}" "$root/env/OVH/$project/openrc.sh"; do
+  if [[ -n $f && -f $f ]]; then set -a; source "$f"; set +a; break; fi
+done
 
 # ovh_cloud_project_network_private name convention: "<cluster-id>-private".
 net_name="${environment}-private"

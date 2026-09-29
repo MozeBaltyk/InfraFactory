@@ -16,8 +16,8 @@ Why the bastion is a separate stack:
 
 | Stack | Directory | Workspace var | Tfvars |
 |---|---|---|---|
-| Bastion | `providers/ovh/bastion/` | `BASTION_ENV` (default `bastion`) | `env/OVH/<BASTION_ENV>.tfvars` |
-| Cluster | `providers/ovh/clusters/` | `ENV` (one per cluster) | `env/OVH/<ENV>.tfvars` |
+| Bastion | `providers/ovh/bastion/` | `PROJECT` + `BASTION_ENV` (default `bastion`) | `env/OVH/<PROJECT>/bastion/<BASTION_ENV>.tfvars` |
+| Cluster | `providers/ovh/clusters/` | `PROJECT` + `ENV` (one per cluster) | `env/OVH/<PROJECT>/clusters/<ENV>.tfvars` |
 
 Independent states, no `terraform_remote_state`, no shared backend. Only a
 public-IP string flows bastion → cluster (`bastion.public_ip`); only public
@@ -30,24 +30,42 @@ keys flow cluster → bastion (the `clusters` map key == cluster workspace name)
    compute+network only fails at `just ovh::deploy` with
    `403 Client::Forbidden "This call has not been granted"` on
    `ovh_cloud_gateway` / `ovh_cloud_floating_ip`. Export
-   `OVH_APPLICATION_KEY`/`OVH_APPLICATION_SECRET`/`OVH_CONSUMER_KEY`, or put
-   them in the tfvars.
+   `OVH_APPLICATION_KEY`/`OVH_APPLICATION_SECRET`/`OVH_CONSUMER_KEY`. Copy
+   `env/OVH/example/.env.example` to the ignored `env/OVH/<PROJECT>/.env`, set
+   those variables plus `TF_VAR_ovh_project_service_name`, and let the recipes
+   source it.
 2. **OpenStack auth** for the same project (`OS_*`, or
-   `env/OVH/<ENV>.openrc` — the recipes auto-source it).
+   copy `env/OVH/example/openrc.sh.example` to the ignored
+   `env/OVH/<PROJECT>/openrc.sh` and fill it in — the recipes auto-source it).
 3. Tools: `tofu`, `just`, `ansible`, and `jq` (jq only for the bastion converge
    recipe).
 
 ## End-to-end
 
+For a greenfield cluster whose entry is already present in the bastion tfvars,
+the OVH-only orchestration recipe runs bootstrap → bastion deploy/attach →
+bastion converge → normal cluster deploy:
+
+```bash
+PROJECT=<project> ENV=<env> BASTION_ENV=<bastion> just ovh::provision
+```
+
+This recipe performs paid applies. It uses the generated bastion private key at
+`env/OVH/<PROJECT>/bastion/<BASTION_ENV>/.key.private` and fails if that key is
+not created by the bastion deploy. Use the manual steps below when bringing an
+operator-provided bastion key or when the bastion tfvars entry is not yet ready.
+
 ### 0. Birth the bastion (once per region)
 
-See [`ovh-bastion.md`](ovh-bastion.md). In short: `env/OVH/<BASTION_ENV>.tfvars`
-with `clusters = {}`, then `BASTION_ENV=<b> just ovh::bastion-deploy`, and
+See [`ovh-bastion.md`](ovh-bastion.md). In short:
+`env/OVH/<PROJECT>/bastion/<BASTION_ENV>.tfvars` with `clusters = {}`, then
+`PROJECT=<project> BASTION_ENV=<b> just ovh::bastion-deploy`, and
 verify SSH with the admin key.
 
 ### 1. Write the cluster tfvars
 
-`env/OVH/<env>.tfvars` (template: `env/OVH/tfvars.example`). Minimum for a
+`env/OVH/<PROJECT>/clusters/<env>.tfvars` (template:
+`env/OVH/example/clusters/tfvars.example`). Minimum for a
 jump-only cluster:
 
 ```hcl
@@ -84,19 +102,21 @@ network = {
 }
 ```
 
-### 2. Bootstrap (private network + keys only)
+### 2. Bootstrap (private network + node address reservations + keys)
 
 ```bash
-ENV=<env> just ovh::bootstrap
+PROJECT=<project> ENV=<env> just ovh::bootstrap
 ```
 
-Creates the private network/subnet and the cluster SSH keypair
-(`env/OVH/<env>/.key.{pub,private}` + `.token`). The network must exist before
-the bastion can discover and attach to it.
+Creates the private network/subnet, reserves every Kubernetes node's
+deterministic address with a managed Neutron port, and creates the SSH keypair
+(`env/OVH/<PROJECT>/clusters/<env>/.key.{pub,private}` + `.token`). The network must exist before
+the bastion can discover and attach to it; reserving node ports here also
+prevents the later gateway SNAT port from claiming a node address.
 
 ### 3. Register + attach the bastion
 
-Append to `env/OVH/<BASTION_ENV>.tfvars`:
+Append to `env/OVH/<PROJECT>/bastion/<BASTION_ENV>.tfvars`:
 
 ```hcl
 clusters = {
@@ -104,25 +124,25 @@ clusters = {
     cidr    = "10.0.30.0/24"              # must match the cluster tfvars
     vlan_id = 30                          # must match (per-region network discovery)
     nodes = 2                             # must match (sizes PermitOpen)
-    # public_key_file omitted → defaults to env/OVH/<env>/.key.pub
+    # public_key_file omitted → defaults to env/OVH/<PROJECT>/clusters/<env>/.key.pub
   }
 }
 ```
 
 ```bash
-BASTION_ENV=<b> just ovh::bastion-deploy   # hot-attaches one private NIC (reserved IP)
+PROJECT=<project> BASTION_ENV=<b> just ovh::bastion-deploy   # hot-attaches one private NIC (reserved IP)
 ```
 
 ### 4. Converge the bastion (merge cluster key + PermitOpen)
 
 ```bash
-just ovh::bastion::converge <ABSOLUTE-path-to-bastion-admin-key>
+PROJECT=<project> BASTION_ENV=<b> just ovh::bastion::converge <ABSOLUTE-path-to-bastion-admin-key>
 ```
 
-e.g. `just ovh::bastion::converge /home/you/InfraFactory/env/OVH/bastion/.key.private`
+e.g. `PROJECT=example-project BASTION_ENV=bastion just ovh::bastion::converge /home/you/InfraFactory/env/OVH/example-project/bastion/bastion/.key.private`
 
 > ⚠️ `KEY` is resolved **relative to `providers/ovh/bastion/`**, not the repo
-> root — a repo-root-relative path like `env/OVH/bastion/.key.private` fails
+> root — a repo-root-relative path like `env/OVH/<PROJECT>/bastion/<b>/.key.private` fails
 > with `no such identity`. Pass an absolute path.
 
 This step is **required between attach and deploy**: the attach only changes
@@ -132,7 +152,7 @@ cluster's Ansible jump fails closed until the cluster pubkey is merged.
 ### 5. Deploy
 
 ```bash
-ENV=<env> just ovh::deploy
+PROJECT=<project> ENV=<env> just ovh::deploy
 ```
 
 Boots private-only masters/workers (cloud-init k3s/rke2), creates the gateway +
@@ -143,7 +163,7 @@ boot is ~5–15 min.
 ### 6. Validate
 
 ```bash
-PROVIDER=OVH ENV=<env> just check        # kubectl get nodes via env/OVH/<env>/kubeconfig
+PROJECT=<project> PROVIDER=OVH ENV=<env> just check
 ```
 
 Jump-SSH to a private node using the command in the `cluster_nodes` output.
@@ -151,7 +171,7 @@ Jump-SSH to a private node using the command in the `cluster_nodes` output.
 ### Destroy
 
 ```bash
-ENV=<env> just ovh::destroy
+PROJECT=<project> ENV=<env> just ovh::destroy
 ```
 
 Detach from the bastion **before** destroying the bastion itself (empty the
@@ -162,9 +182,9 @@ after classifying them; persistent Octavia-owned ports require OVH support
 
 ## Artifacts
 
-- Cluster `env/OVH/<env>/`: `.key.{pub,private}`, `.token`, `hosts.ini`,
+- Cluster `env/OVH/<PROJECT>/clusters/<env>/`: `.key.{pub,private}`, `.token`, `hosts.ini`,
   `ansible.cfg` (self-contained jump ProxyCommand), `kubeconfig`.
-- Bastion `env/OVH/<BASTION_ENV>/`: `.key.{pub,private}`, `.token`. The
+- Bastion `env/OVH/<PROJECT>/bastion/<BASTION_ENV>/`: `.key.{pub,private}`, `.token`. The
   bastion's `.token` is an unused byproduct of the shared key module (a bastion
   has no cluster token); tracked for removal.
 
@@ -177,6 +197,10 @@ after classifying them; persistent Octavia-owned ports require OVH support
   bastion `clusters[]` counts and re-run `converge`, or `PermitOpen` won't cover
   the new node IPs (`Connection closed by UNKNOWN port 65535`) — see
   [`ovh-bastion.md`](ovh-bastion.md).
+- **Migrating an existing cluster to managed node ports** replaces its
+  masters/workers because Nova NIC ownership changes. Save and review a full
+  plan, back up cluster state, and schedule downtime; do not import or edit
+  state to avoid the replacement.
 - **First-boot DNS/apt** on private nodes:
   [`../troubleshooting/ovh-cloud-init-dns-race.md`](../troubleshooting/ovh-cloud-init-dns-race.md).
 - **Private nodes have no internet at all** (`check_cloudinit` tainted, all

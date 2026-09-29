@@ -52,11 +52,11 @@ IPs, unattended, and surviving reboots.
 | Actor | Role | Lives in |
 |---|---|---|
 | Neutron | Private net/subnet (`cidr`, `vlan_id`), gateway `.1`, `dhcp = false`, Ext-Net public net | `clusters/network.tf` |
-| Nova (`openstack_compute_instance_v2`) | One resource over all nodes, ports with fixed IPs, **config-drive** (virtual CD-ROM carrying `user_data` + `network_data.json`) | `clusters/main.tf` (single `vms` resource; nodes `depends_on` the gateway so they boot only after egress is READY) |
+| Nova (`openstack_compute_instance_v2`) | One resource over all nodes; Kubernetes nodes attach pre-reserved Neutron ports, plain VMs retain Nova-allocated fixed IPs; **config-drive** carries `user_data` + `network_data.json` | `clusters/main.tf` (single `vms` resource; nodes `depends_on` the gateway so they boot only after egress is READY) |
 | cloud-init | 3 stages: **network** (renders `50-cloud-init.yaml` from `network_data.json`) → **config** (`write_files`, `runcmd`) → **final** | shared `cloud-init/*/cloud_init.cfg.tftpl` + OVH merge |
 | netplan | Applies the **merge** of all `/etc/netplan/*.yaml`, alphabetically. No syntax exists to *remove* something another file added | guest `/etc/netplan/` |
 | Our guest files | `99-infrafactory-ovh-private.yaml` (intent), `infrafactory-ovh-private-netplan.sh` + `.service` (reconciliation), sshd hardening | `clusters/templates.tf` (nodes) + `providers/ovh/bastion/templates.tf` (same trio, plus `PermitOpen` verify) |
-| Security groups | Standalone bastion SG (`:22` from ingress CIDRs, incl. operator IP) in the bastion module; cluster SG (SSH only from the bastion's reserved IP, east-west, LB backend) attached via `port_secgroup_associate` resources | `providers/ovh/bastion/network.tf`, `clusters/network.tf` |
+| Security groups | Standalone bastion SG (`:22` from ingress CIDRs, incl. operator IP) in the bastion module; cluster SG (SSH only from the bastion's reserved IP, east-west, LB backend) set directly on each managed node port | `providers/ovh/bastion/network.tf`, `clusters/network.tf` |
 | LB + FIP + gateway | Octavia LB (`:6443`) on the private net, floating IP (stable endpoint), gateway required by the LB | `clusters/network.tf` |
 
 NIC order is load-bearing: Nova attaches NICs in the order of the `network`
@@ -74,13 +74,15 @@ netplan template hard-code this mapping.
 3. OVH merge per node: base cloud-config + `write_files` (netplan `99` file,
    scrub script + service, sshd config) + `runcmd` (`netplan generate/apply`,
    `daemon-reload`, enable service, `sysctl`, sshd verify).
-4. Gateway is created and waits for READY (private-only nodes need it).
+4. Cluster SG rules complete, then secured Neutron ports reserve every
+   Kubernetes node IP. The gateway is created afterwards and waits for READY
+   (private-only nodes need it). Reserving first prevents the gateway's
+   centralized SNAT port from taking a deterministic node IP.
    The FIP is provisioned alongside (no edge; independent).
 5. Instances boot with `config_drive = true`, NICs in fixed order, fixed
    private IPs — **after** the gateway is READY, so first-boot egress works.
    Public IPv4s come back in Nova state (no re-read needed).
-6. Port lookups → SG association (`enforce = true`), then the LB (created
-   after the instances; it references gateway + FIP).
+6. The LB is created after the instances; it references the gateway + FIP.
 7. Standalone bastion readiness probe (in the bastion module:
    `cloud-init status --wait`, ~10 min fail-fast). Then Ansible artifacts.
 
@@ -210,7 +212,7 @@ service deletes exactly one known-stale route family per boot.
 |---|---|---|
 | `:22` **timeout** | packets dropped/routed wrong (SG or asymmetric routing), never auth | `ip -4 route` (two defaults?), `cat /etc/netplan/*.yaml`, `journalctl -u infrafactory-ovh-private-netplan`, `openstack console log show` (`ci-info` tables), `openstack port list --server` |
 | `:22` refused/reset | sshd down or nothing listening | guest `systemctl status ssh`, cloud-init errors |
-| auth denied | network fine, key/user wrong | `authorized_keys`, `cloud-init.log`, key in `env/OVH/<env>/.key.*` |
+| auth denied | network fine, key/user wrong | `authorized_keys`, `cloud-init.log`, key in `env/OVH/<project>/clusters/<env>/.key.*` |
 | blank VM (no user) | user-data never delivered (pre-config-drive era) | datasource logs; gone since `config_drive = true` |
 | destroy `409` ports | transient Neutron IPAM lag (re-run passes) | retry before investigating |
 | `port show` empty SGs | display quirk, not evidence | trust `tofu state` associates + actual reachability instead |

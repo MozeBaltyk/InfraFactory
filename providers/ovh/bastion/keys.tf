@@ -1,7 +1,7 @@
 ###
 ### Bootstrap keypair (bastion-first). Operator-provided keys win; otherwise
 ### the shared ssh-keys module generates a keypair into the workspace env dir
-### (env/OVH/<BASTION_ENV>/.key.{pub,private}), the same artifact convention as
+### (env/OVH/<project>/bastion/<BASTION_ENV>/.key.{pub,private}).
 ### the cluster stack. The effective pubkey seeds authorized_keys + the Nova
 ### keypair at birth; the effective private key is the readiness-probe key.
 ###
@@ -11,8 +11,8 @@
 ###
 
 locals {
-  env_root = abspath("${path.module}/../../../env")
-  env_path = "${local.env_root}/${var.infra_provider}/${terraform.workspace}"
+  env_root = abspath("${path.module}/../../../env/${var.infra_provider}/${var.project}")
+  env_path = "${local.env_root}/bastion/${terraform.workspace}"
 
   use_provided_keys = length(var.admin_public_keys) > 0
 

@@ -5,7 +5,7 @@ After P5 is green:
 - [x] `providers/README`: OVH extension and rows realigned jump-only.
 - [ ] `providers/README`: update evidence after P5 and slim duplicated
   baseline/matrix content in favor of normative `docs/specs/` links.
-- [ ] `env/OVH/tfvars.bastion.example`: final reference with a 2-cluster
+- [ ] `env/OVH/<project>/bastion/tfvars.example`: final reference with a 2-cluster
   example.
 - [x] `docs/architectures/ovh/03-network.md`: embedded-bastion sections
   already realigned jump-only on the branch (standalone ownership,

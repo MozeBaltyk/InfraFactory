@@ -2,18 +2,22 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c", "umask 077; exec bash -eu -
 
 ENV_RAW := env_var_or_default("ENV", "lab")
 ENV := if ENV_RAW =~ '^[A-Za-z0-9._-]+$' { ENV_RAW } else { error("ENV must be a nonempty workspace identifier containing only A-Za-z0-9._-") }
-ENV_TFVARS_PATH := "../../../env/OVH/" + ENV + ".tfvars"
+PROJECT_RAW := env_var_or_default("PROJECT", "")
+PROJECT := if PROJECT_RAW =~ '^[A-Za-z0-9._-]+$' { PROJECT_RAW } else { error("PROJECT is required and must contain only A-Za-z0-9._-") }
+PROJECT_PATH := "../../../env/OVH/" + PROJECT
+ENV_TFVARS_PATH := PROJECT_PATH + "/clusters/" + ENV + ".tfvars"
 
-# Prints a shell snippet that loads OpenStack credentials, or nothing when
-# OS_* is already exported. Callers eval it in their own shell:
+# Prints a shell snippet that loads shared OVH credentials and, when needed,
+# OpenStack credentials. Callers eval it in their own shell:
 #   eval "$(just _source-openrc)"
 # (One recipe cannot source for another: each just recipe runs in its own
 # shell process, so exports would evaporate on exit. The path-or-snippet has
 # to cross that boundary as text.)
 [private]
 _source-openrc:
-    @if test -n "${OS_AUTH_URL:-}${OS_CLOUD:-}"; then exit 0; fi; \
-      for openrc in "${OPENRC:-}" {{ quote("../../../env/OVH/" + ENV + ".openrc.local") }} {{ quote("../../../env/OVH/" + ENV + ".openrc") }}; do \
+    @if test -f {{ quote(PROJECT_PATH + "/.env") }}; then printf 'set -a; source %q; set +a\n' {{ quote(PROJECT_PATH + "/.env") }}; fi; \
+      printf 'export TF_VAR_project=%q\n' {{ quote(PROJECT) }}; \
+      for openrc in "${OPENRC:-}" {{ quote(PROJECT_PATH + "/openrc.sh") }}; do \
         if test -n "$openrc" && test -f "$openrc"; then printf 'set -a; source %q; set +a\n' "$openrc"; exit 0; fi; \
       done
 
@@ -22,8 +26,8 @@ _workspace:
     @tofu workspace select {{ quote(ENV) }} || tofu workspace new {{ quote(ENV) }}
 
 validate:
-    @tofu init -backend=false
-    @tofu validate
+    @TF_VAR_project={{ quote(PROJECT) }} tofu init -backend=false
+    @TF_VAR_project={{ quote(PROJECT) }} tofu validate
 
 plan NAME='':
     @tofu init
@@ -53,10 +57,10 @@ deploy NAME='':
       fi; \
       tofu apply -auto-approve -var-file={{ quote(ENV_TFVARS_PATH) }} "${target_args[@]}"
 
-# Create the cluster's private network + SSH keys only, so the standalone
-# bastion can be attached and converged BEFORE the full cluster apply. The
-# workspace (ENV) name is the bastion `clusters` map key; the bastion reads
-# env/OVH/<ENV>/.key.pub by convention after this runs.
+# Create the cluster's private network, reserved Kubernetes node ports, and SSH
+# keys, so node addresses are claimed before the bastion and gateway exist.
+# The workspace (ENV) name is the bastion `clusters` map key; the bastion reads
+# env/OVH/<PROJECT>/clusters/<ENV>/.key.pub by convention after this runs.
 bootstrap:
     @tofu init
     @just _workspace
@@ -66,13 +70,14 @@ bootstrap:
         -target=random_id.ssh_key_suffix \
         -target=openstack_compute_keypair_v2.cluster \
         -target=ovh_cloud_project_network_private.cluster \
-        -target=ovh_cloud_project_network_private_subnet_v2.cluster
+        -target=ovh_cloud_project_network_private_subnet_v2.cluster \
+        -target=openstack_networking_port_v2.cluster_private
 
 # Fail fast when the gateway's centralized SNAT port is DOWN (private nodes
 # have no internet egress, even though the OVH router reports ACTIVE).
 # See scripts/ovh-check-gateway-egress.sh and docs/troubleshooting/ovh-gateway-snat-down.md.
 check-gateway:
-    @bash ../../../scripts/ovh-check-gateway-egress.sh {{ quote(ENV) }}
+    @PROJECT={{ quote(PROJECT) }} bash ../../../scripts/ovh-check-gateway-egress.sh {{ quote(ENV) }}
 
 # Force rebuild one VM instance (un-targeted dependents included). Refuses
 # the first K3s/RKE2 controller: automatic datastore rejoin is unsafe,

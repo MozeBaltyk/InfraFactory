@@ -168,6 +168,14 @@ variable "ansible" {
   default = {}
 }
 
+variable "ansible_pull_token" {
+  description = "Optional private-repository token overriding ansible.pull.token when ansible.pull is configured."
+  type        = string
+  default     = null
+  nullable    = true
+  sensitive   = true
+}
+
 variable "vms" {
   description = "Per-VM inputs consumed by the shared cloud-init template."
   type = map(object({

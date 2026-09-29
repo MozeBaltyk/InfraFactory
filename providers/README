@@ -41,7 +41,10 @@ Every provider module MUST implement all of the following:
 - `rke2` block: `version`, `token`, `tls_sans`, `etcd_enabled`,
   `traefik_enabled`, `ingress_nginx_enabled`, `metrics_server_enabled`
 - Cluster token auto-generation (writes `.token` file)
-- `ansible.pull` block: `repo`, `branch`, `playbook`, `token`, `timer`
+- `ansible.pull` block: `repo`, `branch`, `playbook`, `token`, `timer`; its
+  presence activates ansible-pull. The sensitive root `ansible_pull_token`
+  (`TF_VAR_ansible_pull_token`) optionally overrides the nested token without
+  activating ansible-pull by itself.
 
 ### Ansible Integration
 - Inventory output compatible with `providers/shared/inventory/hosts.tpl`
@@ -114,8 +117,8 @@ Every provider module MUST implement all of the following:
 
 | Capability | Details |
 |---|---|
-| **Credentials** | `ovh_endpoint`, `ovh_application_key`, `ovh_application_secret`, `ovh_consumer_key`, `ovh_project_service_name` |
-| **Authentication** | OVH keys use `OVH_APPLICATION_KEY`, `OVH_APPLICATION_SECRET`, and `OVH_CONSUMER_KEY`. Kubernetes modes require standard OpenStack `OS_*` or `clouds.yaml`/`OS_CLOUD` auth for security groups. OVH `just ovh::bastion::converge` requires `jq` (it reads `tofu output -json converge`). |
+| **Credentials** | Project-scoped ignored `env/OVH/<PROJECT>/.env`, copied from `env/OVH/example/.env.example`: `OVH_ENDPOINT`, `OVH_APPLICATION_KEY`, `OVH_APPLICATION_SECRET`, `OVH_CONSUMER_KEY`, `TF_VAR_ovh_project_service_name` |
+| **Authentication** | OVH lifecycle recipes require `PROJECT`, source its `.env` and `openrc.sh` (copy the latter from `env/OVH/example/openrc.sh.example`), and preserve `OPENRC` as an override. Kubernetes modes also accept existing standard OpenStack `OS_*` or `clouds.yaml`/`OS_CLOUD` auth. OVH `just ovh::bastion::converge` requires `jq` (it reads `tofu output -json converge`). |
 | **Region** | `cluster.region` (e.g. `GRA9`) |
 | **Private network** | `network.private.cidr` (required) + `network.private.vlan_id` (optional, default `0`). Creates `ovh_cloud_project_network_private` + subnet. VLAN ID allows multiple clusters in the same region (valid range: 0–4000). |
 | **Deterministic private IPs** | Computed from `cidrhost(local.private_cidr, offset)` |

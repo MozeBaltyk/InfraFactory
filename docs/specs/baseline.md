@@ -32,7 +32,10 @@ prove it live in the `providers/README` matrix.
   means no cloud-init injected for that role).
 * Optional inputs: `extra_packages`, `k3s` / `rke2` blocks (version,
   token, TLS SANs, etcd and component toggles), auto-generated cluster
-  token (`.token` file), `ansible.pull` block.
+  token (`.token` file), `ansible.pull` block. The block alone activates
+  ansible-pull; optional private-repository authentication comes from the
+  sensitive root `ansible_pull_token` (`TF_VAR_ansible_pull_token`), falling
+  back to nested `ansible.pull.token` for compatibility.
 
 ## 4. Ansible integration
 

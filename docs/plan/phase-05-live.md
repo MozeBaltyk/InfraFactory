@@ -24,4 +24,4 @@ gate below.
 
 Gate G5: 1–2 green. Gate G6: 3–6 green + `providers/README` matrix
 (single-master k3s, HA multi-master + workers, k3s + rke2,
-inventory/kubeconfig in `env/OVH/<env>/`).
+  inventory/kubeconfig in `env/OVH/<project>/clusters/<env>/`).

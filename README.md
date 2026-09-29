@@ -81,7 +81,14 @@ vim env/KVM/lab.tfvars
 cp env/AZ/tfvars.example env/AZ/lab.tfvars
 
 # For OVH
-cp env/OVH/tfvars.example env/OVH/lab.tfvars
+export PROJECT=example-project
+mkdir -p "env/OVH/$PROJECT/clusters" "env/OVH/$PROJECT/bastion"
+cp env/OVH/example/.env.example "env/OVH/$PROJECT/.env"
+cp env/OVH/example/openrc.sh.example "env/OVH/$PROJECT/openrc.sh"
+cp env/OVH/example/clusters/tfvars.example "env/OVH/$PROJECT/clusters/lab.tfvars"
+cp env/OVH/example/bastion/tfvars.example "env/OVH/$PROJECT/bastion/bastion.tfvars"
+chmod 0600 "env/OVH/$PROJECT/.env" "env/OVH/$PROJECT/openrc.sh"
+ENV=lab just ovh::plan
 ```
 
 ### 2. Validate and Plan
@@ -142,6 +149,7 @@ Available commands:
 | `just validate` | Validate Terraform/OpenTofu scripts |
 | `just plan` | Plan infrastructure changes |
 | `just deploy` | Apply and create infrastructure |
+| `PROJECT=<project> ENV=<cluster> BASTION_ENV=<bastion> just ovh::provision` | Paid OVH greenfield flow; cluster entry must already exist in bastion tfvars |
 | `just destroy` | Tear down infrastructure |
 | `just ping` | Ping VMs with ansible |
 | `just check` | Check k8s access |
@@ -170,7 +178,8 @@ bastion and private nodes are never directly exposed.
 If SSH is unavailable, use OVH console/rescue with scoped cloud credentials to
 repair ingress or replace the bastion; do not expose private nodes or LB TCP/22.
 
-Each environment is defined by a `.tfvars` file in `env/<PROVIDER>/`:
+Each environment is defined by a `.tfvars` file in `env/<PROVIDER>/`; OVH uses
+`env/OVH/<project>/clusters/` and `env/OVH/<project>/bastion/`:
 
 **Example: `env/KVM/lab.tfvars`**
 ```hcl
@@ -259,8 +268,12 @@ InfraFactory/
 │   │   ├── tfvars.example        # Azure example
 │   │   └── <env>/                # Generated env outputs (hosts.ini, ansible.cfg, kubeconfig, keys)
 │   ├── OVH/
-│   │   ├── tfvars.example        # OVH example
-│   │   └── <env>/                # Generated env outputs (hosts.ini, ansible.cfg, kubeconfig, keys)
+│   │   ├── example/              # Canonical safe project templates
+│   │   │   ├── .env.example
+│   │   │   ├── openrc.sh.example
+│   │   │   ├── clusters/tfvars.example
+│   │   │   └── bastion/tfvars.example
+│   │   └── <project>/            # Real project config and ignored artifacts
 │   └── KVM/
 │       ├── tfvars.example        # Libvirt example
 │       └── <env>/                # Generated env outputs (hosts.ini, ansible.cfg, kubeconfig, keys)

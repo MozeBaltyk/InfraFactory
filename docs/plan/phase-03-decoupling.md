@@ -13,7 +13,7 @@ untouched.
    (bastion IP on this network from the shared IPAM formula).
 4. `ansible.proxy_jump` + `cluster_nodes` output consume the input.
 5. Remove gateway/LB `depends_on` bastion (different states now).
-6. Update `env/OVH/tfvars.example` (drop the dead `bastion = {}` stub —
+6. Update `env/OVH/<project>/clusters/tfvars.example` (drop the dead `bastion = {}` stub —
    no such variable exists in the cluster stack today — document the new
    `bastion` input). libvirt/Azure untouched.
 

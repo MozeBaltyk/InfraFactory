@@ -92,7 +92,12 @@ gitops/flux/tf/<PROVIDER>/<ENV>/<ENV>.tfvars
 
 For cloud providers such as AZ and OVH, tfvars may contain provider credentials or other sensitive values. Do not commit plaintext secrets. Long term, prefer SOPS, ExternalSecrets, SealedSecrets, or an equivalent secret-management workflow.
 
-When initializing a missing file, `prepare` copies `env/<PROVIDER>/<ENV>.tfvars` if it exists. Otherwise it copies `env/<PROVIDER>/tfvars.example`. For KVM, it also appends `gitops_artifacts_mode = "gitops"` when the setting is absent.
+When initializing a missing file, `prepare` copies `env/<PROVIDER>/<ENV>.tfvars`
+if it exists, otherwise `env/<PROVIDER>/tfvars.example`. OVH instead requires
+`PROJECT`, checks `env/OVH/<PROJECT>/clusters/<ENV>.tfvars`, falls back to
+`env/OVH/example/clusters/tfvars.example`, then records the project selector in
+the GitOps tfvars. For KVM, it also appends
+`gitops_artifacts_mode = "gitops"` when the setting is absent.
 
 Example:
 

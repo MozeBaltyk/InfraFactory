@@ -11,10 +11,21 @@ variable "infra_provider" {
   }
 }
 
+variable "project" {
+  description = "Project directory selector under env/OVH"
+  type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9._-]+$", var.project))
+    error_message = "project must contain only A-Za-z0-9._-."
+  }
+}
+
 variable "ovh_endpoint" {
   description = "OVH API endpoint"
   type        = string
-  default     = "ovh-eu"
+  nullable    = true
+  default     = null
 }
 
 variable "ovh_application_key" {
@@ -44,6 +55,8 @@ variable "ovh_consumer_key" {
 variable "ovh_project_service_name" {
   description = "OVHcloud Public Cloud project service name"
   type        = string
+  nullable    = true
+  default     = null
 }
 
 # Version Mapping

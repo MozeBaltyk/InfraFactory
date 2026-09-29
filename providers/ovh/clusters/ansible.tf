@@ -56,7 +56,6 @@ module "ansible" {
 
   depends_on = [
     openstack_compute_instance_v2.vms,
-    openstack_networking_port_secgroup_associate_v2.cluster_private,
     ovh_cloud_project_loadbalancer.kube_api,
   ]
 }

@@ -32,7 +32,14 @@ done
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 provider_path="$root/providers/$module"
 # OVH cluster state lives in the clusters/ root module (bastion/ is separate).
-[[ $module == ovh ]] && provider_path="$root/providers/ovh/clusters"
+if [[ $module == ovh ]]; then
+  project=${PROJECT:-}
+  [[ $project =~ ^[A-Za-z0-9._-]+$ ]] || { printf 'PROJECT is required for OVH and must contain only A-Za-z0-9._-\n' >&2; exit 2; }
+  provider_path="$root/providers/ovh/clusters"
+  artifact_path="env/OVH/$project/clusters/$environment"
+else
+  artifact_path="env/$module/$environment"
+fi
 
 if ! state=$(TF_WORKSPACE="$environment" tofu -chdir="$provider_path" show -json 2>/dev/null); then
   printf 'No readable OpenTofu state for PROVIDER=%s ENV=%s. Deploy it first.\n' "$provider" "$environment" >&2
@@ -51,7 +58,7 @@ fi
 
 printf 'InfraFactory infrastructure\n'
 printf 'Provider: %s\nEnvironment: %s\n' "$provider" "$environment"
-printf 'Artifacts:   env/%s/%s/\n' "$module" "$environment"
+printf 'Artifacts:   %s/\n' "$artifact_path"
 
 ###
 ### Resource summary
@@ -405,7 +412,7 @@ print_table 'Object storage buckets' '%-28s %-10s %-12s %s' "$object_storage_row
 ### SSH connection info
 ###
 
-ssh_rows=$(jq -r --arg key_path "env/$module/$environment/.key.private" '
+ssh_rows=$(jq -r --arg key_path "$artifact_path/.key.private" '
   .[]
   | select(.mode == "managed" and (.type | test("^(libvirt_domain|azurerm_linux_virtual_machine|openstack_compute_instance_v2|ovh_cloud_project_instance)$")))
   | ((.values.addresses // []) | [.[] | select(.version == 4 and (.ip | test("^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$")))] | .[0].ip // "-") as $ip

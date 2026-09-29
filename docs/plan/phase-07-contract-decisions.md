@@ -22,7 +22,7 @@ Non-regression and isolation invariants:
 - Talos bypasses cloud-init, SSH node access, and Ansible. Unsupported mixed
   standalone VMs, storage injection, and cloud-init inputs fail at plan time.
 - Secrets and generated `kubeconfig`/`talosconfig` remain under
-  `env/OVH/<workspace>/`; temporary bootstrap endpoints never enter the final
+  `env/OVH/<project>/clusters/<workspace>/`; temporary bootstrap endpoints never enter the final
   `talosconfig`.
 
 Resolve these decision gates, recording lasting choices in `../decisions/`:

@@ -83,7 +83,7 @@ resource "terraform_data" "validate_bastion" {
 
     precondition {
       condition     = (length(var.admin_public_keys) > 0) == (var.probe_ssh_private_key_path != null)
-      error_message = "Provide admin_public_keys and probe_ssh_private_key_path together, or neither (to auto-generate a keypair in env/OVH/<workspace>/)."
+      error_message = "Provide admin_public_keys and probe_ssh_private_key_path together, or neither (to auto-generate a keypair in env/OVH/<project>/bastion/<workspace>/)."
     }
   }
 }

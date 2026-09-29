@@ -29,6 +29,7 @@ module "cloudinit" {
   k3s                     = var.k3s
   rke2                    = var.rke2
   ansible                 = var.ansible
+  ansible_pull_token      = var.ansible_pull_token
   package_upgrade_enabled = var.cluster.package_upgrade_enabled
   nfs                     = { client = { mounts = local.derived_nfs_client_mounts } }
 
