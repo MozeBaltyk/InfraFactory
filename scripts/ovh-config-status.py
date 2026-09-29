@@ -147,6 +147,7 @@ exec tofu -chdir="$4" output -raw public_ip
 
 
 CLUSTER_EXPRESSION = "jsonencode({id=var.cluster.id,region=var.cluster.region,cidr=var.network.private.cidr,vlan_id=try(var.network.private.vlan_id,0),nodes=var.infra.masters.count+var.infra.workers.count,bastion_public_ip=try(var.bastion.public_ip,null)})"
+BASTION_EXPRESSION = "jsonencode({region=var.bastion.region,clusters={for name,c in var.clusters:name=>{cidr=c.cidr,vlan_id=try(c.vlan_id,0),nodes=try(c.nodes,1),public_key_file=try(c.public_key_file,null)}}})"
 
 
 def cluster_state_values(repo, project_root, project, workspace):
@@ -259,29 +260,140 @@ def cross_cluster_checks(clusters, repo, project_root, project):
     return lines, hard
 
 
+def select_bastion(project_root, requested=None):
+    """Return (bastion_env, bastion_tfvars) or (None, None)."""
+    bastion_dir = project_root / "bastion"
+    if requested:
+        if not SAFE_NAME.fullmatch(requested) or requested in {".", ".."}:
+            return None, None
+        tfvars = bastion_dir / f"{requested}.tfvars"
+        return (requested, tfvars) if tfvars.is_file() else (None, tfvars)
+    candidates = sorted(bastion_dir.glob("*.tfvars"))
+    if len(candidates) != 1:
+        return None, None
+    return candidates[0].stem, candidates[0]
+
+
+def bastion_port_exists(repo, project_root, project, bastion_env, cluster_id):
+    """True/False whether the bastion state still owns this cluster's private port, None if unreadable."""
+    command = r'''
+set -euo pipefail
+if [[ -f $1 ]]; then set -a; source "$1"; set +a; fi
+export TF_DATA_DIR=$2 TF_WORKSPACE=$3
+exec tofu -chdir="$4" state list
+'''
+    result = subprocess.run(
+        [
+            "bash", "-c", command, "bash",
+            str(project_root / ".env"),
+            str(repo / ".local" / "tofu-data" / "ovh" / project / "bastion"),
+            bastion_env,
+            str(repo / "providers" / "ovh" / "bastion"),
+        ],
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+    if result.returncode:
+        return None
+    return f'openstack_networking_port_v2.bastion_private["{cluster_id}"]' in result.stdout
+
+
+def detach_violations(cluster_keys, port_exists, destroy_env):
+    """Violations that would block a clean cluster destroy (bastion detach)."""
+    lines = []
+    hard = False
+    if destroy_env in cluster_keys:
+        lines.append(("mismatch", f"cluster {destroy_env} is still in the bastion clusters map; remove it and apply the bastion before destroy"))
+        hard = True
+    else:
+        lines.append(("ok", f"cluster {destroy_env} is absent from the bastion clusters map"))
+    if port_exists is True:
+        lines.append(("mismatch", f"bastion still owns a private port for {destroy_env}; apply the bastion after removing the entry"))
+        hard = True
+    elif port_exists is False:
+        lines.append(("ok", f"bastion no longer owns a private port for {destroy_env}"))
+    else:
+        lines.append(("skipped", "bastion state unavailable (port detach not verified)"))
+    return lines, hard
+
+
+def octavia_port_ids(project_root, network_id):
+    """List live Octavia-owned ports on the network (id, ip). None if unreadable."""
+    command = r'''
+set -euo pipefail
+for f in "${OPENRC:-}" "$1"; do if [[ -n $f && -f $f ]]; then set -a; source "$f"; set +a; break; fi
+done
+openstack port list --network "$2" --device-owner Octavia -f value -c ID -c "Fixed IP Addresses"
+'''
+    result = subprocess.run(
+        ["bash", "-c", command, "bash", str(project_root / "openrc.sh"), network_id],
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+    if result.returncode:
+        return None
+    ports = []
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        parts = line.split(None, 1)
+        ports.append((parts[0], parts[1] if len(parts) > 1 else "-"))
+    return ports
+
+
+def octavia_orphan_violations(has_lb, ports):
+    """Octavia ports are expected only while the LB is still in state to be destroyed."""
+    lines = []
+    hard = False
+    if ports and has_lb:
+        lines.append(("ok", "Octavia ports present and LB still in state (destroy will clean them)"))
+    elif ports and not has_lb:
+        for pid, ip in ports:
+            lines.append(("mismatch", f"orphaned Octavia port {pid} ({ip}); no LB in state — delete it before destroy"))
+        hard = True
+    else:
+        lines.append(("ok", "no orphaned Octavia ports on cluster network"))
+    return lines, hard
+
+
 def main():
     argv = sys.argv[1:]
-    preflight = False
+    mode = "env"
+    destroy_env = None
     if argv and argv[0] == "--preflight":
-        preflight = True
+        mode = "preflight"
         argv = argv[1:]
+    elif argv and argv[0] == "--destroy":
+        if len(argv) < 2:
+            print(f"usage: {sys.argv[0]} --destroy ENV REPO PROJECT", file=sys.stderr)
+            return 2
+        mode = "destroy"
+        destroy_env = argv[1]
+        argv = argv[2:]
     if len(argv) != 2:
-        print(f"usage: {sys.argv[0]} [--preflight] REPO PROJECT", file=sys.stderr)
+        print(f"usage: {sys.argv[0]} [--preflight | --destroy ENV] REPO PROJECT", file=sys.stderr)
         return 2
     repo = Path(argv[0]).resolve()
     project = argv[1]
     if not SAFE_NAME.fullmatch(project) or project in {".", ".."}:
         return 2
+    if destroy_env is not None and (not SAFE_NAME.fullmatch(destroy_env) or destroy_env in {".", ".."}):
+        return 2
 
     project_root = repo / "env" / "OVH" / project
     bastion_dir = project_root / "bastion"
     color = colors()
-    print(f"\n{color['heading']}{'OVH preflight' if preflight else 'OVH configuration convergence'}{color['reset']}")
+    heading = {"env": "OVH configuration convergence", "preflight": "OVH preflight", "destroy": "OVH destroy preflight"}[mode]
+    print(f"\n{color['heading']}{heading}{color['reset']}")
 
     def print_status(name, message):
         print(f"  {color[name]}[{name}]{color['reset']} {message}")
 
-    # Evaluate every cluster tfvars (shared by both modes).
+    # Evaluate every cluster tfvars (shared by all modes).
     clusters = {}
     parse_failed = False
     cluster_files = sorted((project_root / "clusters").glob("*.tfvars"))
@@ -296,12 +408,48 @@ def main():
             parse_failed = True
             print_status("skipped", f"cluster {path.stem}: tfvars could not be evaluated with OpenTofu")
 
-    # Cross-cluster deploy-blocking invariants (always run).
+    if mode == "destroy":
+        bastion_env, bastion_tfvars = select_bastion(project_root, os.environ.get("BASTION_ENV"))
+        if bastion_env is None or bastion_tfvars is None:
+            print_status("missing", "bastion selection: set BASTION_ENV or provide exactly one bastion tfvars")
+            return 1
+        try:
+            bastion = evaluate_tfvars(bastion_tfvars, BASTION_EXPRESSION, ("bastion", "clusters"))
+        except (OSError, subprocess.TimeoutExpired, ValueError, json.JSONDecodeError):
+            print_status("skipped", "bastion tfvars could not be evaluated with OpenTofu")
+            return 1
+        port = bastion_port_exists(repo, project_root, project, bastion_env, destroy_env)
+        lines, hard = detach_violations(set(bastion["clusters"].keys()), port, destroy_env)
+        for status, message in lines:
+            print(f"  {color[status]}[{status}]{color['reset']} {message}")
+
+        # Octavia amphora ports orphaned by a prior LB destroy block subnet deletion.
+        state = cluster_state_values(repo, project_root, project, destroy_env)
+        network_id = None
+        has_lb = False
+        if state is not None:
+            has_lb = "ovh_cloud_project_loadbalancer.kube_api" in state
+            regions = (state.get("ovh_cloud_project_network_private.cluster") or {}).get("regions_openstack_ids") or {}
+            network_id = next(iter(regions.values()), None)
+        if network_id is None:
+            print_status("skipped", "cluster network not found in state (octavia orphan check skipped)")
+        else:
+            ports = octavia_port_ids(project_root, network_id)
+            if ports is None:
+                print_status("skipped", "OpenStack port listing unavailable (octavia orphan check skipped)")
+            else:
+                o_lines, o_hard = octavia_orphan_violations(has_lb, ports)
+                for status, message in o_lines:
+                    print(f"  {color[status]}[{status}]{color['reset']} {message}")
+                hard = hard or o_hard
+        return 1 if hard else 0
+
+    # Cross-cluster deploy-blocking invariants (env + preflight modes).
     cross_lines, hard = cross_cluster_checks(clusters, repo, project_root, project)
     for status, message in cross_lines:
         print(f"  {color[status]}[{status}]{color['reset']} {message}")
 
-    if preflight:
+    if mode == "preflight":
         if parse_failed:
             print_status("skipped", "some cluster tfvars could not be evaluated; re-check manually")
         return 1 if hard else 0
@@ -328,9 +476,8 @@ def main():
         bastion_tfvars = candidates[0]
         bastion_env = bastion_tfvars.stem
 
-    bastion_expression = "jsonencode({region=var.bastion.region,clusters={for name,c in var.clusters:name=>{cidr=c.cidr,vlan_id=try(c.vlan_id,0),nodes=try(c.nodes,1),public_key_file=try(c.public_key_file,null)}}})"
     try:
-        bastion = evaluate_tfvars(bastion_tfvars, bastion_expression, ("bastion", "clusters"))
+        bastion = evaluate_tfvars(bastion_tfvars, BASTION_EXPRESSION, ("bastion", "clusters"))
     except (OSError, subprocess.TimeoutExpired, ValueError, json.JSONDecodeError):
         print_status("skipped", "bastion tfvars could not be evaluated with OpenTofu")
         return 0

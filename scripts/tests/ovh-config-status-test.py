@@ -88,6 +88,35 @@ clusters = { alpha = { cidr = "10.0.1.0/24", vlan_id = 1, nodes = 3 } }
         self.assertFalse(hard)
         self.assertEqual({s for s, _ in lines if s != "skipped"}, {"ok"})
 
+    def test_detach_violations_block_when_bastion_references_cluster(self):
+        lines, hard = STATUS.detach_violations({"alpha", "beta"}, True, "alpha")
+        self.assertTrue(hard)
+        self.assertIn(
+            ("mismatch", "cluster alpha is still in the bastion clusters map; remove it and apply the bastion before destroy"),
+            lines,
+        )
+        self.assertIn(("mismatch", "bastion still owns a private port for alpha; apply the bastion after removing the entry"), lines)
+
+    def test_detach_violations_pass_when_detached(self):
+        lines, hard = STATUS.detach_violations({"beta"}, False, "alpha")
+        self.assertFalse(hard)
+        self.assertEqual({s for s, _ in lines}, {"ok"})
+
+    def test_octavia_orphan_blocked_only_without_lb(self):
+        ports = [("a6780655-076e-4aec-aac0-b12bf37f469b", "10.0.30.70")]
+        # LB still in state: ports are expected and cleaned during destroy.
+        lines, hard = STATUS.octavia_orphan_violations(True, ports)
+        self.assertFalse(hard)
+        self.assertEqual({s for s, _ in lines}, {"ok"})
+        # LB gone but port remains: orphan blocks subnet deletion.
+        lines, hard = STATUS.octavia_orphan_violations(False, ports)
+        self.assertTrue(hard)
+        self.assertIn(("mismatch", "orphaned Octavia port a6780655-076e-4aec-aac0-b12bf37f469b (10.0.30.70); no LB in state — delete it before destroy"), lines)
+        # No ports at all.
+        lines, hard = STATUS.octavia_orphan_violations(False, [])
+        self.assertFalse(hard)
+        self.assertEqual({s for s, _ in lines}, {"ok"})
+
 
 if __name__ == "__main__":
     unittest.main()

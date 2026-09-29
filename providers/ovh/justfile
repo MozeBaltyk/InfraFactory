@@ -63,7 +63,9 @@ replace-gateway:
     @just clusters::replace-gateway
 
 # Destroy on the provider. Pass STALE=true to skip the refresh phase.
+# Fails closed if the bastion still references this cluster (its port would block subnet deletion).
 destroy STALE='':
+    @python3 ../../scripts/ovh-config-status.py --destroy "$ENV" "$(cd ../.. && pwd)" "$PROJECT"
     @just clusters::destroy {{ quote(STALE) }}
 
 # Standalone bastion stack (explicit: never the default target).
