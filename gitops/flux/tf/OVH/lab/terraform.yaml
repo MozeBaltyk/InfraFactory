@@ -6,7 +6,7 @@ metadata:
 spec:
   interval: 10m
   workspace: lab
-  path: ./providers/ovh
+  path: ./providers/ovh/clusters
   sourceRef:
     kind: GitRepository
     name: flux-system

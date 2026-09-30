@@ -39,9 +39,13 @@ Every provider module MUST implement all of the following:
 - `k3s` block: `version`, `token`, `tls_sans`, `etcd_enabled`, `traefik_enabled`,
   `servicelb_enabled`, `local_storage_enabled`, `metrics_server_enabled`, `flannel_enabled`
 - `rke2` block: `version`, `token`, `tls_sans`, `etcd_enabled`,
-  `ingress_nginx_enabled`, `metrics_server_enabled`
+  `traefik_enabled`, `ingress_nginx_enabled`, `metrics_server_enabled`,
+  `kube_proxy_enabled`, `cni`, `ingress_type`, and `cilium` options
 - Cluster token auto-generation (writes `.token` file)
-- `ansible.pull` block: `repo`, `branch`, `playbook`, `token`, `timer`
+- `ansible.pull` block: `repo`, `branch`, `playbook`, `token`, `timer`; its
+  presence activates ansible-pull. The sensitive root `ansible_pull_token`
+  (`TF_VAR_ansible_pull_token`) optionally overrides the nested token without
+  activating ansible-pull by itself.
 
 ### Ansible Integration
 - Inventory output compatible with `providers/shared/inventory/hosts.tpl`
@@ -114,33 +118,33 @@ Every provider module MUST implement all of the following:
 
 | Capability | Details |
 |---|---|
-| **Credentials** | `ovh_endpoint`, `ovh_application_key`, `ovh_application_secret`, `ovh_consumer_key`, `ovh_project_service_name` |
-| **Authentication** | OVH keys use `OVH_APPLICATION_KEY`, `OVH_APPLICATION_SECRET`, and `OVH_CONSUMER_KEY`. Kubernetes modes require standard OpenStack `OS_*` or `clouds.yaml`/`OS_CLOUD` auth for security groups. OVH `just replace` also requires `jq` for safe topology lookup. |
+| **Credentials** | Project-scoped ignored `env/OVH/<PROJECT>/.env`, copied from `env/OVH/example/.env.example`: `OVH_ENDPOINT`, `OVH_APPLICATION_KEY`, `OVH_APPLICATION_SECRET`, `OVH_CONSUMER_KEY`, `TF_VAR_ovh_project_service_name` |
+| **Authentication** | OVH lifecycle recipes require `PROJECT`, source its `.env` and `openrc.sh` (copy the latter from `env/OVH/example/openrc.sh.example`), and preserve `OPENRC` as an override. Kubernetes modes also accept existing standard OpenStack `OS_*` or `clouds.yaml`/`OS_CLOUD` auth. OVH `just ovh::bastion::converge` requires `jq` (it reads `tofu output -json converge`). |
+| **State backend** | Lifecycle recipes default to the project-scoped S3 backend with native OpenTofu lockfiles. `BACKEND=local` is explicit isolated mode, not an outage fallback; backend changes require the documented backed-up migration. |
 | **Region** | `cluster.region` (e.g. `GRA9`) |
 | **Private network** | `network.private.cidr` (required) + `network.private.vlan_id` (optional, default `0`). Creates `ovh_cloud_project_network_private` + subnet. VLAN ID allows multiple clusters in the same region (valid range: 0–4000). |
 | **Deterministic private IPs** | Computed from `cidrhost(local.private_cidr, offset)` |
-| **NIC topology** | Normal mode: masters/workers are public (`ens3`) + private (`ens4`). Dedicated-bastion mode: one public+private bastion, while masters/workers are private-only (`ens3`) with their default route through the OVH subnet gateway and DNS `213.186.33.99`. Standalone VMs remain dual-NIC. |
+| **NIC topology** | Kubernetes modes are jump-only: masters/workers are private-only (`ens3`) with their default route through the OVH subnet gateway and DNS `213.186.33.99`. The standalone bastion is public + private (one private NIC per served cluster). Standalone VMs remain dual-NIC. |
 | **Gateway IP (subnet)** | `enable_gateway_ip` set to `local.lb_enabled` — only reserves a gateway IP on the subnet when a load balancer is present. Eliminates unnecessary DHCP default route on `ens4` when no LB is needed. |
 | **Load balancer** | `network.kube_api.load_balancer` — creates OVH Public Cloud Load Balancer (Octavia-based) with: |
 | | - `enabled` (bool, default `false`) |
 | | - `flavor` (string: `small`, `medium`, `large`, `xl`) |
 | | - `gateway_model` (string: `s`, `m`, `l`, `xl`, `2xl` — default `s`) |
-| | - `ssh_jump_enabled` (bool, default `false`) |
 | | - TCP listener on port 6443 with health monitor |
 | | - Backend pool members: all master private IPs on port 6443 |
 | | - Floating IP managed by `ovh_cloud_floating_ip` |
 | | - Gateway managed by `ovh_cloud_gateway` |
-| **Dedicated bastion** | `ssh_jump_enabled=true` creates one deterministic smallest compatible available hourly Ubuntu 24.04 bastion flavor (vCPU/RAM/disk/name/ID order). The LB remains TCP/6443-only. `bastion` output includes public/private IPs and ready-to-use `ssh -i env/OVH/<workspace>/.key.private ... -o ProxyCommand='ssh -W %h:%p ...' <node>` commands. K3s/RKE2 nodes are reached through a self-contained `ProxyCommand` configured in `ansible.cfg` (`ssh_common_args`). |
-| **API endpoint** | `network.kube_api.endpoint` — resolution priority: LB floating IP > literal value > DNS name > first master public IP > first master private IP |
+| **Dedicated bastion** | `var.bastion = { public_ip }` (required for Kubernetes) points the cluster at the standalone bastion (`providers/ovh/bastion/`, own state, serves many clusters). The LB carries TCP/6443 (API) plus TCP/80+443 workload ingress as L4 passthrough to the masters (TLS at the ingress controller). K3s/RKE2 nodes are reached through a self-contained `ProxyCommand` configured in `ansible.cfg` (`ssh_common_args`); day-2 keys/netplan/`PermitOpen` converge via the `bastion_converge` role (`just ovh::bastion::converge KEY`). |
+| **API endpoint** | `network.kube_api.endpoint` — Kubernetes is jump-only, so the endpoint is `lb_ip` (LB floating IP) or `dns` (`dns.name`); no public-IP endpoint exists for private-only nodes. |
 | **Image discovery** | Search patterns matching image names in region (filters nvidia, prefers non-UEFI) |
 | **Flavor discovery** | Flavor IDs looked up by name from `data.ovh_cloud_project_flavors` |
 | **Public IP validation** | Validates all public-attached VMs received public IPv4 addresses |
-| **Standalone VMs** | Optional `infra.vms` block provisions non-cluster VMs with public and private attachment in current code. OVH supports VM-only deployments with `cloud_init_selected = "default"`, `masters.count = 0`, `workers.count = 0`, and `vms.count > 0`. In `network.private.mode = "existing"`, the provider discovers exactly one private network by `vlan_id + region` and one subnet by `cidr`; static `infra.vms.ip_addresses` are required. |
+| **Standalone VMs** | Optional `infra.vms` block provisions non-cluster VMs with public and private attachment in current code. OVH supports VM-only deployments with `cloud_init_selected = "default"`, `masters.count = 0`, `workers.count = 0`, and `vms.count > 0`; their private IPs come from the same deterministic allocation as cluster nodes. |
 | **Gateway/FIP lifecycle** | Native OVH resources are associated to the load balancer. OpenTofu orders load-balancer deletion before gateway/FIP deletion and gateway deletion before the managed subnet; FIP and subnet deletion are not ordered relative to each other. |
-| **Ansible inventory** | Public IP based normally; dedicated-bastion mode uses stable private-node IPs with SSH transport configured entirely in `ansible.cfg` (relative `private_key_file`, `host_key_checking = false`, and a self-contained `ssh_common_args = -o ProxyCommand='ssh -W %h:%p -q ...'` that carries its own key/host-key options through the bastion), while `[VMS]` remains direct-public. |
-| **Security group** | Normal mode is unchanged. Jump mode uses a separate bastion SG (TCP/22 from operator CIDRs) and a private cluster SG: TCP/22 only from the bastion SG, east-west TCP except 22, UDP, ICMP, and LB/backend TCP/6443. Standalone VMs are excluded. |
+| **Ansible inventory** | Public IP based for VM-only deployments; Kubernetes modes use stable private-node IPs with SSH transport configured entirely in `ansible.cfg` (relative `private_key_file`, `host_key_checking = false`, and a self-contained `ssh_common_args = -o ProxyCommand='ssh -W %h:%p -q ...'` that carries its own key/host-key options through the bastion), while `[VMS]` remains direct-public. |
+| **Security group** | The cluster SG (Kubernetes modes) allows TCP/22 only from the bastion's reserved IP, east-west TCP except 22, UDP, ICMP, and LB/backend TCP/6443, 80, and 443. The bastion SG (own state) allows TCP/22 from operator CIDRs. Standalone VMs are excluded from the jump rules. |
 | **Deploy-time checks** | `checks.tf`: multi-master requires private CIDR, LB requires private CIDR, LB flavor exists, CIDR provides enough IPs |
-| **Full-graph replace** | Root `just replace NAME` resolves normal `vms`, jump-mode `private_cluster`, or the explicit `bastion` name and applies an un-targeted `-replace` so dependent lifecycle remains included. The first K3s/RKE2 controller is rejected because automatic datastore rejoin is unsafe. |
+| **Targeted replace** | `just ovh::replace NAME` (root `just replace` with `PROVIDER=OVH`) applies with `-target` + `-replace` on `openstack_compute_instance_v2.vms["NAME"]`. The first K3s/RKE2 controller is refused by the recipe because automatic datastore rejoin is unsafe. |
 
 ---
 
@@ -163,16 +167,15 @@ Every provider module MUST implement all of the following:
 - Custom root disk sizing: blocked at 40 GB
 - Inventory is public-IP based unless dedicated-bastion mode is enabled; standalone `infra.vms` are always emitted in `[VMS]` with direct public access
 - Standalone `infra.vms` are public-attached and private-attached in current code; do not assume private-only VMs
-- `network.private.mode = "existing"` is limited to VM-only default deployments with static `infra.vms.ip_addresses`
 - Extra/root disk support remains unavailable because the OVH instance resource does not expose a complete native create/attach/resize lifecycle
-- Enabling or disabling `ssh_jump_enabled` on an existing cluster is a disruptive rebuild: back up etcd/workloads first, schedule downtime, save/review the full authenticated plan, then apply. Root disks and node public IPs are replaced; blue/green migration is required when downtime is unacceptable.
-- Bastion recovery: use `PROVIDER=OVH ENV=<env> just replace bastion` (the generated `<cluster-id>-bastion` name also resolves). Replace non-bootstrap private nodes by their generated name. Ansible SSH uses the relative `private_key_file` from `ansible.cfg` with `host_key_checking` disabled, so replacement needs no known-hosts cleanup; reconnect with the `ssh -i env/OVH/<env>/.key.private ... -o ProxyCommand='ssh -W %h:%p ...' <ip>` command from the `bastion` output. Host-key verification is deliberately disabled for jump-mode SSH (option B): connections trust the operator network and OVH SG/ingress controls instead of a TOFU host-key anchor.
+- Enabling jump on a pre-existing public cluster is a disruptive rebuild: back up etcd/workloads first, schedule downtime, save/review the full authenticated plan, then apply. Root disks and node public IPs are replaced; blue/green migration is required when downtime is unacceptable.
+- Bastion recovery: re-apply the bastion stack (VM-only teardown preserves ports/IPs via `just ovh::bastion::destroy-vm`) or replace non-bootstrap private nodes by their generated name once a replace recipe exists. Ansible SSH uses the relative `private_key_file` from `ansible.cfg` with `host_key_checking` disabled, so replacement needs no known-hosts cleanup; reconnect with the `ssh -i env/OVH/<env>/.key.private ... -o ProxyCommand='ssh -W %h:%p ...' <ip>` command from the `cluster_nodes` output. Host-key verification is deliberately disabled for jump-mode SSH (option B): connections trust the operator network and OVH SG/ingress controls instead of a TOFU host-key anchor.
 - Bootstrap-controller recovery: `just replace` refuses the first K3s/RKE2 controller. Before losing/rebuilding it, take and verify an etcd snapshot and follow the distribution restore procedure: [K3s backup/restore](https://docs.k3s.io/datastore/backup-restore) or [RKE2 backup/restore](https://docs.rke2.io/datastore/backup_restore). Automatic etcd membership/rejoin is not implemented.
 - Dedicated-bastion mode remains plan-validated only until paid live K3s and RKE2 first-boot, ProxyCommand transport, replacement, and destroy/orphan tests pass.
 - If CIDR or bastion failure prevents SSH, use the OVH Control Panel instance console/rescue mode with scoped OVH/OpenStack credentials to repair ingress or replace the bastion. Do not add a direct-node public NIC, LB TCP/22 listener, or static password as a backdoor.
 
 ### State security
-- Local OpenTofu state contains generated private keys, cluster tokens, and provider data. Production/team deployments require a user-selected encrypted remote backend with state locking; no backend is prescribed by this repository.
+- OpenTofu state contains generated private keys, cluster tokens, and provider data. OVH lifecycle recipes prescribe the project-scoped S3 backend with native locking by default; local state is explicit isolated mode only. Other providers retain their configured backend behavior.
 
 ---
 

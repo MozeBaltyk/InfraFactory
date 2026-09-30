@@ -1,6 +1,10 @@
 .terraform
+providers/ovh/*/backend.generated.tf
+providers/ovh/*/.backend.generated.*
 .terraform.lock.hcl
 *.tfvars
+!env/OVH/*/clusters/*.tfvars
+!env/OVH/*/bastion/*.tfvars
 *.tfplan
 *.tfstate*
 *.key.*
@@ -11,8 +15,11 @@ kubeconfig
 .token
 .local
 .cache/
-env/OVH/*.openrc
-env/OVH/*.openrc.local
-env/OVH/openrc.sh
+env/OVH/**/.env
+env/OVH/**/openrc.sh
+env/OVH/**/*.openrc
+env/OVH/**/*.openrc.local
+env/OVH/*/clusters/*/
+env/OVH/*/bastion/*/
 talosconfig
 __pycache__/

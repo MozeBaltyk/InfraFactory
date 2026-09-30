@@ -120,6 +120,15 @@ variable "infra" {
         filesystem = optional(string, "ext4")
         label      = string
       })), [])
+      # NFS client mounts applied to every master (role membership is the
+      # target selector; no per-VM `nodes` list needed).
+      nfs_mounts = optional(list(object({
+        server      = string
+        export_path = string
+        mount_path  = string
+        options     = optional(string, "defaults,_netdev")
+        read_only   = optional(bool, false)
+      })), [])
     })
 
     workers = object({
@@ -133,6 +142,13 @@ variable "infra" {
         filesystem = optional(string, "ext4")
         label      = string
       })), [])
+      nfs_mounts = optional(list(object({
+        server      = string
+        export_path = string
+        mount_path  = string
+        options     = optional(string, "defaults,_netdev")
+        read_only   = optional(bool, false)
+      })), [])
     })
 
     vms = optional(object({
@@ -145,6 +161,13 @@ variable "infra" {
         mount_path = string
         filesystem = optional(string, "ext4")
         label      = string
+      })), [])
+      nfs_mounts = optional(list(object({
+        server      = string
+        export_path = string
+        mount_path  = string
+        options     = optional(string, "defaults,_netdev")
+        read_only   = optional(bool, false)
       })), [])
     }), { count = 0 })
   })
@@ -210,6 +233,7 @@ locals {
       disk_size         = var.infra.masters.disk_size
       extra_disks       = try(var.infra.masters.extra_disks, [])
       user_data_enabled = var.infra.masters.user_data_enabled
+      nfs_mounts        = try(var.infra.masters.nfs_mounts, [])
     }
   ]
 
@@ -221,6 +245,7 @@ locals {
       disk_size         = var.infra.workers.disk_size
       extra_disks       = try(var.infra.workers.extra_disks, [])
       user_data_enabled = var.infra.workers.user_data_enabled
+      nfs_mounts        = try(var.infra.workers.nfs_mounts, [])
     }
   ]
 
@@ -232,6 +257,7 @@ locals {
       disk_size         = var.infra.vms.disk_size
       extra_disks       = try(var.infra.vms.extra_disks, [])
       user_data_enabled = var.infra.vms.user_data_enabled
+      nfs_mounts        = try(var.infra.vms.nfs_mounts, [])
     }
   ]
 

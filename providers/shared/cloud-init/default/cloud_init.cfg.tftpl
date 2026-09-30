@@ -42,9 +42,33 @@ packages:
   - ${p}
 %{ endfor ~}
 %{ endif }
+%{ if length(nfs_client_mounts) > 0 ~}
+  - nfs-common
+%{ endif ~}
 
-%{ if ansible_pull_repo != null && ansible_pull_repo != "" ~}
 write_files:
+  # Bound apt fetches: a stalled mirror must fail fast (2026-09-18: an
+  # unattended apt-get update wedged two first boots for 85+ min with no
+  # timeout, parking cloud-init forever). Applies to every apt run.
+  - path: /etc/apt/apt.conf.d/99-infrafactory-timeouts
+    permissions: "0644"
+    content: |
+      Acquire::http::Timeout "30";
+      Acquire::https::Timeout "30";
+      Acquire::Retries "3";
+%{ if length(object_storage_credentials) > 0 ~}
+%{ for c in object_storage_credentials ~}
+  - path: /etc/infrafactory/object-storage/${c.name}.env
+    permissions: "0600"
+    content: |
+      AWS_ACCESS_KEY_ID=${c.access_key_id}
+      AWS_SECRET_ACCESS_KEY=${c.secret_access_key}
+      AWS_DEFAULT_REGION=${c.region}
+      AWS_ENDPOINT_URL=https://${c.endpoint}
+      S3_BUCKET=${c.bucket}
+%{ endfor ~}
+%{ endif ~}
+%{ if ansible_pull_repo != null && ansible_pull_repo != "" ~}
   - path: /etc/sysctl.d/99-kubernetes.conf
     content: |
       fs.inotify.max_user_watches=1048576
@@ -65,6 +89,8 @@ write_files:
       #!/bin/bash
       set -e
 
+      export HOME=/root
+
       LOG_FILE="/var/log/ansible-pull.log"
       exec > >(tee -a "$LOG_FILE") 2>&1
 
@@ -72,16 +98,16 @@ write_files:
 
       if ! command -v $HOME/.local/bin/ansible-pull >/dev/null 2>&1; then
         curl -Ls https://astral.sh/uv/install.sh | sh
-        $HOME/.local/bin/uv tool install ansible-core==2.20.0 
+        $HOME/.local/bin/uv tool install ansible==14.4.0 
       fi
 
       %{ if ansible_pull_token != null && ansible_pull_token != "" ~}
-      REPO_URL="https://${ansible_pull_token}@${ansible_pull_repo}"
+      REPO_URL="https://oauth2:${ansible_pull_token}@${ansible_pull_repo}"
       %{ else ~}
       REPO_URL="https://${ansible_pull_repo}"
       %{ endif ~}
 
-      $HOME/.local/bin/uv tool run --from ansible-core ansible-pull \
+      $HOME/.local/bin/uv tool run --from ansible ansible-pull \
           -U "$REPO_URL" \
           -C "${ansible_pull_branch}" \
           -i localhost, \
@@ -156,6 +182,18 @@ runcmd:
   - [ systemctl, enable, qemu-guest-agent.service ]
   - [ systemctl, start, --no-block, qemu-guest-agent.service ]
   - [ domainname, ${domain} ]
+%{ if length(nfs_client_mounts) > 0 ~}
+  # cloud-init's own `mounts` module runs (and would fail) before packages
+  # are installed on this image, so the fstab entry and mount are handled
+  # entirely here instead, after nfs-common is guaranteed to be present.
+  - [ apt-get, update, -qq ]
+  - [ env, DEBIAN_FRONTEND=noninteractive, apt-get, install, -y, nfs-common ]
+%{ for m in nfs_client_mounts ~}
+  - [ mkdir, -p, "${m.mount_path}" ]
+  - [ bash, -c, "grep -qF ${m.mount_path} /etc/fstab || echo '${m.server}:${m.export_path} ${m.mount_path} nfs ${m.options}${m.read_only ? ",ro" : ""} 0 0' >> /etc/fstab" ]
+%{ endfor ~}
+  - [ bash, -c, "for i in 1 2 3 4 5; do mount -a && break; sleep 5; done" ]
+%{ endif ~}
 %{ if ansible_pull_repo != null && ansible_pull_repo != "" ~}
   - [ /usr/local/bin/run-ansible-pull.sh ]
 %{ if ansible_pull_timer != null && ansible_pull_timer != "" ~}

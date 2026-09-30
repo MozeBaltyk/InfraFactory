@@ -1,0 +1,50 @@
+# ADR-01 — OVH bastion split (standalone bastion + cluster stacks)
+
+**Date:** 2026-09-18
+
+Distilled from `docs/refactoring/01-bastion-split-analysis.md` (removed after
+dispatch). Status: Phases 0–4 implemented offline on branch `ovh-refactor`;
+P5 live acceptance and P6 closeout remain tracked in `docs/plan/`.
+
+Later implementation note: `admin_public_keys` is no longer mandatory when the
+bastion stack generates its fallback admin/probe keypair. The artifact-sync
+workflow also copies each cluster's full artifact directory (including private
+keys and tokens) to `/mnt/guests-info`; project credentials and tfvars remain
+local. These operational additions supersede the narrower key-flow statements
+below without changing the split-state decision.
+
+## Context
+
+The OVH bastion was embedded in the cluster workspace (`bastion.tf`, gated on
+`lb_ssh_jump_enabled`) with six couplings: bastion IP from cluster counts,
+`PermitOpen` enumerating node IPs, SG `remote_group_id` reference,
+gateway/LB `depends_on` (bastion replacement churned gateway + LB), Ansible
+`proxy_jump` on the embedded IP, and VM replacement on any cloud-init change.
+
+## Decisions
+
+1. **One mutualized bastion, own deployment.** `providers/ovh/bastion/` as an
+   independent root module with its own tfvars; serves many clusters by
+   attaching to many private networks.
+2. **Per-cluster SSH keys, terraform-generated** into
+   `env/OVH/<project>/clusters/<cluster>/.key.{private,pub}`. Rejected: one bastion-generated
+   keypair for all clusters (single skeleton key, bastion holding the one
+   private key that opens everything).
+3. **Only public keys flow cluster → bastion.** The bastion forwards bytes
+   (`AllowTcpForwarding local`, `ip_forward=0`); the laptop holds the private
+   key end-to-end. The stacks have independent state and no cross-stack
+   `terraform_remote_state`; both may use the same project-scoped S3 service
+   under separate keys.
+4. **Bastion-first bootstrap.** Born standalone (public NIC + operator admin
+   key only, `clusters = {}`); clusters attach iteratively. Hence a
+   permanent `admin_public_keys` seed is mandatory, and the empty-cluster
+   `PermitOpen` restriction is omitted (empty allowlist would lock out
+   forwarding).
+5. **Reserved bastion IP by convention.** Last usable host of each cluster
+   CIDR, computed independently by both stacks via `providers/shared/modules/ipam`
+   — no shared state. Node allocation must never reach it (guarded).
+6. **Hot-attach, never replace.** Private NICs are managed ports +
+   `interface_attach`; day-2 key/netplan/`PermitOpen` convergence is
+   Ansible-owned with `ignore_changes = [user_data]` and no replace trigger.
+7. **Split is OVH-specific.** libvirt/Azure keep the embedded model; one line
+   in `providers/README` + test matrix.

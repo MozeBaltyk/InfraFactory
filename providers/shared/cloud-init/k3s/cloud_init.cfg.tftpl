@@ -36,8 +36,32 @@ packages:
   - ${p}
 %{ endfor ~}
 %{ endif }
+%{ if length(nfs_client_mounts) > 0 ~}
+  - nfs-common
+%{ endif ~}
 
 write_files:
+  # Bound apt fetches: a stalled mirror must fail fast (2026-09-18: an
+  # unattended apt-get update wedged two first boots for 85+ min with no
+  # timeout, parking cloud-init forever). Applies to every apt run.
+  - path: /etc/apt/apt.conf.d/99-infrafactory-timeouts
+    permissions: "0644"
+    content: |
+      Acquire::http::Timeout "30";
+      Acquire::https::Timeout "30";
+      Acquire::Retries "3";
+%{ if length(object_storage_credentials) > 0 ~}
+%{ for c in object_storage_credentials ~}
+  - path: /etc/infrafactory/object-storage/${c.name}.env
+    permissions: "0600"
+    content: |
+      AWS_ACCESS_KEY_ID=${c.access_key_id}
+      AWS_SECRET_ACCESS_KEY=${c.secret_access_key}
+      AWS_DEFAULT_REGION=${c.region}
+      AWS_ENDPOINT_URL=https://${c.endpoint}
+      S3_BUCKET=${c.bucket}
+%{ endfor ~}
+%{ endif ~}
   - path: /etc/sysctl.d/99-kubernetes.conf
     content: |
       fs.inotify.max_user_watches=1048576
@@ -112,7 +136,7 @@ write_files:
 %{ endif ~}
 
   - path: /usr/local/bin/k3s-install.sh
-    permissions: "0750"
+    permissions: "0755"
     content: |
       #!/bin/bash
       set -eo pipefail
@@ -124,21 +148,6 @@ write_files:
         export INSTALL_K3S_VERSION="$K3S_VERSION"
         # Will attempt to download from the stable channel if not specified.
       fi
-
-      install_k3s() {
-        role="$1"
-        for attempt in 1 2 3 4 5; do
-          echo "K3s $role install attempt $attempt of 5"
-          if curl --connect-timeout 5 --max-time 30 --retry 3 --retry-delay 2 --retry-all-errors -sfL "$K3S_INSTALL_URL" | INSTALL_K3S_EXEC="$role" sh -s -; then
-            return 0
-          fi
-          if [[ "$attempt" -eq 5 ]]; then
-            echo "K3s $role install failed after 5 attempts" >&2
-            return 1
-          fi
-          sleep 10
-        done
-      }
 
 %{ if !is_first_master ~}
       wait_for_first_master() {
@@ -164,17 +173,34 @@ write_files:
         exit 1
       fi
 
-      echo "Installing K3s node role: ${node_role}"
+      install_k3s() {
+        local role="$1"
+        for attempt in 1 2 3 4 5; do
+          echo "K3s $role install attempt $attempt of 5"
+          if curl --connect-timeout 5 --max-time 30 --retry 3 --retry-delay 2 --retry-all-errors -sfL "$K3S_INSTALL_URL" | INSTALL_K3S_EXEC="$role" sh -s -; then
+            return 0
+          fi
+          echo "K3s install attempt $attempt failed, retrying" >&2
+          sleep 10
+        done
+        echo "K3s install failed after 5 attempts" >&2
+        return 1
+      }
+
+      echo "Installing K3s: ${node_role}"
 %{ if !is_first_master ~}
       wait_for_first_master
 %{ endif ~}
-%{ if node_role == "master" }
-      echo "Joining additional master"
-      install_k3s server
-%{ else }
-      echo "Joining worker node"
-      install_k3s agent
-%{ endif }
+
+%{ if node_role == "master" ~}
+      install_k3s "server"
+      systemctl enable k3s
+      systemctl start --no-block k3s
+%{ else ~}
+      install_k3s "agent"
+      systemctl enable k3s-agent
+      systemctl start --no-block k3s-agent
+%{ endif ~}
 
 # --- Ansible Pull setup ---
 %{ if ansible_pull_repo != null && ansible_pull_repo != "" ~}
@@ -184,6 +210,8 @@ write_files:
       #!/bin/bash
       set -e
 
+      export HOME=/root
+
       LOG_FILE="/var/log/ansible-pull.log"
       exec > >(tee -a "$LOG_FILE") 2>&1
 
@@ -191,16 +219,16 @@ write_files:
 
       if ! command -v $HOME/.local/bin/ansible-pull >/dev/null 2>&1; then
         curl -Ls https://astral.sh/uv/install.sh | sh
-        $HOME/.local/bin/uv tool install ansible-core==2.20.0 
+        $HOME/.local/bin/uv tool install ansible==14.4.0 
       fi
 
       %{ if ansible_pull_token != null && ansible_pull_token != "" ~}
-      REPO_URL="https://${ansible_pull_token}@${ansible_pull_repo}"
+      REPO_URL="https://oauth2:${ansible_pull_token}@${ansible_pull_repo}"
       %{ else ~}
       REPO_URL="https://${ansible_pull_repo}"
       %{ endif ~}
 
-      $HOME/.local/bin/uv tool run --from ansible-core ansible-pull \
+      $HOME/.local/bin/uv tool run --from ansible ansible-pull \
           -U "$REPO_URL" \
           -C "${ansible_pull_branch}" \
           -i localhost, \
@@ -274,6 +302,18 @@ runcmd:
   - [ systemctl, enable, qemu-guest-agent.service ]
   - [ systemctl, start, --no-block, qemu-guest-agent.service ]
   - [ domainname, ${domain} ]
+%{ if length(nfs_client_mounts) > 0 ~}
+  # cloud-init's own `mounts` module runs (and would fail) before packages
+  # are installed on this image, so the fstab entry and mount are handled
+  # entirely here instead, after nfs-common is guaranteed to be present.
+  - [ apt-get, update, -qq ]
+  - [ env, DEBIAN_FRONTEND=noninteractive, apt-get, install, -y, nfs-common ]
+%{ for m in nfs_client_mounts ~}
+  - [ mkdir, -p, "${m.mount_path}" ]
+  - [ bash, -c, "grep -qF ${m.mount_path} /etc/fstab || echo '${m.server}:${m.export_path} ${m.mount_path} nfs ${m.options}${m.read_only ? ",ro" : ""} 0 0' >> /etc/fstab" ]
+%{ endfor ~}
+  - [ bash, -c, "for i in 1 2 3 4 5; do mount -a && break; sleep 5; done" ]
+%{ endif ~}
   - [ /usr/local/bin/k3s-install.sh ]
 %{ if ansible_pull_repo != null && ansible_pull_repo != "" ~}
   - [ /usr/local/bin/run-ansible-pull.sh ]

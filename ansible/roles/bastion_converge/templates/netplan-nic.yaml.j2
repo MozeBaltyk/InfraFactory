@@ -1,0 +1,19 @@
+# {{ ansible_managed }} — per-cluster private NIC (mirrors birth cloud-init,
+# except the match: hot-attached NICs enumerate unpredictably in the guest,
+# so match the Neutron port MAC and rename to the conventional iface).
+network:
+  version: 2
+  ethernets:
+    ens3:
+      match:
+        name: "ens3"
+      optional: true
+      dhcp4: true
+    {{ nic.iface }}:
+      match:
+        macaddress: "{{ nic.mac | lower }}"
+      set-name: "{{ nic.iface }}"
+      optional: true
+      dhcp4: false
+      addresses:
+        - {{ nic.address }}/{{ nic.prefix }}

@@ -21,7 +21,8 @@ host_key_checking = false
 display_skipped_hosts = false
 deprecation_warnings = false
 force_color       = True
-stdout_callback   = yaml
+stdout_callback   = default
+result_format     = yaml
 private_key_file = ./.key.private
 EOT
     , var.proxy_jump == null ? "" : <<-EOT
@@ -153,3 +154,4 @@ resource "null_resource" "fetch_kubeconfig" {
     null_resource.reconcile_tls_san
   ]
 }
+

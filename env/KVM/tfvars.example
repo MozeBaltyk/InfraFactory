@@ -22,6 +22,21 @@ infra = {
     #  { size_gb = 20, mount_path = "/data", filesystem = "ext4", label = "data" },
     #  { size_gb = 2, mount_path = "/logs", filesystem = "ext4", label = "logs" }
     #]
+
+    # Optional NFS client mounts, applied to every master (no per-VM `nodes`
+    # list -- role membership is the target selector). `server` can point at
+    # any reachable NFS server/endpoint, so keep TCP/UDP 2049 restricted at
+    # the network level. Define the same key under workers/vms below for
+    # those roles too; each role's mounts are independent.
+    #nfs_mounts = [
+    #  {
+    #    server      = "10.0.0.11"
+    #    export_path = "/srv/nfs/shared"
+    #    mount_path  = "/mnt/shared"
+    #    options     = "defaults,_netdev" # Optional
+    #    read_only   = false              # Optional
+    #  }
+    #]
   }
   workers = {
     count         = 0
@@ -29,9 +44,10 @@ infra = {
     disk_size     = 10
     memory_gb     = 4
     #user_data_enabled = true # Optional
-    #mac_addresses = []  # Optionnal 
-    #ip_addresses = []   # Optionnal 
-    #extra_disks = []    # Optionnal 
+    #mac_addresses = []  # Optionnal
+    #ip_addresses = []   # Optionnal
+    #extra_disks = []    # Optionnal
+    #nfs_mounts = []
   }
   vms = {
     count         = 0
@@ -92,6 +108,8 @@ os = {
 #   "open-iscsi"
 # ]
 
+# NFS client mounts: see infra.masters/workers.nfs_mounts above.
+
 # if cloud_init_selected=k3s
 #k3s = {
 #  version           = "v1.34.5+k3s1" # Optional
@@ -113,7 +131,8 @@ os = {
 #  token                  = "shared-token"    # Optional
 #  tls_sans               = ["dns1", "ip1"]   # Optional
 #  etcd_enabled           = true              # Optional
-#  ingress_nginx_enabled  = true              # Optional
+#  traefik_enabled        = true              # Optional (default: true)
+#  ingress_nginx_enabled  = false             # Optional (default: false)
 #  metrics_server_enabled = true              # Optional
 #  cni                    = "cilium"          # Optional: "calico", "canal", "cilium", "none" (null = RKE2 default)
 #  ingress_type           = "traefik"         # Optional: "ingress-nginx", "traefik", "cilium", "none" (null = RKE2 default)
@@ -160,7 +179,7 @@ os = {
 #    repo     = "https://github.com/MozeBaltyk/InfraFactory.git"
 #    branch   = "main"
 #    playbook = "providers/shared/ansible/local.yml"
-#    token    = "ghp_xxxxxxxxxxxx" # Optional
 #    timer    = "1h"               # Optional
 #  }
 #}
+# For a private repository, export TF_VAR_ansible_pull_token; do not commit a token here.

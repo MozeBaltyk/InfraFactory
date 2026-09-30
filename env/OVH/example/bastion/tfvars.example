@@ -1,0 +1,53 @@
+# Copy env/OVH/example/.env.example to env/OVH/<PROJECT>/.env and fill in the OVH credentials.
+# Copy env/OVH/example/openrc.sh.example to env/OVH/<PROJECT>/openrc.sh and fill
+# in the OpenStack credentials, or use clouds.yaml/OS_CLOUD.
+
+bastion = {
+  id       = "bastion"
+  domain   = "local"
+  timezone = "Europe/Paris"
+  region   = "GRA11"
+  username = "localadmin"
+}
+
+# Bootstrap access. Optional: provide BOTH admin_public_keys and
+# probe_ssh_private_key_path, or NEITHER. When both are omitted, the bastion
+# auto-generates a keypair into env/OVH/<PROJECT>/bastion/<BASTION_ENV>/.key.{pub,private} via
+# the shared ssh-keys module and uses it as the admin key + readiness-probe
+# key. Cluster pubkeys are appended afterwards by Ansible convergence.
+# admin_public_keys = [
+#   "ssh-ed25519 AAAA... operator@laptop",
+# ]
+
+# Local private key matching one of the keys above, used only by the
+# readiness probe. Absolute path. Omit to use the generated .key.private.
+# probe_ssh_private_key_path = "/home/operator/.ssh/id_ed25519"
+
+# Required: explicit operator/VPN public CIDRs for bastion SSH (:22).
+# The caller's current IP is auto-added on top.
+ingress_cidrs = [
+  # "203.0.113.10/32",
+]
+
+# Served clusters, attached one by one AFTER each cluster's private network
+# exists (bastion-first workflow). Empty at birth: the bastion boots with a
+# public NIC only and no PermitOpen restriction.
+clusters = {
+  # simpl-int-nonprodlike-01 = {
+  #   cidr    = "10.0.20.0/24"
+  #   vlan_id = 20
+  #   nodes = 2 # must match the cluster total node count (sizes PermitOpen)
+  #   # public_key_file is optional: defaults to env/OVH/<PROJECT>/clusters/<key>/.key.pub
+  #   # (the key above the map KEY — equals the cluster workspace name).
+  # }
+}
+
+# ansible = {
+#   pull = {
+#     repo     = "https://github.com/MozeBaltyk/InfraFactory.git"
+#     branch   = "main"
+#     playbook = "providers/shared/ansible/local.yml"
+#     timer    = "1h"
+#   }
+# }
+# For a private repository, export TF_VAR_ansible_pull_token; do not commit a token here.

@@ -1,0 +1,137 @@
+set shell := ["bash", "-eu", "-o", "pipefail", "-c", "umask 077; exec bash -eu -o pipefail -c \"$1\"", "--"]
+
+ENV_RAW := env_var_or_default("ENV", "lab")
+ENV := if ENV_RAW == "." { error("ENV must not be . or ..") } else if ENV_RAW == ".." { error("ENV must not be . or ..") } else if ENV_RAW =~ '^[A-Za-z0-9._-]+$' { ENV_RAW } else { error("ENV must be a nonempty path-safe workspace identifier containing only A-Za-z0-9._-") }
+PROJECT_RAW := env_var_or_default("PROJECT", "")
+PROJECT := PROJECT_RAW
+BACKEND_RAW := env_var_or_default("BACKEND", "s3")
+BACKEND := if BACKEND_RAW =~ '^(s3|local)$' { BACKEND_RAW } else { error("BACKEND must be s3 or local") }
+PROJECT_PATH := "../../../env/OVH/" + PROJECT
+ENV_TFVARS_PATH := PROJECT_PATH + "/clusters/" + ENV + ".tfvars"
+
+# Prints a shell snippet that loads shared OVH credentials and, when needed,
+# OpenStack credentials. Callers eval it in their own shell:
+#   eval "$(just _source-openrc)"
+# (One recipe cannot source for another: each just recipe runs in its own
+# shell process, so exports would evaporate on exit. The path-or-snippet has
+# to cross that boundary as text.)
+[private]
+_require-project:
+    @project={{ quote(PROJECT) }}; \
+      [[ "$project" =~ ^[A-Za-z0-9._-]+$ && "$project" != . && "$project" != .. ]] || { echo "PROJECT is required and must be a path-safe identifier containing only A-Za-z0-9._-" >&2; exit 2; }
+
+[private]
+_source-openrc:
+    @if test -f {{ quote(PROJECT_PATH + "/.env") }}; then printf 'set -a; source %q; set +a\n' {{ quote(PROJECT_PATH + "/.env") }}; fi; \
+      printf 'export TF_VAR_project=%q\n' {{ quote(PROJECT) }}; \
+      printf 'export TF_DATA_DIR=%q\n' "$(cd ../../.. && pwd)/.local/tofu-data/ovh/{{ PROJECT }}/clusters"; \
+      for openrc in "${OPENRC:-}" {{ quote(PROJECT_PATH + "/openrc.sh") }}; do \
+        if test -n "$openrc" && test -f "$openrc"; then printf 'set -a; source %q; set +a\n' "$openrc"; exit 0; fi; \
+      done
+
+validate: _require-project
+    @tofu fmt -check
+    @TF_VAR_project={{ quote(PROJECT) }} tofu init -backend=false
+    @TF_VAR_project={{ quote(PROJECT) }} tofu validate
+
+backend-init: _require-project
+    @eval "$(just _source-openrc)"; \
+      bash ../../../scripts/ovh/backend.sh init clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}
+
+backend-status: _require-project
+    @bash ../../../scripts/ovh/backend.sh status clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}
+
+backend-migrate FROM TO: _require-project
+    @eval "$(just _source-openrc)"; \
+      bash ../../../scripts/ovh/backend.sh migrate clusters {{ quote(PROJECT) }} {{ quote(FROM) }} {{ quote(TO) }}
+
+plan NAME='': _require-project
+    @eval "$(just _source-openrc)"; \
+      bash ../../../scripts/ovh/backend.sh check clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
+      tofu workspace select {{ quote(ENV) }} || tofu workspace new {{ quote(ENV) }}; \
+      name={{ quote(NAME) }}; \
+      target_args=(); \
+      if test -n "$name"; then \
+        case "$name" in \
+          *[!A-Za-z0-9._-]*|'') echo "Invalid VM name: $name" >&2; exit 1 ;; \
+        esac; \
+        target_args=(-target="openstack_compute_instance_v2.vms[\"$name\"]"); \
+      fi; \
+      tofu plan -var-file={{ quote(ENV_TFVARS_PATH) }} "${target_args[@]}"
+
+deploy NAME='': _require-project
+    @eval "$(just _source-openrc)"; \
+      bash ../../../scripts/ovh/backend.sh check clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
+      tofu workspace select {{ quote(ENV) }} || tofu workspace new {{ quote(ENV) }}; \
+      name={{ quote(NAME) }}; \
+      target_args=(); \
+      if test -n "$name"; then \
+        case "$name" in \
+          *[!A-Za-z0-9._-]*|'') echo "Invalid VM name: $name" >&2; exit 1 ;; \
+        esac; \
+        target_args=(-target="openstack_compute_instance_v2.vms[\"$name\"]"); \
+      fi; \
+      tofu apply -auto-approve -var-file={{ quote(ENV_TFVARS_PATH) }} "${target_args[@]}"
+
+# Create the cluster's private network, reserved Kubernetes node ports, and SSH
+# keys, so node addresses are claimed before the bastion and gateway exist.
+# The workspace (ENV) name is the bastion `clusters` map key; the bastion reads
+# env/OVH/<PROJECT>/clusters/<ENV>/.key.pub by convention after this runs.
+bootstrap: _require-project
+    @eval "$(just _source-openrc)"; \
+      bash ../../../scripts/ovh/backend.sh check clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
+      tofu workspace select {{ quote(ENV) }} || tofu workspace new {{ quote(ENV) }}; \
+      tofu apply -auto-approve -var-file={{ quote(ENV_TFVARS_PATH) }} \
+        -target=module.ssh_keys \
+        -target=random_id.ssh_key_suffix \
+        -target=openstack_compute_keypair_v2.cluster \
+        -target=ovh_cloud_project_network_private.cluster \
+        -target=ovh_cloud_project_network_private_subnet_v2.cluster \
+        -target=openstack_networking_port_v2.cluster_private
+
+# Fail fast when the gateway's centralized SNAT port is DOWN (private nodes
+# have no internet egress, even though the OVH router reports ACTIVE).
+# See scripts/ovh/check-gateway-egress.sh and docs/troubleshooting/ovh-gateway-snat-down.md.
+check-gateway: _require-project
+    @PROJECT={{ quote(PROJECT) }} bash ../../../scripts/ovh/check-gateway-egress.sh {{ quote(ENV) }}
+
+# Recreate a broken gateway through the selected, verified backend.
+replace-gateway: _require-project
+    @eval "$(just _source-openrc)"; \
+      bash ../../../scripts/ovh/backend.sh check clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
+      tofu workspace select {{ quote(ENV) }}; \
+      tofu apply -auto-approve -var-file={{ quote(ENV_TFVARS_PATH) }} -replace='ovh_cloud_gateway.kube_api[0]'
+
+# Force rebuild one VM instance (un-targeted dependents included). Refuses
+# the first K3s/RKE2 controller: automatic datastore rejoin is unsafe,
+# recover it only through a verified etcd snapshot and the distribution
+# restore procedure.
+replace NAME: _require-project
+    @eval "$(just _source-openrc)"; \
+      bash ../../../scripts/ovh/backend.sh check clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
+      tofu workspace select {{ quote(ENV) }} || tofu workspace new {{ quote(ENV) }}; \
+      name={{ quote(NAME) }}; \
+      case "$name" in \
+        *[!A-Za-z0-9._-]*|'') echo "Invalid VM name: $name" >&2; exit 1 ;; \
+      esac; \
+      first=$(tofu output -raw first_master_name); \
+      if test -n "$first" && test "$name" = "$first"; then \
+        echo "Refusing to replace first controller '$first': automatic etcd rejoin is unsafe." >&2; \
+        echo "Recover it only through a verified etcd snapshot and the distribution restore procedure." >&2; \
+        exit 1; \
+      fi; \
+      tofu apply -auto-approve -var-file={{ quote(ENV_TFVARS_PATH) }} -target="openstack_compute_instance_v2.vms[\"$name\"]" -replace="openstack_compute_instance_v2.vms[\"$name\"]"
+
+# Destroy on the provider. Pass STALE=true to skip the refresh phase
+# (use when machines are broken/stale and refresh hangs on dead nodes).
+# No purge-ports pre-pass: with dhcp = false Neutron creates no DHCP agent
+# ports, so subnet deletion no longer hits 409. If it ever does (detached
+# port), delete it by hand: openstack port list --network <net-id>, then
+# openstack port delete <port-id>.
+destroy STALE='': _require-project
+    @eval "$(just _source-openrc)"; \
+      bash ../../../scripts/ovh/backend.sh check clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
+      tofu workspace select {{ quote(ENV) }} || tofu workspace new {{ quote(ENV) }}; \
+      refresh_args=(); \
+      if test -n "{{ STALE }}"; then refresh_args=(-refresh=false); fi; \
+      tofu destroy -auto-approve "${refresh_args[@]}" -var-file={{ quote(ENV_TFVARS_PATH) }}

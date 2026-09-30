@@ -38,8 +38,8 @@ OpenTofu (provision VMs)
 
 ## Prerequisites
 
-- **OpenTofu** (>= 1.6.2)
-  - Install with `arkade get tofu` pinned to version 1.6.2
+- **OpenTofu** (>= 1.10.0, < 2.0.0)
+  - Install with `arkade get tofu`
   - For Debian/Ubuntu:
       `curl --proto '=https' --tlsv1.2 -fsSL https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh`
       `chmod +x install-opentofu.sh && ./install-opentofu.sh --install-method deb`
@@ -81,8 +81,24 @@ vim env/KVM/lab.tfvars
 cp env/AZ/tfvars.example env/AZ/lab.tfvars
 
 # For OVH
-cp env/OVH/tfvars.example env/OVH/lab.tfvars
+export PROJECT=example-project
+mkdir -p "env/OVH/$PROJECT/clusters" "env/OVH/$PROJECT/bastion"
+cp env/OVH/example/.env.example "env/OVH/$PROJECT/.env"
+cp env/OVH/example/openrc.sh.example "env/OVH/$PROJECT/openrc.sh"
+cp env/OVH/example/backend.s3.tfbackend "env/OVH/$PROJECT/backend.s3.tfbackend"
+cp env/OVH/example/clusters/tfvars.example "env/OVH/$PROJECT/clusters/lab.tfvars"
+cp env/OVH/example/bastion/tfvars.example "env/OVH/$PROJECT/bastion/bastion.tfvars"
+chmod 0600 "env/OVH/$PROJECT/.env" "env/OVH/$PROJECT/openrc.sh"
+BACKEND=s3 just ovh::backend-init
+BACKEND=s3 just ovh::bastion-backend-init
+ENV=lab just ovh::plan
 ```
+
+OVH lifecycle commands default to `BACKEND=s3`. Put only
+`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` in the ignored project `.env`;
+backend files are non-secret. `BACKEND=local` is an explicit isolated mode, not
+an S3 outage fallback, and changing modes requires the backed-up migration
+procedure in [`docs/procedures/ovh-backend.md`](docs/procedures/ovh-backend.md).
 
 ### 2. Validate and Plan
 
@@ -117,10 +133,15 @@ just destroy
 After deployment completes, VMs are reachable through the generated SSH key and inventory. For `k3s` or `rke2` deployments with master user data enabled, the cluster is already running via cloud-init:
 
 ```bash
+# Azure/libvirt
 ssh -o StrictHostKeyChecking=no -i ./env/<PROVIDER>/<env>/.key.private localadmin@<ip>
+# OVH: print the complete bastion ProxyCommand
+PROJECT=<project> PROVIDER=OVH ENV=<env> just report
 ```
 
-The Ansible inventory is generated in `env/<PROVIDER>/<env>/hosts.ini` for additional configuration tasks. Standalone `infra.vms` are listed in the shared `[VMS]` inventory group.
+OVH access uses the bastion ProxyCommand from its generated `ansible.cfg`; use
+the `ssh_first_master` command shown by `just report`. The generated `hosts.ini` supports additional configuration tasks;
+standalone `infra.vms` are listed in the shared `[VMS]` inventory group.
 
 ---
 
@@ -138,25 +159,36 @@ Available commands:
 
 | Command | Description |
 |---------|-------------|
-| `just env` | Print current provider and configuration |
+| `just env` | Show configuration/artifact completeness, OVH auth/backend checks, ingress IP, and cross-stack convergence diagnostics |
+| `just report` | Read selected OpenTofu state and report deployed resources, networking, storage, security groups, and access commands |
 | `just validate` | Validate Terraform/OpenTofu scripts |
 | `just plan` | Plan infrastructure changes |
-| `just deploy` | Apply and create infrastructure |
+| `just deploy` | Apply infrastructure; for untargeted OVH, run bootstrap → bastion deploy/converge → cluster deploy → artifact sync |
+| `PROJECT=<project> PROVIDER=OVH ENV=<cluster> BASTION_ENV=<bastion> just deploy` | OVH golden path; cluster entry must already exist in bastion tfvars |
+| `PROJECT=<project> ENV=<cluster> just ovh::cluster-deploy [NAME]` | Advanced OVH cluster-only apply; optional `NAME` targets one VM |
 | `just destroy` | Tear down infrastructure |
 | `just ping` | Ping VMs with ansible |
 | `just check` | Check k8s access |
 | `just play` | Run an Ansible playbook against the cluster |
-| `just replace NAME` | Replace a named VM; OVH applies the full dependency graph, while AZ/KVM remain target-scoped |
+| `just replace NAME` | Replace a named VM (AZ/KVM/OVH; no `replace` recipe exists yet for the standalone bastion) |
 
+For OVH, `just env` requires `PROJECT`; when S3 settings and credentials are
+present its reachability check creates, reads, and deletes one temporary probe
+object. It never prints credential values. `just report` reads the selected
+cluster workspace through its configured backend (and sources the project
+`.env` when present); it does not report the separate bastion state.
 
 
 ### Configuration Files
 
-OVH dedicated-bastion migration is intentionally disruptive. Before changing
-`ssh_jump_enabled` on an existing cluster, back up etcd and workloads, schedule
-downtime, and save/review the authenticated full plan. Use `just replace bastion`
-for bastion recovery. `just replace` refuses the first K3s/RKE2 controller:
-replacing that bootstrap node safely requires a verified etcd snapshot and the
+OVH Kubernetes is jump-only and the migration from a public cluster is
+intentionally disruptive. Kubernetes modes require `bastion.public_ip`,
+an enabled load balancer, and a `lb_ip`/`dns` endpoint (guarded
+in-stack); nodes are private-only. Before migrating a pre-existing
+public cluster, back up etcd and workloads, schedule
+downtime, and save/review the authenticated full plan. `just replace`
+refuses the first K3s/RKE2 controller; replacing it
+safely requires a verified etcd snapshot and the
 distribution recovery procedure ([K3s](https://docs.k3s.io/datastore/backup-restore) or
 [RKE2](https://docs.rke2.io/datastore/backup_restore)); automatic datastore
 membership recovery is not implemented. Jump-mode SSH transport is configured in
@@ -167,7 +199,8 @@ bastion and private nodes are never directly exposed.
 If SSH is unavailable, use OVH console/rescue with scoped cloud credentials to
 repair ingress or replace the bastion; do not expose private nodes or LB TCP/22.
 
-Each environment is defined by a `.tfvars` file in `env/<PROVIDER>/`:
+Each environment is defined by a `.tfvars` file in `env/<PROVIDER>/`; OVH uses
+`env/OVH/<project>/clusters/` and `env/OVH/<project>/bastion/`:
 
 **Example: `env/KVM/lab.tfvars`**
 ```hcl
@@ -237,13 +270,17 @@ Important lifecycle caveats:
 ```txt
 InfraFactory/
 ├── AGENTS.md                     # AI assistant context
-├── README.md                     # The only doc, I will produce in my life.
-├── TODO.md                       # Task tracking
+├── README.md                     # User workflow, status, roadmap, limits
+├── docs/plan/summary.md            # Task tracking
 ├── justfile                      # CLI orchestrator (run: just)
-├── gitops/                       # Optional Flux/tofu-controller management layer
+├── docs/                         # Architecture, decisions, plan (see 00-repo-contract.md)
+├── tests/                        # Contract and provider tests
+├── gitops/
 │   ├── apps/                     # Flux-managed platform apps and controllers
+│   ├── docs/
 │   ├── flux/                     # Flux system config and Terraform CR overlays
 │   ├── templates/                # Helmfile templates
+│   ├── scripts/
 │   ├── crds.yaml                 # CRDs required by the GitOps stack
 │   ├── flux.yaml                 # Flux and Flux operator deployment
 │   └── justfile                  # GitOps operation commands
@@ -252,8 +289,13 @@ InfraFactory/
 │   │   ├── tfvars.example        # Azure example
 │   │   └── <env>/                # Generated env outputs (hosts.ini, ansible.cfg, kubeconfig, keys)
 │   ├── OVH/
-│   │   ├── tfvars.example        # OVH example
-│   │   └── <env>/                # Generated env outputs (hosts.ini, ansible.cfg, kubeconfig, keys)
+│   │   ├── example/              # Canonical safe project templates
+│   │   │   ├── .env.example
+│   │   │   ├── openrc.sh.example
+│   │   │   ├── backend.s3.tfbackend
+│   │   │   ├── clusters/tfvars.example
+│   │   │   └── bastion/tfvars.example
+│   │   └── <project>/            # Real project config and ignored artifacts
 │   └── KVM/
 │       ├── tfvars.example        # Libvirt example
 │       └── <env>/                # Generated env outputs (hosts.ini, ansible.cfg, kubeconfig, keys)
@@ -272,8 +314,9 @@ InfraFactory/
 │   │   ├── justfile             # Provider-local Just recipes
 │   │   └── [provider files]
 │   ├── ovh/                      # OVH Cloud provider
-│   │   ├── justfile             # Provider-local Just recipes
-│   │   └── [provider files]
+│   │   ├── justfile             # Thin router and complete deploy workflow
+│   │   ├── clusters/            # Cluster stack (one workspace per cluster)
+│   │   └── bastion/             # Standalone SSH bastion (serves many clusters)
 │   │
 │   └── shared/                   # Shared resources (all providers)
 │       ├── ansible/              # Shared Ansible playbooks (post-deployment steps)
@@ -332,12 +375,14 @@ In this context, GitOps bootstrap is different from cloud-init bootstrap:
 
 ```
 1. Define infrastructure in env/<PROVIDER>/*.tfvars
+   (OVH: env/OVH/<PROJECT>/clusters/<ENV>.tfvars plus bastion tfvars)
    ↓
 2. OpenTofu creates VMs with cloud-init configuration
    ↓
 3. Cloud-init initializes VMs; k3s/rke2 is installed only for Kubernetes modes
    ↓
 4. OpenTofu generates hosts.ini inventory and ansible.cfg in `env/<PROVIDER>/<env>/`
+   (OVH: `env/OVH/<PROJECT>/clusters/<ENV>/`)
    ↓
 5. For Kubernetes modes with enabled user data, Ansible checks cloud-init readiness on K8s nodes
    ↓
@@ -362,7 +407,7 @@ In this context, GitOps bootstrap is different from cloud-init bootstrap:
 |----------|--------|-------|
 | Libvirt | ✅ Implemented | Core functionality complete, tested |
 | Azure | ✅ Implemented | Full implementation with NSG, DNS, and cloud-init |
-| OVH | ✅ Implemented; bastion live validation pending | Public-IP-based normal mode plus plan-validated dedicated bastion/private-only Kubernetes nodes, deterministic private IP assignment, standalone VMs, kube-api-only load balancer with native gateway/floating-IP lifecycle, guarded full-graph VM replacement, Ansible cloud-init check, TLS SAN reconciliation, and kubeconfig fetch |
+| OVH | ✅ Implemented; bastion live validation pending | Jump-only Kubernetes (private nodes via standalone bastion, load balancer for API 6443 + ingress 80/443 passthrough), deterministic private IP assignment, standalone VMs, native gateway/floating-IP lifecycle, Ansible cloud-init check, TLS SAN reconciliation, and kubeconfig fetch |
 
 ---
 
@@ -381,9 +426,9 @@ See [AGENTS.md](AGENTS.md) for AI assistant context and full governance rules.
 
 ## Known Limitations
 
-- OVH uses public-IP-based operator access normally; `ssh_jump_enabled=true` uses a dedicated bastion and private Kubernetes node IPs: K3s/RKE2 nodes via a self-contained ProxyCommand in `ansible.cfg`
-- OVH dedicated-bastion mode is plan-validated only; live K3s/RKE2 first boot, replacement, and destroy proofs remain pending
-- OVH refuses `just replace` for the first K3s/RKE2 controller; use a verified etcd snapshot and the distribution restore procedure instead
+- OVH Kubernetes is jump-only: private K3s/RKE2 node IPs via the standalone bastion, self-contained ProxyCommand in `ansible.cfg`
+- OVH jump-only mode is plan-validated only; live K3s/RKE2 first boot, replacement, and destroy proofs remain pending
+- OVH `just replace NAME` rebuilds one VM; replacing the first K3s/RKE2 controller stays blocked (recipe refuses it) pending a verified etcd snapshot and restore procedure
 - OVH standalone `infra.vms` are public-attached and private-attached in current code
 - OVH custom root disk sizing and extra disks are not supported yet
 - IPv6 support requires additional configuration

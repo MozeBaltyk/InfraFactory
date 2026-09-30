@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+# Copy to env/OVH/<PROJECT>/openrc.sh, then replace every placeholder.
+export OS_AUTH_URL="https://auth.cloud.ovh.net/v3/"
+export OS_IDENTITY_API_VERSION="3"
+export OS_USER_DOMAIN_NAME="Default"
+export OS_PROJECT_DOMAIN_NAME="Default"
+export OS_USERNAME="replace-me"
+export OS_PASSWORD="replace-me"
+export OS_PROJECT_ID="replace-me"
+export OS_REGION_NAME="replace-me"

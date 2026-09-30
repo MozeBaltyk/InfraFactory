@@ -6,6 +6,7 @@ mod runner_image "scripts/runner/mod.justfile"
 
 PROVIDER := env_var_or_default("PROVIDER", "KVM")
 ENV := env_var_or_default("ENV", "lab")
+PROJECT := env_var_or_default("PROJECT", "")
 TF_GITOPS_ROOT := "./flux/tf"
 TARGET_NAMESPACE := env_var_or_default("TARGET_NAMESPACE", "flux-system")
 TOFU_RUNNER_IMAGE := env_var_or_default("TOFU_RUNNER_IMAGE", "registry-zot.flux-system.svc.cluster.local:5000/infrafactory/tf-runner-libvirt:v0.16.2-homefix")
@@ -18,6 +19,7 @@ default:
 _require-provider:
     @just _require-env
     case "{{ PROVIDER }}" in KVM|AZ|OVH) ;; *) just log fatal "Unsupported provider" "provider" "{{ PROVIDER }}" ;; esac
+    @if [ "{{ PROVIDER }}" = "OVH" ] && [[ ! "{{ PROJECT }}" =~ ^[A-Za-z0-9._-]+$ ]]; then just log fatal "PROJECT is required for OVH" "hint" "Use only letters, numbers, dot, underscore, and dash"; fi
 
 [private]
 _require-env:
@@ -32,7 +34,7 @@ _provider-lower:
 
 [private]
 _provider-module-path:
-    @case "{{ PROVIDER }}" in KVM) echo ./providers/libvirt ;; AZ) echo ./providers/azure ;; OVH) echo ./providers/ovh ;; *) exit 1 ;; esac
+    @case "{{ PROVIDER }}" in KVM) echo ./providers/libvirt ;; AZ) echo ./providers/azure ;; OVH) echo ./providers/ovh/clusters ;; *) exit 1 ;; esac
 
 [private]
 _provider-tfvars-src:
@@ -40,11 +42,11 @@ _provider-tfvars-src:
 
 [private]
 _provider-example-tfvars:
-    @case "{{ PROVIDER }}" in AZ) echo ../env/AZ/tfvars.example ;; KVM) echo ../env/KVM/tfvars.example ;; OVH) echo ../env/OVH/tfvars.example ;; *) exit 1 ;; esac
+    @case "{{ PROVIDER }}" in AZ) echo ../env/AZ/tfvars.example ;; KVM) echo ../env/KVM/tfvars.example ;; OVH) echo ../env/OVH/example/clusters/tfvars.example ;; *) exit 1 ;; esac
 
 [private]
 _provider-local-tfvars:
-    @case "{{ PROVIDER }}" in AZ) echo ../env/AZ/{{ ENV }}.tfvars ;; KVM) echo ../env/KVM/{{ ENV }}.tfvars ;; OVH) echo ../env/OVH/{{ ENV }}.tfvars ;; *) exit 1 ;; esac
+    @case "{{ PROVIDER }}" in AZ) echo ../env/AZ/{{ ENV }}.tfvars ;; KVM) echo ../env/KVM/{{ ENV }}.tfvars ;; OVH) echo ../env/OVH/{{ PROJECT }}/clusters/{{ ENV }}.tfvars ;; *) exit 1 ;; esac
 
 [private]
 _tfvars-source:
@@ -562,6 +564,7 @@ sync-tfvars:
     @if [ "{{ PROVIDER }}" = "AZ" ] || [ "{{ PROVIDER }}" = "OVH" ]; then \
         just log warn "Cloud tfvars may contain credentials" "provider" "{{ PROVIDER }}" "action" "do not commit plaintext secrets" "sync" "imperative cluster-local Secret for now"; \
       fi
+    @if [ "{{ PROVIDER }}" = "OVH" ] && ! grep -q '^project[[:space:]]*=' "$(just _provider-tfvars-src)"; then printf '\nproject = "%s"\n' "{{ PROJECT }}" >> "$(just _provider-tfvars-src)"; fi
     @kubectl -n flux-system create secret generic $(just _tfvars-secret-name) --from-file=terraform.tfvars=$(just _provider-tfvars-src) --dry-run=client -o yaml | kubectl apply -f -
     @just log ok "Synced cluster-local tfvars Secret" "namespace" "flux-system" "secret" "$(just _tfvars-secret-name)" "gitops" "not Flux-managed"
 

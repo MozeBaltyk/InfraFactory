@@ -7,6 +7,7 @@ variable "extra_packages" {
   default     = []
 }
 
+
 ###################################
 # K3s specific variables
 ###################################
@@ -41,7 +42,8 @@ variable "rke2" {
     token                  = optional(string)
     tls_sans               = optional(list(string), [])
     etcd_enabled           = optional(bool, true)
-    ingress_nginx_enabled  = optional(bool, true)
+    traefik_enabled        = optional(bool, true)
+    ingress_nginx_enabled  = optional(bool, false)
     metrics_server_enabled = optional(bool, true)
     kube_proxy_enabled     = optional(bool, true)
     cni                    = optional(string) # "calico", "canal", "cilium", "none" (null = RKE2 default)
@@ -114,4 +116,12 @@ variable "ansible" {
     }))
   })
   default = {}
+}
+
+variable "ansible_pull_token" {
+  description = "Optional private-repository token supplied through TF_VAR_ansible_pull_token; used only when ansible.pull is configured."
+  type        = string
+  default     = null
+  nullable    = true
+  sensitive   = true
 }

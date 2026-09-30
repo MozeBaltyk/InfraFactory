@@ -1,6 +1,16 @@
 network:
   version: 2
   ethernets:
+%{ if public_iface != null ~}
+    # Optional second NIC (e.g. OVH public interface): plain DHCP, keeps the
+    # default route. Omitted unless the caller passes public_iface, so
+    # existing single-NIC callers render exactly as before.
+    ${public_iface}:
+      match:
+        name: "${public_iface}"
+      optional: true
+      dhcp4: true
+%{ endif ~}
     ${interface_id}:
       match:
         name: "${interface_match_name}"
