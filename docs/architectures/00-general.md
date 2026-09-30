@@ -1,7 +1,7 @@
 # InfraFactory Architecture
 
 Migrated from `.local/architecture.md` during the docs cleanup; paths updated
-for the OVH two-stack layout (`clusters/` + `bastion/`). Sections 8 and 12
+for the OVH two-stack layout (`clusters/` + `bastion/`). Sections 8, 10, and 12
 describe a target direction, not the current tree.
 
 ## 1. Purpose
@@ -44,6 +44,7 @@ The user-facing source of truth is:
 
 ```text
 env/<PROVIDER>/<environment>.tfvars
+OVH: env/OVH/<project>/{clusters|bastion}/<environment>.tfvars
 ```
 
 Users should not need to modify Terraform modules, templates, generated files, or provider implementation code to create an environment.
@@ -137,6 +138,7 @@ Location:
 
 ```text
 env/<PROVIDER>/<environment>.tfvars
+OVH: env/OVH/<project>/{clusters|bastion}/<environment>.tfvars
 ```
 
 Defines:
@@ -348,9 +350,11 @@ Examples:
 ```text
 Libvirt → direct node connectivity
 
-Azure → public/private endpoint depending on configuration
+Azure → public endpoint
 
-OVH → direct, VPN, or SSH forwarding depending on network model
+OVH Kubernetes → SSH forwarding through the standalone bastion
+
+OVH default VMs → direct public endpoint
 ```
 
 This phase exists to provide deterministic per-node connectivity.
@@ -412,6 +416,9 @@ env/<PROVIDER>/<environment>/
 ├── ssh_config
 └── .key.private
 ```
+
+OVH uses `env/OVH/<project>/clusters/<environment>/`; bastion artifacts use
+`env/OVH/<project>/bastion/<environment>/`.
 
 Only applicable artifacts should be generated.
 
@@ -492,11 +499,13 @@ The generated user-facing `talosconfig` MUST contain the management endpoint, no
 
 ---
 
-# 10. Provider Contract
+# 10. Target Provider Contract
 
-Every provider MUST expose equivalent logical outputs.
+Target direction: every provider should expose equivalent logical outputs.
+The current roots expose only the applicable subset and do not yet share all
+of the names below.
 
-Required conceptual outputs:
+Target conceptual outputs:
 
 ```text
 cluster_nodes
@@ -512,7 +521,8 @@ ssh_config
 
 An output may be `null` when it does not apply.
 
-Provider-specific consumers MUST NOT redefine the meaning of these fields.
+As these outputs are adopted, provider-specific consumers MUST NOT redefine
+their meaning.
 
 ---
 

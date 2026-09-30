@@ -78,7 +78,7 @@ def call(req, method, bucket, key, query, body, access, secret, region, endpoint
 
 def main():
     if len(sys.argv) != 4:
-        sys.exit("usage: ovh-s3-check.py BUCKET REGION ENDPOINT")
+        sys.exit("usage: s3-check.py BUCKET REGION ENDPOINT")
     bucket, region, endpoint = sys.argv[1:4]
     access = os.environ.get("AWS_ACCESS_KEY_ID", "")
     secret = os.environ.get("AWS_SECRET_ACCESS_KEY", "")

@@ -1,8 +1,17 @@
-# 2026-09-18 — OVH bastion split (standalone bastion + cluster stacks)
+# ADR-01 — OVH bastion split (standalone bastion + cluster stacks)
+
+**Date:** 2026-09-18
 
 Distilled from `docs/refactoring/01-bastion-split-analysis.md` (removed after
 dispatch). Status: Phases 0–4 implemented offline on branch `ovh-refactor`;
 P5 live acceptance and P6 closeout remain tracked in `docs/plan/`.
+
+Later implementation note: `admin_public_keys` is no longer mandatory when the
+bastion stack generates its fallback admin/probe keypair. The artifact-sync
+workflow also copies each cluster's full artifact directory (including private
+keys and tokens) to `/mnt/guests-info`; project credentials and tfvars remain
+local. These operational additions supersede the narrower key-flow statements
+below without changing the split-state decision.
 
 ## Context
 

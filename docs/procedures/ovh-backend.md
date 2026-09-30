@@ -17,7 +17,7 @@ cp env/OVH/example/backend.s3.tfbackend \
 
 Keep S3 credentials only in ignored `env/OVH/<project>/.env` as
 `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`. Backend files contain no
-credentials. One shared file serves both stacks: `scripts/ovh-backend.sh`
+credentials. One shared file serves both stacks: `scripts/ovh/backend.sh`
 injects the distinct `key`/`workspace_key_prefix` per stack (clusters vs
 bastion) at `init`, preventing cluster/bastion and workspace collisions.
 Recipes that need cloud or backend access source the project `.env`, then the

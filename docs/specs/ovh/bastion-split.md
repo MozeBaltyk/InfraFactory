@@ -1,7 +1,7 @@
 # Spec — OVH standalone bastion split (target state)
 
 Normative target for the workstream tracked in `../../plan/` (P0–P6) and
-motivated in `../../decisions/2026-09-18-ovh-bastion-split.md`. Implementation
+motivated in `../../decisions/ADR-01-ovh-bastion-split.md`. Implementation
 details live in `../../architectures/ovh/`; operator steps in
 `../../procedures/ovh-bastion.md`; OVH-wide provider norms in
 `provider.md`. In case of conflict, this file wins on *what*; the others win on *why* (decisions), *how built* (architectures),
@@ -37,7 +37,7 @@ Cluster → bastion (hand-typed, no backend link):
 
 * `bastion = { public_ip }` in the cluster tfvars, required for
   Kubernetes (private-only nodes have no other path; see
-  `../../decisions/2026-09-18-ovh-jump-only.md`).
+  `../../decisions/ADR-02-ovh-jump-only.md`).
 * Convention: bastion username == cluster username.
 * Kubernetes additionally requires an enabled load balancer with
   `network.kube_api.endpoint = "lb_ip"` (or `"dns"` with `dns.name`

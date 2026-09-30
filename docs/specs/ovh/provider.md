@@ -2,9 +2,7 @@
 
 OVH-specific normative spec on top of `../baseline.md`. The bastion
 split itself is specified in `bastion-split.md` (referenced, not
-repeated here). Until P6 lands, `providers/README` still describes the
-pre-split embedded model in places — on conflict, this file and
-`bastion-split.md` win.
+repeated here). On conflict, this file and `bastion-split.md` win.
 
 ## 1. Credentials and region
 
@@ -40,7 +38,8 @@ pre-split embedded model in places — on conflict, this file and
 
 ## 3. Node topology
 
-* Kubernetes modes are jump-only (see `2026-09-18-ovh-jump-only.md`):
+* Kubernetes modes are jump-only (see
+  `../../decisions/ADR-02-ovh-jump-only.md`):
   masters/workers are private-only, reachable solely via the bastion.
   There is no public Kubernetes topology on OVH.
 * Standalone `infra.vms` are always public + private, including in
@@ -77,8 +76,10 @@ pre-split embedded model in places — on conflict, this file and
   TCP/443 (workload ingress) as L4 passthrough pools over the master
   private IPs. Backend ports are inputs defaulting to 80/443 (stock k3s
   traefik+servicelb host ports); non-default ingress exposures override
-  them, and rke2 NodePort pinning via HelmChartConfig is a P5-proven
-  follow-up. TLS terminates at the ingress controller, never at Octavia
+  them. RKE2 NodePort pinning via HelmChartConfig is not implemented and is
+  outside the current P5 acceptance scope; any non-default backend mapping
+  must be configured explicitly and validated live. TLS terminates at the ingress
+  controller, never at Octavia
   (no OVH certificate management; ACME HTTP-01 keeps working end to
   end). `allowed_cidrs` defaults to `ingress_cidrs` with an explicit
   per-LB `ingress_cidrs` override for the operator-vs-users split — no
@@ -123,7 +124,7 @@ pre-split embedded model in places — on conflict, this file and
 ## 8. Replacement and recovery
 
 * `just ovh::replace NAME` (root `just replace` with `PROVIDER=OVH`)
-  rebuilds one VM via an un-targeted apply on the single `vms` address.
+  rebuilds one VM via `-target` + `-replace` on the single `vms` address.
   The first K3s/RKE2 controller is refused by the recipe (live proof in
   P5).
 * Replacing the first K3s/RKE2 controller stays blocked: recover only via

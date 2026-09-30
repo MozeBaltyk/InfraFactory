@@ -22,7 +22,7 @@ EOF
 chmod +x "$tmp/bin/tofu"
 
 run_backend() {
-  OVH_BACKEND_REPO_ROOT="$tmp" PATH="$tmp/bin:$PATH" "$repo/scripts/ovh-backend.sh" "$@"
+  OVH_BACKEND_REPO_ROOT="$tmp" PATH="$tmp/bin:$PATH" "$repo/scripts/ovh/backend.sh" "$@"
 }
 
 if run_backend init clusters test s3 >/dev/null 2>&1; then
@@ -104,8 +104,8 @@ fi
 
 real="$tmp/real"
 mkdir -p "$real/providers/ovh/clusters" "$real/env/OVH/test"
-OVH_BACKEND_REPO_ROOT="$real" "$repo/scripts/ovh-backend.sh" init clusters test local >/dev/null
-OVH_BACKEND_REPO_ROOT="$real" "$repo/scripts/ovh-backend.sh" check clusters test local
+OVH_BACKEND_REPO_ROOT="$real" "$repo/scripts/ovh/backend.sh" init clusters test local >/dev/null
+OVH_BACKEND_REPO_ROOT="$real" "$repo/scripts/ovh/backend.sh" check clusters test local
 env -u TF_DATA_DIR tofu -chdir="$real/providers/ovh/clusters" init -backend=false >/dev/null
 env -u TF_DATA_DIR tofu -chdir="$real/providers/ovh/clusters" validate >/dev/null
 

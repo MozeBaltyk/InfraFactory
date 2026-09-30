@@ -159,7 +159,7 @@ print_project_config() {
     endpoint=$(read_backend_value "$backend_file" 's3[[:space:]]*=[[:space:]]*"(https?://[^"]+)"' || true)
     if [[ -n $bucket && -n $region && -n $endpoint ]]; then
       set -a; source "$dotenv"; set +a
-      if s3out=$(python3 "$root/scripts/ovh-s3-check.py" "$bucket" "$region" "$endpoint" 2>&1); then
+      if s3out=$(python3 "$root/scripts/ovh/s3-check.py" "$bucket" "$region" "$endpoint" 2>&1); then
         s3rc=0
       else
         s3rc=$?
@@ -294,7 +294,7 @@ print_operator_ip() {
   print_project_config
   print_openstack_auth
   print_operator_ip
-  python3 "$root/scripts/ovh-config-status.py" "$root" "$project"
+  python3 "$root/scripts/ovh/config-status.py" "$root" "$project"
 }
 
 printf '\n%s%s%s\n' "$blue" 'Useful commands' "$reset"

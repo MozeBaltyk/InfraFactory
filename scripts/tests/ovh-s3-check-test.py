@@ -8,7 +8,7 @@ import unittest
 from unittest import mock
 
 
-SCRIPT = os.path.join(os.path.dirname(__file__), "..", "ovh-s3-check.py")
+SCRIPT = os.path.join(os.path.dirname(__file__), "..", "ovh", "s3-check.py")
 SPEC = importlib.util.spec_from_file_location("ovh_s3_check", SCRIPT)
 CHECK = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CHECK)

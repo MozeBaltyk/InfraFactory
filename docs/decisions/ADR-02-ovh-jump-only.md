@@ -1,4 +1,6 @@
-# 2026-09-18 — OVH jump-only Kubernetes (no public topology)
+# ADR-02 — OVH jump-only Kubernetes (no public topology)
+
+**Date:** 2026-09-18
 
 ## Context
 

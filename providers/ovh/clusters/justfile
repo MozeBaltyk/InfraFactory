@@ -3,7 +3,7 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c", "umask 077; exec bash -eu -
 ENV_RAW := env_var_or_default("ENV", "lab")
 ENV := if ENV_RAW == "." { error("ENV must not be . or ..") } else if ENV_RAW == ".." { error("ENV must not be . or ..") } else if ENV_RAW =~ '^[A-Za-z0-9._-]+$' { ENV_RAW } else { error("ENV must be a nonempty path-safe workspace identifier containing only A-Za-z0-9._-") }
 PROJECT_RAW := env_var_or_default("PROJECT", "")
-PROJECT := if PROJECT_RAW == "." { error("PROJECT must not be . or ..") } else if PROJECT_RAW == ".." { error("PROJECT must not be . or ..") } else if PROJECT_RAW =~ '^[A-Za-z0-9._-]+$' { PROJECT_RAW } else { error("PROJECT is required and must be a path-safe identifier containing only A-Za-z0-9._-") }
+PROJECT := PROJECT_RAW
 BACKEND_RAW := env_var_or_default("BACKEND", "s3")
 BACKEND := if BACKEND_RAW =~ '^(s3|local)$' { BACKEND_RAW } else { error("BACKEND must be s3 or local") }
 PROJECT_PATH := "../../../env/OVH/" + PROJECT
@@ -16,6 +16,11 @@ ENV_TFVARS_PATH := PROJECT_PATH + "/clusters/" + ENV + ".tfvars"
 # shell process, so exports would evaporate on exit. The path-or-snippet has
 # to cross that boundary as text.)
 [private]
+_require-project:
+    @project={{ quote(PROJECT) }}; \
+      [[ "$project" =~ ^[A-Za-z0-9._-]+$ && "$project" != . && "$project" != .. ]] || { echo "PROJECT is required and must be a path-safe identifier containing only A-Za-z0-9._-" >&2; exit 2; }
+
+[private]
 _source-openrc:
     @if test -f {{ quote(PROJECT_PATH + "/.env") }}; then printf 'set -a; source %q; set +a\n' {{ quote(PROJECT_PATH + "/.env") }}; fi; \
       printf 'export TF_VAR_project=%q\n' {{ quote(PROJECT) }}; \
@@ -24,25 +29,25 @@ _source-openrc:
         if test -n "$openrc" && test -f "$openrc"; then printf 'set -a; source %q; set +a\n' "$openrc"; exit 0; fi; \
       done
 
-validate:
+validate: _require-project
     @tofu fmt -check
     @TF_VAR_project={{ quote(PROJECT) }} tofu init -backend=false
     @TF_VAR_project={{ quote(PROJECT) }} tofu validate
 
-backend-init:
+backend-init: _require-project
     @eval "$(just _source-openrc)"; \
-      bash ../../../scripts/ovh-backend.sh init clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}
+      bash ../../../scripts/ovh/backend.sh init clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}
 
-backend-status:
-    @bash ../../../scripts/ovh-backend.sh status clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}
+backend-status: _require-project
+    @bash ../../../scripts/ovh/backend.sh status clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}
 
-backend-migrate FROM TO:
+backend-migrate FROM TO: _require-project
     @eval "$(just _source-openrc)"; \
-      bash ../../../scripts/ovh-backend.sh migrate clusters {{ quote(PROJECT) }} {{ quote(FROM) }} {{ quote(TO) }}
+      bash ../../../scripts/ovh/backend.sh migrate clusters {{ quote(PROJECT) }} {{ quote(FROM) }} {{ quote(TO) }}
 
-plan NAME='':
+plan NAME='': _require-project
     @eval "$(just _source-openrc)"; \
-      bash ../../../scripts/ovh-backend.sh check clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
+      bash ../../../scripts/ovh/backend.sh check clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
       tofu workspace select {{ quote(ENV) }} || tofu workspace new {{ quote(ENV) }}; \
       name={{ quote(NAME) }}; \
       target_args=(); \
@@ -54,9 +59,9 @@ plan NAME='':
       fi; \
       tofu plan -var-file={{ quote(ENV_TFVARS_PATH) }} "${target_args[@]}"
 
-deploy NAME='':
+deploy NAME='': _require-project
     @eval "$(just _source-openrc)"; \
-      bash ../../../scripts/ovh-backend.sh check clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
+      bash ../../../scripts/ovh/backend.sh check clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
       tofu workspace select {{ quote(ENV) }} || tofu workspace new {{ quote(ENV) }}; \
       name={{ quote(NAME) }}; \
       target_args=(); \
@@ -72,9 +77,9 @@ deploy NAME='':
 # keys, so node addresses are claimed before the bastion and gateway exist.
 # The workspace (ENV) name is the bastion `clusters` map key; the bastion reads
 # env/OVH/<PROJECT>/clusters/<ENV>/.key.pub by convention after this runs.
-bootstrap:
+bootstrap: _require-project
     @eval "$(just _source-openrc)"; \
-      bash ../../../scripts/ovh-backend.sh check clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
+      bash ../../../scripts/ovh/backend.sh check clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
       tofu workspace select {{ quote(ENV) }} || tofu workspace new {{ quote(ENV) }}; \
       tofu apply -auto-approve -var-file={{ quote(ENV_TFVARS_PATH) }} \
         -target=module.ssh_keys \
@@ -86,14 +91,14 @@ bootstrap:
 
 # Fail fast when the gateway's centralized SNAT port is DOWN (private nodes
 # have no internet egress, even though the OVH router reports ACTIVE).
-# See scripts/ovh-check-gateway-egress.sh and docs/troubleshooting/ovh-gateway-snat-down.md.
-check-gateway:
-    @PROJECT={{ quote(PROJECT) }} bash ../../../scripts/ovh-check-gateway-egress.sh {{ quote(ENV) }}
+# See scripts/ovh/check-gateway-egress.sh and docs/troubleshooting/ovh-gateway-snat-down.md.
+check-gateway: _require-project
+    @PROJECT={{ quote(PROJECT) }} bash ../../../scripts/ovh/check-gateway-egress.sh {{ quote(ENV) }}
 
 # Recreate a broken gateway through the selected, verified backend.
-replace-gateway:
+replace-gateway: _require-project
     @eval "$(just _source-openrc)"; \
-      bash ../../../scripts/ovh-backend.sh check clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
+      bash ../../../scripts/ovh/backend.sh check clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
       tofu workspace select {{ quote(ENV) }}; \
       tofu apply -auto-approve -var-file={{ quote(ENV_TFVARS_PATH) }} -replace='ovh_cloud_gateway.kube_api[0]'
 
@@ -101,9 +106,9 @@ replace-gateway:
 # the first K3s/RKE2 controller: automatic datastore rejoin is unsafe,
 # recover it only through a verified etcd snapshot and the distribution
 # restore procedure.
-replace NAME:
+replace NAME: _require-project
     @eval "$(just _source-openrc)"; \
-      bash ../../../scripts/ovh-backend.sh check clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
+      bash ../../../scripts/ovh/backend.sh check clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
       tofu workspace select {{ quote(ENV) }} || tofu workspace new {{ quote(ENV) }}; \
       name={{ quote(NAME) }}; \
       case "$name" in \
@@ -123,9 +128,9 @@ replace NAME:
 # ports, so subnet deletion no longer hits 409. If it ever does (detached
 # port), delete it by hand: openstack port list --network <net-id>, then
 # openstack port delete <port-id>.
-destroy STALE='':
+destroy STALE='': _require-project
     @eval "$(just _source-openrc)"; \
-      bash ../../../scripts/ovh-backend.sh check clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
+      bash ../../../scripts/ovh/backend.sh check clusters {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
       tofu workspace select {{ quote(ENV) }} || tofu workspace new {{ quote(ENV) }}; \
       refresh_args=(); \
       if test -n "{{ STALE }}"; then refresh_args=(-refresh=false); fi; \

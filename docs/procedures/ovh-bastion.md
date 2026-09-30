@@ -2,7 +2,7 @@
 
 One mutualized bastion (`providers/ovh/bastion/`) serves many clusters
 (`providers/ovh/clusters/`). Rationale lives in
-`../decisions/2026-09-18-ovh-bastion-split.md`; live validation steps in
+`../decisions/ADR-01-ovh-bastion-split.md`; live validation steps in
 `../plan/phase-05-live.md`. This file is the day-to-day procedure.
 
 ## Two states, two workspaces — never one
@@ -49,7 +49,7 @@ The rest is convention, not wiring:
   `validate_ssh_jump_topology`).
 
 Warning: Kubernetes on OVH is jump-only (see
-`../decisions/2026-09-18-ovh-jump-only.md`). The old
+`../decisions/ADR-02-ovh-jump-only.md`). The old
 `network.kube_api.load_balancer.ssh_jump_enabled` flag no longer exists; if
 left in tfvars it is ignored and does not enable jump mode. A Kubernetes
 workspace without `bastion.public_ip` fails fast — there is no public topology

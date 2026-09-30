@@ -53,13 +53,17 @@ prove it live in the `providers/README` matrix.
 * `cluster_nodes` with `controller_ips`, `worker_ips`, `vm_ips` on every
   provider, plus `public_ips` / `private_ips` detail only where the
   provider has that address model (Azure has both; OVH exposes
-  `ssh_first_master` instead; libvirt has no public IPs by design).
-  Extra per-provider keys are allowed; absent model detail is not a
+  `ssh_first_master` instead). libvirt has no cloud public-IP model, but its
+  compatibility `public_ips` output contains the same operator-reachable
+  endpoints exposed in `private_ips`; it must not be interpreted as Internet
+  exposure. Extra per-provider keys are allowed; absent model detail is not a
   violation.
 * `kubeconfig_command` when Kubernetes is enabled; Kubernetes API
   endpoint output or nested detail where the provider supports it.
-* `cluster.id` for resource naming, `cluster.domain` for DNS,
-  `cluster.node_name_format` (`serial` or `role`).
+* `cluster.id` for resource naming and `cluster.domain` for DNS.
+  `cluster.node_name_format` (`serial` or `role`) applies where supported
+  (currently OVH and libvirt); Azure remains role-based through its hostname
+  prefix.
 
 ## 6. State security
 

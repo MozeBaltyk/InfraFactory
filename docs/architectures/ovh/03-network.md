@@ -6,17 +6,17 @@ cluster stack now lives in `providers/ovh/clusters/` (moved from
 `providers/ovh/clusters/<file>.tf`. The bastion split is landed:
 `clusters/bastion.tf` keeps only the Kubernetes-topology guard while the
 standalone `providers/ovh/bastion/` module owns the VM, ports, SG, and
-readiness probe — see `docs/decisions/2026-09-18-ovh-bastion-split.md`
-and `docs/decisions/2026-09-18-ovh-jump-only.md` (Kubernetes is
+readiness probe — see `docs/decisions/ADR-01-ovh-bastion-split.md`
+and `docs/decisions/ADR-02-ovh-jump-only.md` (Kubernetes is
 jump-only; there is no public k3s/rke2 topology anymore).
 
 ## 0. Context: what are we trying to achieve?
 
 InfraFactory is a multi-cloud factory (libvirt / Azure / OVH) with one rule:
 every provider provisions the same way — OpenTofu creates VMs, cloud-init
-bootstraps them, OpenTofu emits an Ansible inventory, Ansible builds the
-cluster (k3s/rke2). Provider differences must stay inside provider
-directories and stay minimal.
+installs the selected k3s/rke2 distribution, OpenTofu emits an Ansible
+inventory, and Ansible runs readiness/TLS/kubeconfig post-steps. Provider
+differences must stay inside provider directories and stay minimal.
 
 On OVH that means, concretely:
 
@@ -40,9 +40,11 @@ On OVH that means, concretely:
 * Internet egress for private-only nodes via the Neutron gateway (router
   SNAT) — first boot needs it (`curl https://get.rke2.io`, package installs).
   That forces `enable_gateway_ip = true` on the subnet whenever the LB is on.
-* Clean destroy (no leftover Neutron ports blocking subnet deletion).
+* Fail-closed destroy diagnostics: transient Neutron IPAM lag is retried, while
+  service-owned orphaned Octavia ports require OVH support rather than manual
+  deletion or state surgery.
 
-So the network layer has exactly one hard job: **every boot, every node must
+So the network layer has exactly one hard job: **continuously, every node must
 converge to exactly one correct default route** — via public on dual-homed
 nodes, via the private gateway on private-only nodes — with static private
 IPs, unattended, and surviving reboots.
@@ -55,9 +57,9 @@ IPs, unattended, and surviving reboots.
 | Nova (`openstack_compute_instance_v2`) | One resource over all nodes; Kubernetes nodes attach pre-reserved Neutron ports, plain VMs retain Nova-allocated fixed IPs; **config-drive** carries `user_data` + `network_data.json` | `clusters/main.tf` (single `vms` resource; nodes `depends_on` the gateway so they boot only after egress is READY) |
 | cloud-init | 3 stages: **network** (renders `50-cloud-init.yaml` from `network_data.json`) → **config** (`write_files`, `runcmd`) → **final** | shared `cloud-init/*/cloud_init.cfg.tftpl` + OVH merge |
 | netplan | Applies the **merge** of all `/etc/netplan/*.yaml`, alphabetically. No syntax exists to *remove* something another file added | guest `/etc/netplan/` |
-| Our guest files | `99-infrafactory-ovh-private.yaml` (intent), `infrafactory-ovh-private-netplan.sh` + `.service` (reconciliation), sshd hardening | `clusters/templates.tf` (nodes) + `providers/ovh/bastion/templates.tf` (same trio, plus `PermitOpen` verify) |
+| Our guest files | `99-infrafactory-ovh-private.yaml` (intent), `infrafactory-ovh-private-netplan.sh` + `.service` + two-minute `.timer` (reconciliation), sshd hardening | `clusters/templates.tf` (nodes) + `providers/ovh/bastion/templates.tf` (same reconciliation set, plus `PermitOpen` verify) |
 | Security groups | Standalone bastion SG (`:22` from ingress CIDRs, incl. operator IP) in the bastion module; cluster SG (SSH only from the bastion's reserved IP, east-west, LB backend) set directly on each managed node port | `providers/ovh/bastion/network.tf`, `clusters/network.tf` |
-| LB + FIP + gateway | Octavia LB (`:6443`) on the private net, floating IP (stable endpoint), gateway required by the LB | `clusters/network.tf` |
+| LB + FIP + gateway | Octavia LB (`:6443` API plus `:80`/`:443` workload ingress passthrough) on the private net, floating IP (stable endpoint), gateway required by the LB | `clusters/network.tf` |
 
 NIC order is load-bearing: Nova attaches NICs in the order of the `network`
 blocks, and the guest names them in that order. Dual-homed = Ext-Net first
@@ -86,7 +88,7 @@ netplan template hard-code this mapping.
 7. Standalone bastion readiness probe (in the bastion module:
    `cloud-init status --wait`, ~10 min fail-fast). Then Ansible artifacts.
 
-### 2b. Boot time (guest, every boot)
+### 2b. Guest reconciliation (boot and recurring timer)
 
 1. Guest reads **config-drive**: `user_data` (users, keys, hostname, our
    files, our `runcmd`) and `network_data.json` (both NICs, **always
@@ -103,7 +105,8 @@ netplan template hard-code this mapping.
    verifies (IP present? routes as intended?) and, on public-attached nodes
    only, **deletes `default dev <private-iface>`** — the route our file
    cannot un-declare. On private-only nodes it fails loudly if the default
-   is missing instead.
+   is missing instead. A two-minute timer reruns the same reconciliation after
+   hotplug/netplan events that can resurrect the stale route without a reboot.
 
 ## 3. Problem 1 (solved): user-data delivery without DHCP
 
@@ -116,10 +119,11 @@ DHCP ports blocked subnet deletion (`409`).
 
 New world (`openstack_compute_instance_v2`, `config_drive = true`):
 `user_data`/`network_data` arrive on a virtual CD-ROM, no network needed.
-`dhcp = false` is safe: no blank boots, no `409`. **But config-drive changed
-how the slip of paper arrives, not what is written on it** — the gateway is
-still in `network_data.json`, so `50-cloud-init.yaml` still carries the
-private default on every boot.
+`dhcp = false` is safe: no blank boots or DHCP-agent orphan ports. Other port
+classes, notably service-owned Octavia ports, can still cause `409`. **But
+config-drive changed how the slip of paper arrives, not what is written on
+it** — the gateway is still in `network_data.json`, so `50-cloud-init.yaml`
+still carries the private default on every boot.
 
 ## 4. Problem 2 (permanent): the stale private default
 
@@ -178,21 +182,23 @@ service deletes exactly one known-stale route family per boot.
   Fix: `dns_ok()` re-apply in the verify script + `FallbackDNS=213.186.33.99`
   drop-in + `systemctl restart systemd-resolved` in runcmd. Durable
   alternative for later: `dns_nameservers` on the Neutron subnet.
-* **2026-09-17 ~23:41 — cluster green.** Both nodes Ready
+* **2026-09-17 ~23:41 — pre-split cluster green (not current P5 evidence).** Both nodes Ready
   (v1.36.4+rke2r1); kubeconfig fetched. Fresh `destroy` + `apply` from zero
-  validated the pipeline.
+  validated that earlier pipeline. It does not satisfy the standalone-bastion
+  jump-only P5 scenarios in `docs/plan/phase-05-live.md`.
 * **Destroy post-mortem (same evening).** A `destroy` hit subnet-delete
   `409` with zero ports visible — transient Neutron IPAM lag, re-run passed.
   Then an OVH API `500` on network delete completed async (retry showed
-  success). Lesson: OVH `500`s were all transient; retry before
-  investigating.
+  success). These observations justify retry only when no ports remain; later
+  service-owned Octavia orphan ports require OVH support.
 
 ## 6. Current architecture (file map)
 
 * `providers/shared/cloud-init/{default,k3s,rke2}/network_config.cfg.tftpl` —
   single-NIC base + optional `public_iface` DHCP block.
 * `providers/ovh/clusters/templates.tf` — cluster nodes: `99` via shared
-  template, scrub trio, service `runcmd`. No `network.config` key.
+  template, scrub script/service/timer, service `runcmd`. No `network.config`
+  key.
 * `providers/ovh/clusters/bastion.tf` — Kubernetes-topology guard only
   (`var.bastion` + LB + endpoint required for k3s/rke2). The standalone
   `providers/ovh/bastion/` module owns VM, hot-attach ports (N clusters),
@@ -201,10 +207,12 @@ service deletes exactly one known-stale route family per boot.
   LB/FIP.
 * `providers/ovh/clusters/main.tf` — Nova instances, `config_drive = true`,
   `ignore_changes = [user_data]`.
-* Orphan-port cleanup (`scripts/ovh-purge-port.sh`) — **deleted
-  2026-09-17.** With `dhcp = false` that port class cannot exist. If a `409`
-  ever recurs (detached port), delete by hand: `openstack port list
-  --network <net-id>` then `openstack port delete <port-id>`.
+* Orphan DHCP-port cleanup (`scripts/ovh-purge-port.sh`) — **deleted
+  2026-09-17.** With `dhcp = false` that port class cannot exist. The root
+  destroy preflight reports remaining ports. Manually removable detached ports
+  and service-owned Octavia ports are different cases; never delete the latter
+  or remove affected resources from state. Follow
+  `docs/troubleshooting/ovh-destroy.md`.
 
 ## 7. Diagnose cheat sheet
 
@@ -214,7 +222,8 @@ service deletes exactly one known-stale route family per boot.
 | `:22` refused/reset | sshd down or nothing listening | guest `systemctl status ssh`, cloud-init errors |
 | auth denied | network fine, key/user wrong | `authorized_keys`, `cloud-init.log`, key in `env/OVH/<project>/clusters/<env>/.key.*` |
 | blank VM (no user) | user-data never delivered (pre-config-drive era) | datasource logs; gone since `config_drive = true` |
-| destroy `409` ports | transient Neutron IPAM lag (re-run passes) | retry before investigating |
+| destroy `409`, zero ports visible | transient Neutron IPAM lag | retry once; then investigate |
+| destroy `409`, Octavia-owned ports visible | service cleanup orphan; retries cannot reconcile it | retain state/evidence and contact OVH support; do not delete ports |
 | `port show` empty SGs | display quirk, not evidence | trust `tofu state` associates + actual reachability instead |
 
 ## 8. Open questions

@@ -29,7 +29,7 @@ fi
 
 command -v openstack >/dev/null 2>&1 || { printf 'Required command not found: openstack\n' >&2; exit 127; }
 
-root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 
 # Same precedence as the just recipes: OPENRC override, then project OpenRC.
 for f in "${OPENRC:-}" "$root/env/OVH/$project/openrc.sh"; do

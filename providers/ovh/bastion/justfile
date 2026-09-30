@@ -5,7 +5,7 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c", "umask 077; exec bash -eu -
 BASTION_ENV_RAW := env_var_or_default("BASTION_ENV", "bastion")
 BASTION_ENV := if BASTION_ENV_RAW == "." { error("BASTION_ENV must not be . or ..") } else if BASTION_ENV_RAW == ".." { error("BASTION_ENV must not be . or ..") } else if BASTION_ENV_RAW =~ '^[A-Za-z0-9._-]+$' { BASTION_ENV_RAW } else { error("BASTION_ENV must be a nonempty path-safe workspace identifier containing only A-Za-z0-9._-") }
 PROJECT_RAW := env_var_or_default("PROJECT", "")
-PROJECT := if PROJECT_RAW == "." { error("PROJECT must not be . or ..") } else if PROJECT_RAW == ".." { error("PROJECT must not be . or ..") } else if PROJECT_RAW =~ '^[A-Za-z0-9._-]+$' { PROJECT_RAW } else { error("PROJECT is required and must be a path-safe identifier containing only A-Za-z0-9._-") }
+PROJECT := PROJECT_RAW
 BACKEND_RAW := env_var_or_default("BACKEND", "s3")
 BACKEND := if BACKEND_RAW =~ '^(s3|local)$' { BACKEND_RAW } else { error("BACKEND must be s3 or local") }
 PROJECT_PATH := "../../../env/OVH/" + PROJECT
@@ -13,6 +13,11 @@ BASTION_TFVARS_PATH := PROJECT_PATH + "/bastion/" + BASTION_ENV + ".tfvars"
 
 # Same credential-snippet pattern as clusters/justfile: eval it in the
 # caller's shell since exports don't survive across recipes.
+[private]
+_require-project:
+    @project={{ quote(PROJECT) }}; \
+      [[ "$project" =~ ^[A-Za-z0-9._-]+$ && "$project" != . && "$project" != .. ]] || { echo "PROJECT is required and must be a path-safe identifier containing only A-Za-z0-9._-" >&2; exit 2; }
+
 [private]
 _source-openrc:
     @if test -f {{ quote(PROJECT_PATH + "/.env") }}; then printf 'set -a; source %q; set +a\n' {{ quote(PROJECT_PATH + "/.env") }}; fi; \
@@ -22,31 +27,31 @@ _source-openrc:
         if test -n "$openrc" && test -f "$openrc"; then printf 'set -a; source %q; set +a\n' "$openrc"; exit 0; fi; \
       done
 
-validate:
+validate: _require-project
     @tofu fmt -check
     @TF_VAR_project={{ quote(PROJECT) }} tofu init -backend=false
     @TF_VAR_project={{ quote(PROJECT) }} tofu validate
 
-backend-init:
+backend-init: _require-project
     @eval "$(just _source-openrc)"; \
-      bash ../../../scripts/ovh-backend.sh init bastion {{ quote(PROJECT) }} {{ quote(BACKEND) }}
+      bash ../../../scripts/ovh/backend.sh init bastion {{ quote(PROJECT) }} {{ quote(BACKEND) }}
 
-backend-status:
-    @bash ../../../scripts/ovh-backend.sh status bastion {{ quote(PROJECT) }} {{ quote(BACKEND) }}
+backend-status: _require-project
+    @bash ../../../scripts/ovh/backend.sh status bastion {{ quote(PROJECT) }} {{ quote(BACKEND) }}
 
-backend-migrate FROM TO:
+backend-migrate FROM TO: _require-project
     @eval "$(just _source-openrc)"; \
-      bash ../../../scripts/ovh-backend.sh migrate bastion {{ quote(PROJECT) }} {{ quote(FROM) }} {{ quote(TO) }}
+      bash ../../../scripts/ovh/backend.sh migrate bastion {{ quote(PROJECT) }} {{ quote(FROM) }} {{ quote(TO) }}
 
-plan:
+plan: _require-project
     @eval "$(just _source-openrc)"; \
-      bash ../../../scripts/ovh-backend.sh check bastion {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
+      bash ../../../scripts/ovh/backend.sh check bastion {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
       tofu workspace select {{ quote(BASTION_ENV) }} || tofu workspace new {{ quote(BASTION_ENV) }}; \
       tofu plan -var-file={{ quote(BASTION_TFVARS_PATH) }}
 
-deploy:
+deploy: _require-project
     @eval "$(just _source-openrc)"; \
-      bash ../../../scripts/ovh-backend.sh check bastion {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
+      bash ../../../scripts/ovh/backend.sh check bastion {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
       tofu workspace select {{ quote(BASTION_ENV) }} || tofu workspace new {{ quote(BASTION_ENV) }}; \
       tofu apply -auto-approve -var-file={{ quote(BASTION_TFVARS_PATH) }}
 
@@ -54,9 +59,9 @@ deploy:
 # the shared bastion_converge role. KEY is the private key matching an
 # authorized key (admin key at birth, cluster key later). Roles resolve via
 # ANSIBLE_ROLES_PATH (recipe cwd is this justfile's directory).
-converge KEY:
+converge KEY: _require-project
     @eval "$(just _source-openrc)"; \
-      bash ../../../scripts/ovh-backend.sh check bastion {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
+      bash ../../../scripts/ovh/backend.sh check bastion {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
       tofu workspace select {{ quote(BASTION_ENV) }} || tofu workspace new {{ quote(BASTION_ENV) }}; \
       key={{ quote(KEY) }}; \
       test -n "$key" || { echo "converge requires KEY=<private-key-path>" >&2; exit 1; }; \
@@ -71,9 +76,9 @@ converge KEY:
 
 # VM only: ports (and their fixed IPs) are separate resources, so they are
 # kept and re-attached on redeploy with identical private IPs.
-destroy-vm STALE='':
+destroy-vm STALE='': _require-project
     @eval "$(just _source-openrc)"; \
-      bash ../../../scripts/ovh-backend.sh check bastion {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
+      bash ../../../scripts/ovh/backend.sh check bastion {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
       tofu workspace select {{ quote(BASTION_ENV) }} || tofu workspace new {{ quote(BASTION_ENV) }}; \
       refresh_args=(); \
       if test -n "{{ STALE }}"; then refresh_args=(-refresh=false); fi; \
@@ -81,9 +86,9 @@ destroy-vm STALE='':
 
 # Everything: VM + ports + security groups. Detaching all clusters first
 # (empty `clusters` map + apply) keeps this from stranding ports.
-destroy-all STALE='':
+destroy-all STALE='': _require-project
     @eval "$(just _source-openrc)"; \
-      bash ../../../scripts/ovh-backend.sh check bastion {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
+      bash ../../../scripts/ovh/backend.sh check bastion {{ quote(PROJECT) }} {{ quote(BACKEND) }}; \
       tofu workspace select {{ quote(BASTION_ENV) }} || tofu workspace new {{ quote(BASTION_ENV) }}; \
       refresh_args=(); \
       if test -n "{{ STALE }}"; then refresh_args=(-refresh=false); fi; \

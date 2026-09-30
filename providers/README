@@ -39,7 +39,8 @@ Every provider module MUST implement all of the following:
 - `k3s` block: `version`, `token`, `tls_sans`, `etcd_enabled`, `traefik_enabled`,
   `servicelb_enabled`, `local_storage_enabled`, `metrics_server_enabled`, `flannel_enabled`
 - `rke2` block: `version`, `token`, `tls_sans`, `etcd_enabled`,
-  `traefik_enabled`, `ingress_nginx_enabled`, `metrics_server_enabled`
+  `traefik_enabled`, `ingress_nginx_enabled`, `metrics_server_enabled`,
+  `kube_proxy_enabled`, `cni`, `ingress_type`, and `cilium` options
 - Cluster token auto-generation (writes `.token` file)
 - `ansible.pull` block: `repo`, `branch`, `playbook`, `token`, `timer`; its
   presence activates ansible-pull. The sensitive root `ansible_pull_token`
@@ -119,6 +120,7 @@ Every provider module MUST implement all of the following:
 |---|---|
 | **Credentials** | Project-scoped ignored `env/OVH/<PROJECT>/.env`, copied from `env/OVH/example/.env.example`: `OVH_ENDPOINT`, `OVH_APPLICATION_KEY`, `OVH_APPLICATION_SECRET`, `OVH_CONSUMER_KEY`, `TF_VAR_ovh_project_service_name` |
 | **Authentication** | OVH lifecycle recipes require `PROJECT`, source its `.env` and `openrc.sh` (copy the latter from `env/OVH/example/openrc.sh.example`), and preserve `OPENRC` as an override. Kubernetes modes also accept existing standard OpenStack `OS_*` or `clouds.yaml`/`OS_CLOUD` auth. OVH `just ovh::bastion::converge` requires `jq` (it reads `tofu output -json converge`). |
+| **State backend** | Lifecycle recipes default to the project-scoped S3 backend with native OpenTofu lockfiles. `BACKEND=local` is explicit isolated mode, not an outage fallback; backend changes require the documented backed-up migration. |
 | **Region** | `cluster.region` (e.g. `GRA9`) |
 | **Private network** | `network.private.cidr` (required) + `network.private.vlan_id` (optional, default `0`). Creates `ovh_cloud_project_network_private` + subnet. VLAN ID allows multiple clusters in the same region (valid range: 0–4000). |
 | **Deterministic private IPs** | Computed from `cidrhost(local.private_cidr, offset)` |
@@ -140,9 +142,9 @@ Every provider module MUST implement all of the following:
 | **Standalone VMs** | Optional `infra.vms` block provisions non-cluster VMs with public and private attachment in current code. OVH supports VM-only deployments with `cloud_init_selected = "default"`, `masters.count = 0`, `workers.count = 0`, and `vms.count > 0`; their private IPs come from the same deterministic allocation as cluster nodes. |
 | **Gateway/FIP lifecycle** | Native OVH resources are associated to the load balancer. OpenTofu orders load-balancer deletion before gateway/FIP deletion and gateway deletion before the managed subnet; FIP and subnet deletion are not ordered relative to each other. |
 | **Ansible inventory** | Public IP based for VM-only deployments; Kubernetes modes use stable private-node IPs with SSH transport configured entirely in `ansible.cfg` (relative `private_key_file`, `host_key_checking = false`, and a self-contained `ssh_common_args = -o ProxyCommand='ssh -W %h:%p -q ...'` that carries its own key/host-key options through the bastion), while `[VMS]` remains direct-public. |
-| **Security group** | The cluster SG (Kubernetes modes) allows TCP/22 only from the bastion's reserved IP, east-west TCP except 22, UDP, ICMP, and LB/backend TCP/6443. The bastion SG (own state) allows TCP/22 from operator CIDRs. Standalone VMs are excluded from the jump rules. |
+| **Security group** | The cluster SG (Kubernetes modes) allows TCP/22 only from the bastion's reserved IP, east-west TCP except 22, UDP, ICMP, and LB/backend TCP/6443, 80, and 443. The bastion SG (own state) allows TCP/22 from operator CIDRs. Standalone VMs are excluded from the jump rules. |
 | **Deploy-time checks** | `checks.tf`: multi-master requires private CIDR, LB requires private CIDR, LB flavor exists, CIDR provides enough IPs |
-| **Full-graph replace** | `just ovh::replace NAME` (root `just replace` with `PROVIDER=OVH`) applies un-targeted with `-target` + `-replace` on `openstack_compute_instance_v2.vms["NAME"]`. The first K3s/RKE2 controller is refused by the recipe because automatic datastore rejoin is unsafe. |
+| **Targeted replace** | `just ovh::replace NAME` (root `just replace` with `PROVIDER=OVH`) applies with `-target` + `-replace` on `openstack_compute_instance_v2.vms["NAME"]`. The first K3s/RKE2 controller is refused by the recipe because automatic datastore rejoin is unsafe. |
 
 ---
 
@@ -173,7 +175,7 @@ Every provider module MUST implement all of the following:
 - If CIDR or bastion failure prevents SSH, use the OVH Control Panel instance console/rescue mode with scoped OVH/OpenStack credentials to repair ingress or replace the bastion. Do not add a direct-node public NIC, LB TCP/22 listener, or static password as a backdoor.
 
 ### State security
-- Local OpenTofu state contains generated private keys, cluster tokens, and provider data. Production/team deployments require a user-selected encrypted remote backend with state locking; no backend is prescribed by this repository.
+- OpenTofu state contains generated private keys, cluster tokens, and provider data. OVH lifecycle recipes prescribe the project-scoped S3 backend with native locking by default; local state is explicit isolated mode only. Other providers retain their configured backend behavior.
 
 ---
 

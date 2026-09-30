@@ -11,6 +11,9 @@ the admin pubkey is only registered natively as the Nova keypair Nova
 requires, and the readiness probe takes a key-file input. Cluster stack
 untouched.
 
+Superseded after this phase: when operator admin/probe keys are both omitted,
+the bastion now generates a fallback keypair via the shared `ssh-keys` module.
+
 Gate G1 (offline): `init -backend=false` + `validate` green; fixture plan
 renders one public-only VM, admin key in user-data, no `PermitOpen`.
 Commit `ef59c0e`.

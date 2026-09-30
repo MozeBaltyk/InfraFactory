@@ -139,7 +139,7 @@ only content file at root. It orchestrates the repo rules and this map.
 | `architectures/` | system architecture + per-provider docs (`00-general`, `ovh/`, `azure/`, `libvirt/`) |
 | `procedures/` | operational how-tos (bootstrap, recovery, destroy) |
 | `troubleshooting/` | symptom → cause → fix notes |
-| `decisions/` | one dated record per architectural decision (context, options, outcome) |
+| `decisions/` | one stable numbered ADR per architectural decision (context, options, outcome) |
 
 Rules for docs:
 
@@ -149,7 +149,8 @@ Rules for docs:
   the target; `plan/` tracks execution, `architectures/` describes the
   build, `procedures/` tells operators how, `decisions/` records why. On
   conflict, the spec wins on *what*.
-- Decisions get a dated record in `decisions/` (context, options, outcome).
+- Decisions get a stable `ADR-NN-concise-subject.md` record in `decisions/`
+  (context, options, outcome).
   Work logs may live in a dated directory while in flight, but must be
   distilled or deleted when the work lands — never left to rot.
 - No placeholder files. A doc appears when it has content; the table above
@@ -169,6 +170,6 @@ scope, and gate. Mark todos done as phases land.
    workstream is in flight.
 2. Before the workstream closes, dispatch them: goal + todos → `plan/`
    phase files, how-to → `procedures/`, lasting why → `decisions/` as a
-   dated record.
+   stable numbered ADR.
 3. Delete the work logs once dispatched. Nothing temporary survives at
    `docs/` root or as an orphan directory.

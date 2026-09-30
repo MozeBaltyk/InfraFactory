@@ -33,7 +33,7 @@ One Nova resource (`openstack_compute_instance_v2.vms`) `for_each` over the
 deterministic `all_vms_map` built in `clusters/topology.tf` (masters +
 workers + `infra.vms`). Per-node `public_attach`/`private_attach` flags drive
 dynamic NIC blocks, so jump-mode masters/workers are private-only (single NIC,
-`ens3`) while normal-mode nodes and standalone `infra.vms` stay dual-NIC
+`ens3`) while standalone `infra.vms` stay dual-NIC
 (Ext-Net first = `ens3` public, private second = `ens4`); NIC order is
 load-bearing.
 

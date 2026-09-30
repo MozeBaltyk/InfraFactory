@@ -46,7 +46,7 @@ if [[ $module == ovh ]]; then
     set +a
   fi
   export TF_DATA_DIR="$root/.local/tofu-data/ovh/$project/clusters"
-  "$root/scripts/ovh-backend.sh" check clusters "$project" "$backend"
+  "$root/scripts/ovh/backend.sh" check clusters "$project" "$backend"
 else
   artifact_path="env/$module/$environment"
 fi

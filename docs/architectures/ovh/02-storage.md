@@ -2,8 +2,7 @@
 
 Distilled from `.local/storage_ovh.md` during the docs cleanup. That draft
 predates the implementation ("not yet implemented"); what follows describes
-the tree as it is. The draft's open attach-scope questions are resolved:
-volumes attach via `ovh_cloud_project_volume_attachment`.
+the tree as it is. Block-volume attachment remains unimplemented.
 
 ## Services
 

@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 
-SCRIPT = Path(__file__).parents[1] / "ovh-config-status.py"
+SCRIPT = Path(__file__).parents[1] / "ovh" / "config-status.py"
 SPEC = importlib.util.spec_from_file_location("ovh_config_status", SCRIPT)
 STATUS = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(STATUS)

@@ -1,6 +1,6 @@
 # Copy to env/OVH/<project>/backend.s3.tfbackend. No credentials belong here.
 # `key` and `workspace_key_prefix` are injected per stack (clusters vs bastion)
-# by scripts/ovh-backend.sh, so keep them absent from this shared file.
+# by scripts/ovh/backend.sh, so keep them absent from this shared file.
 bucket = "<project-state-bucket>"
 region = "gra"
 

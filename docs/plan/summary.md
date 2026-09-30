@@ -6,9 +6,9 @@ smaller backlog items remain in this file. Decisions live in `../decisions/`.
 ## OVH bastion split (`ovh-refactor`)
 
 One mutualized standalone bastion serving many clusters. Full story in
-`../decisions/2026-09-18-ovh-bastion-split.md`. Follow-up consolidation
-on the branch: jump-only Kubernetes (decision
-`2026-09-18-ovh-jump-only.md`: guards + deleted public branches) and the
+`../decisions/ADR-01-ovh-bastion-split.md`. Follow-up consolidation
+on the branch: jump-only Kubernetes (`ADR-02`: guards + deleted public
+branches) and the
 single-resource merge (`vms` + `private_cluster`, state-mv note in
 `moved.tf`) — both offline-validated on the branch.
 
@@ -43,22 +43,17 @@ offline phases.
 ## Remaining backlog (non-split, OVH focus)
 
 - [ ] First-controller etcd backup/restore recovery (`just replace` refuses it meanwhile)
-- [ ] Additional Ansible post-provisioning playbooks
-- [ ] OVH storage per-role attach by key (`nfs`/`object_storage`/`block_storage`)
-- [x] OVH `just replace` recipes (single `vms` address; first-controller refused, live proof in P5)
-- [x] OVH: merge `vms` + `private_cluster` into one resource over `all_vms_map` (single `vms` resource; normal-mode states need no moves, jump-mode needs one `state mv` per node — see `moved.tf`)
-- [x] OVH: split `clusters/variables.tf` (vars only, locals to `topology.tf`)
-- [ ] Bastion shutdown = stop/shelve or delete?
-- [ ] VPN to replace the bastion later?
-- [x] Ingress path: Octavia TCP NodePort pools (80/443, TLS at controller) — decided, spec in `ovh/provider.md` §4; MetalLB/Cilium-L2 VIP stays out (no public IPs to announce under jump-only)
-- [ ] Golden images (bake level, CI Packer, regions)?
+- [ ] OVH block-storage create/attach lifecycle (NFS and object-storage
+      attachment by key are implemented)
 - [ ] First-boot DNS race: move base packages out of `packages:` into `runcmd`
       (or set subnet `dns_nameservers`) so cloud-init's early package install
       runs after DNS converges — see `../troubleshooting/ovh-cloud-init-dns-race.md`
-- [ ] Scale runbook: document the "sync bastion `clusters` counts + re-`converge`
-      after scaling" step (PermitOpen must cover new node IPs); consider a recipe
-      or a `converge` pre/post hint
-- [x] OVH bastion: stop emitting the unused `.token` (shared ssh-keys byproduct);
-      emit `hosts.ini` + `ansible.cfg` (one-host inventory) for the bastion instead
 - [ ] `converge` recipe: accept a repo-root-relative KEY path (currently resolves
       relative to `providers/ovh/bastion/`, so operators must pass an absolute path)
+
+## Parking lot (not active backlog)
+
+- Additional Ansible post-provisioning playbooks (define a concrete use case first)
+- Bastion stop/shelve lifecycle instead of deletion
+- VPN as a possible future bastion replacement
+- Golden-image baking/CI/region strategy

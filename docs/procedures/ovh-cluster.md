@@ -8,9 +8,9 @@ own lifecycle (birth, multi-cluster attach, teardown) lives in
 the one-stop end-to-end flow.
 
 Target state: [`../specs/ovh/provider.md`](../specs/ovh/provider.md).
-Why jump-only: [`../decisions/2026-09-18-ovh-jump-only.md`](../decisions/2026-09-18-ovh-jump-only.md).
+Why jump-only: [`ADR-02`](../decisions/ADR-02-ovh-jump-only.md).
 Why the bastion is a separate stack:
-[`../decisions/2026-09-18-ovh-bastion-split.md`](../decisions/2026-09-18-ovh-bastion-split.md).
+[`ADR-01`](../decisions/ADR-01-ovh-bastion-split.md).
 Backend setup and migration: [`ovh-backend.md`](ovh-backend.md).
 
 ## The two stacks
